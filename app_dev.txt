@@ -1,0 +1,71 @@
+PART 2 — MOBILE APP  (Phase 2)
+The mobile app is built on the same backend API as the website — no new API needed for shared screens. Mobile adds 14 native-only screens for camera uploads, push notifications, splash/onboarding, and offline handling.
+6
+Onboarding	8
+Owner/Driver	8
+Corporate	7
+One-time client	5
+Shared/Utility	34
+Total screens
+
+SHARED LOGIC  = Same backend API as web, new mobile UI only     MOBILE ONLY  = New screen with no web equivalent
+ONBOARDING  —  6 screens
+Demand	Page / Screen Name	Purpose / Notes
+HIGH	Splash / Welcome	App intro screen, GoRide branding, language selection, get started button
+HIGH	Language Select	English / Bangla — first choice after splash, stored in preferences
+HIGH	Role Select	Choose: Book a Ride / Owner-Driver / Corporate — sets app flow
+HIGH	Login	Phone or email + password, forgot password link, OTP login option
+HIGH	OTP Verification	Enter 4/6 digit OTP — large numeric keyboard, resend timer
+HIGH	Quick Signup	Name, phone OTP, password, role — 30 second flow
+
+OWNER / DRIVER SCREENS  —  8 screens
+Demand	Page / Screen Name	Purpose / Notes
+HIGH	Home Dashboard	Profile completion %, progress bar, pending tasks, quick action buttons
+HIGH	My Cars	List of all cars with status badges — tap to view/edit, add new car button
+HIGH	Add / Edit Car	Car details form — mobile optimised with large inputs and dropdowns
+HIGH	Document Upload	Mobile only — camera capture or gallery picker, visual checklist with checkmarks
+HIGH	Car Photo Upload	Mobile only — Front/Side/Rear/Interior — one camera tap per angle
+MED	Personal Details	NID, address, emergency contact — filled from dashboard
+MED	Trip History	Past trips list, earnings per trip, star ratings received
+LOW	Notifications	Mobile only — push notifications for approval status, document expiry
+
+CORPORATE SCREENS  —  8 screens
+Demand	Page / Screen Name	Purpose / Notes
+HIGH	Home Dashboard	Active cars count, billing summary, ongoing assignments at a glance
+HIGH	Fleet List	All assigned cars with driver names and status — swipeable cards layout
+HIGH	Billing & Invoices	Paid/unpaid invoice list, PDF viewer in-app, download option
+HIGH	New Car Request	Request form for additional cars — mobile optimised multi-step
+MED	Invoice Detail	Mobile only — full invoice view with line items and download button
+MED	Corporate Registration	Multi-step registration form — mobile optimised with save & continue
+MED	Support / Issue Form	Submit issues or requests directly to GoRide team
+LOW	Notifications	Mobile only — push for billing due dates, car status changes
+
+ONE-TIME CLIENT SCREENS  —  7 screens
+Demand	Page / Screen Name	Purpose / Notes
+HIGH	Booking Home	Mobile only — quick entry: where to? date? car type? large thumb-friendly inputs
+HIGH	Booking Form	Full details — pickup, destination, date, passengers, trip type
+HIGH	OTP Confirm	Phone number entry + OTP verify — triggered at form submission
+HIGH	Booking Confirmation	Mobile only — success screen with booking ID and WhatsApp contact link
+MED	Car Type Select	Mobile only — visual card picker: Sedan, SUV, Microbus, Premium, Economy
+MED	Services Browse	Mobile only — Airport, events, corporate, tours — tap to start booking
+LOW	Tours & Travels	Destination packages browse — Phase 2 content, structure ready Phase 1
+
+SHARED / UTILITY SCREENS  —  5 screens
+Demand	Page / Screen Name	Purpose / Notes
+MED	Settings	Mobile only — language toggle, password change, notification prefs, logout
+MED	About & Contact	Mobile only — GoRide info, WhatsApp button, call button, social links
+MED	Notification Centre	Mobile only — full push notification history, mark read/unread
+LOW	Forgot Password	OTP-based password reset — phone number entry, new password set
+LOW	No Internet / Error	Mobile only — offline screen with retry button, friendly bilingual message
+
+Key Notes — Mobile App
+14 mobile-only screens — these are fully new builds with no web equivalent. This is where the main Phase 2 development cost sits.
+Camera integration — document and car photo uploads use the device camera directly. Visual checklist with checkmarks per angle.
+Push notifications — approval status changes, document expiry reminders (30 days), billing due dates.
+No admin panel on mobile — admin always works from desktop browser. Not included in the mobile app.
+Offline screen — bilingual no-internet screen with retry button. Required for Bangladesh network conditions.
+Recommended stack — React Native or Flutter using the same Laravel backend API from Phase 1.
+
+
+Primary color : #10713C
+Secondary color : #ED1C24
