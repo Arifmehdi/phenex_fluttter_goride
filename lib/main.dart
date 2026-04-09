@@ -55,8 +55,19 @@ class _SplashScreenState extends State<SplashScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.directions_car, size: 80, color: Colors.white),
-              const SizedBox(height: 20),
+              Image.asset(
+                'assets/go_ride_logo.png',
+                height: 100,
+                width: 100,
+                errorBuilder: (context, error, stackTrace) {
+                  return Icon(
+                    Icons.directions_car,
+                    size: 80,
+                    color: Colors.white,
+                  );
+                },
+              ),
+              const SizedBox(height: 30),
               const Text(
                 'GoRide',
                 style: TextStyle(
