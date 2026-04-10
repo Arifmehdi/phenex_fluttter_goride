@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'pages/home_page.dart';
 
 void main() {
   runApp(const GoRideApp());
@@ -15,6 +16,7 @@ class GoRideApp extends StatelessWidget {
         primaryColor: const Color(0xFF10713C),
         secondaryHeaderColor: const Color(0xFFED1C24),
         useMaterial3: true,
+        scaffoldBackgroundColor: Colors.white,
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF10713C),
           foregroundColor: Colors.white,
@@ -39,9 +41,9 @@ class _SplashScreenState extends State<SplashScreen> {
     super.initState();
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
-        );
+        Navigator.of(
+          context,
+        ).pushReplacement(MaterialPageRoute(builder: (_) => const HomePage()));
       }
     });
   }
