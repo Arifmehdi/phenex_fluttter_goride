@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'quick_action_screens.dart';
+import 'dhaka_map_screen.dart';
+import '../main.dart' show LoginScreen;
+
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
 
@@ -24,9 +28,9 @@ class _HomePageState extends State<HomePage> {
       icon: Icons.two_wheeler,
     ),
     ServiceItem(
-      title: 'Mystery',
-      imagePath: 'assets/mistery.png',
-      icon: Icons.help_outline,
+      title: 'Corporate',
+      imagePath: 'assets/corporate.png',
+      icon: Icons.business,
     ),
     ServiceItem(
       title: 'Rent Car',
@@ -50,8 +54,10 @@ class _HomePageState extends State<HomePage> {
 
   void _startAutoScroll() {
     Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) {
-        _bannerPageController.nextPage(
+      if (mounted && _bannerPageController.hasClients) {
+        final nextPage = (_bannerPageController.page!.toInt() + 1) % 3;
+        _bannerPageController.animateToPage(
+          nextPage,
           duration: const Duration(milliseconds: 500),
           curve: Curves.easeInOut,
         );
@@ -73,24 +79,59 @@ class _HomePageState extends State<HomePage> {
           _buildAccountTab(context),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        backgroundColor: Colors.white,
-        selectedItemColor: const Color(0xFF10713C),
-        unselectedItemColor: Colors.grey,
-        onTap: (index) => setState(() => _selectedIndex = index),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.miscellaneous_services),
-            label: 'Services',
-          ),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Activity'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.account_circle),
-            label: 'Account',
-          ),
-        ],
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: BottomNavigationBar(
+          type: BottomNavigationBarType.fixed,
+          currentIndex: _selectedIndex,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          selectedItemColor: const Color(0xFF10713C),
+          unselectedItemColor: Colors.grey,
+          selectedFontSize: 12,
+          unselectedFontSize: 12,
+          iconSize: 26,
+          onTap: (index) {
+            if (index == 3) {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+              );
+            } else {
+              setState(() => _selectedIndex = index);
+            }
+          },
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home_outlined),
+              activeIcon: Icon(Icons.home),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.miscellaneous_services_outlined),
+              activeIcon: Icon(Icons.miscellaneous_services),
+              label: 'Services',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.history_outlined),
+              activeIcon: Icon(Icons.history),
+              label: 'Activity',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.account_circle_outlined),
+              activeIcon: Icon(Icons.account_circle),
+              label: 'Account',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -164,9 +205,9 @@ class _HomePageState extends State<HomePage> {
                         children: [
                           Image.asset(
                             service.imagePath,
-                            height: 80,
-                            width: 80,
-                            fit: BoxFit.cover,
+                            height: 90,
+                            width: 90,
+                            fit: BoxFit.contain,
                             errorBuilder: (context, error, stackTrace) {
                               return Icon(
                                 service.icon,
@@ -198,6 +239,45 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildActivityTab(BuildContext context) {
+    final bool hasActivity = false;
+
+    if (!hasActivity) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.history,
+                size: 80,
+                color: Colors.grey[300],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                "You don't have any recent activity",
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Book your first ride to see it here',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[400],
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -215,7 +295,6 @@ class _HomePageState extends State<HomePage> {
               Icons.directions_car,
             ),
             _buildActivityItem('Bike Rental', '2 hours ago', Icons.two_wheeler),
-            _buildActivityItem('Mystery Ride', 'Yesterday', Icons.help_outline),
             _buildActivityItem('Car Rental', '2 days ago', Icons.domain),
           ],
         ),
@@ -378,7 +457,9 @@ class _HomePageState extends State<HomePage> {
                 hintStyle: const TextStyle(color: Colors.grey),
               ),
               onTap: () {
-                // TODO: Navigate to booking screen
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const DhakaMapScreen()),
+                );
               },
             ),
           ),
@@ -398,7 +479,7 @@ class _HomePageState extends State<HomePage> {
         ),
         const SizedBox(height: 16),
         SizedBox(
-          height: 100,
+          height: 110,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             itemCount: services.length,
@@ -414,7 +495,9 @@ class _HomePageState extends State<HomePage> {
   Widget _buildServiceCard(ServiceItem service, BuildContext context) {
     return GestureDetector(
       onTap: () {
-        // TODO: Navigate to service booking page
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const DhakaMapScreen()),
+        );
       },
       child: Container(
         width: 80,
@@ -431,7 +514,7 @@ class _HomePageState extends State<HomePage> {
             Expanded(
               child: Image.asset(
                 service.imagePath,
-                fit: BoxFit.cover,
+                fit: BoxFit.contain,
                 errorBuilder: (context, error, stackTrace) {
                   return Center(
                     child: Icon(
@@ -468,24 +551,28 @@ class _HomePageState extends State<HomePage> {
         'subtitle': 'Pay Smarter, Pay Later >',
         'icon': Icons.credit_card,
         'color': Colors.blue,
+        'page': const PayLaterScreen(),
       },
       {
         'title': 'Saved Address',
         'subtitle': 'Add Home',
         'icon': Icons.location_on,
         'color': Colors.purple,
+        'page': const SavedAddressScreen(),
       },
       {
         'title': 'Bronze User',
         'subtitle': 'Avail Benefits >',
         'icon': Icons.card_membership,
         'color': Colors.orange,
+        'page': const MembershipScreen(),
       },
       {
         'title': 'Points',
         'subtitle': 'Redeem Now',
         'icon': Icons.star,
         'color': Colors.amber,
+        'page': const PointsScreen(),
       },
     ];
 
@@ -506,11 +593,11 @@ class _HomePageState extends State<HomePage> {
             itemBuilder: (context, index) {
               final action = quickActions[index];
               return _buildQuickActionCard(
-                index + 1,
-                action['title'],
-                action['subtitle'],
-                action['icon'],
-                action['color'],
+                action['title'] as String,
+                action['subtitle'] as String,
+                action['icon'] as IconData,
+                action['color'] as Color,
+                action['page'] as Widget,
               );
             },
           ),
@@ -520,85 +607,76 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildQuickActionCard(
-    int number,
     String title,
     String subtitle,
     IconData icon,
     Color color,
+    Widget screen,
   ) {
-    return Container(
-      width: 160,
-      margin: const EdgeInsets.only(right: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!, width: 1),
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => screen),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: color, size: 20),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '0${number}',
-                style: const TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF10713C),
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+      child: Container(
+        width: 160,
+        margin: const EdgeInsets.only(right: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[300]!, width: 1),
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
             ),
-          ),
-        ],
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

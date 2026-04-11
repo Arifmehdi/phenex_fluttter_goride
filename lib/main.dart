@@ -12,6 +12,7 @@ class GoRideApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'GoRide',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primaryColor: const Color(0xFF10713C),
         secondaryHeaderColor: const Color(0xFFED1C24),
@@ -200,6 +201,243 @@ class RoleSelectionScreen extends StatelessWidget {
   }
 }
 
+// ============== LOGIN SCREEN ==============
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({Key? key}) : super(key: key);
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _otpController = TextEditingController();
+  bool _isOtpSent = false;
+  String? _errorMessage;
+
+  void _sendOtp() {
+    if (_phoneController.text.length >= 10) {
+      setState(() {
+        _isOtpSent = true;
+        _errorMessage = null;
+      });
+    } else {
+      setState(() {
+        _errorMessage = 'Please enter a valid phone number';
+      });
+    }
+  }
+
+  void _verifyOtp() {
+    if (_otpController.text.length == 4) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const RiderHomeScreen()),
+      );
+    } else {
+      setState(() {
+        _errorMessage = 'Please enter a valid OTP';
+      });
+    }
+  }
+
+  void _loginWithGoogle() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const RiderHomeScreen()),
+    );
+  }
+
+  void _loginWithFacebook() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const RiderHomeScreen()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF10713C)),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Column(
+                    children: [
+                      Image.asset(
+                        'assets/go_ride_logo.png',
+                        height: 60,
+                        width: 60,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(Icons.directions_car, size: 60, color: Color(0xFF10713C));
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'GoRide',
+                        style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF10713C)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 40),
+                const Text(
+                  'Welcome Back',
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _isOtpSent
+                      ? 'Enter the OTP sent to your phone'
+                      : 'login with your account',
+                  style: const TextStyle(color: Colors.grey, fontSize: 16),
+                ),
+                const SizedBox(height: 32),
+                if (!_isOtpSent) ...[
+                  TextField(
+                    controller: _phoneController,
+                    keyboardType: TextInputType.phone,
+                    decoration: InputDecoration(
+                      labelText: 'Mobile Number',
+                      hintText: '+880 1700-000000',
+                      prefixIcon: const Icon(Icons.phone),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _sendOtp,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF10713C),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'Send OTP',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Row(
+                    children: [
+                      Expanded(child: Divider()),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        child: Text('or', style: TextStyle(color: Colors.grey)),
+                      ),
+                      Expanded(child: Divider()),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _loginWithGoogle,
+                      icon: const Icon(Icons.all_inbox),
+                      label: const Text('Continue with Google'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _loginWithFacebook,
+                      icon: const Icon(Icons.facebook),
+                      label: const Text('Continue with Facebook'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ] else ...[
+                  TextField(
+                    controller: _otpController,
+                    keyboardType: TextInputType.number,
+                    maxLength: 4,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 24, letterSpacing: 8),
+                    decoration: InputDecoration(
+                      labelText: 'OTP',
+                      hintText: '----',
+                      counterText: '',
+                      prefixIcon: const Icon(Icons.lock),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _verifyOtp,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF10713C),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'Verify OTP',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _isOtpSent = false;
+                          _otpController.clear();
+                        });
+                      },
+                      child: const Text('Change Phone Number'),
+                    ),
+                  ),
+                ],
+                if (_errorMessage != null) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: Color(0xFFED1C24)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ============== RIDER HOME SCREEN ==============
 class RiderHomeScreen extends StatefulWidget {
   const RiderHomeScreen({Key? key}) : super(key: key);
@@ -229,11 +467,19 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
         backgroundColor: Colors.white,
         selectedItemColor: const Color(0xFF10713C),
         unselectedItemColor: Colors.grey,
-        onTap: (index) => setState(() => _selectedIndex = index),
+        onTap: (index) {
+          if (index == 2) {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+            );
+          } else {
+            setState(() => _selectedIndex = index);
+          }
+        },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Book'),
           BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Account'),
         ],
       ),
     );
@@ -529,36 +775,29 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
                 ),
                 SizedBox(height: 16),
                 Text(
-                  'Ahmed Hasan',
+                  'Guest User',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
                 SizedBox(height: 4),
-                Text('+880 1700-000000', style: TextStyle(color: Colors.grey)),
+                Text('Please login to view your profile', style: TextStyle(color: Colors.grey)),
               ],
             ),
           ),
         ),
-        _profileOption(Icons.edit, 'Edit Profile'),
-        _profileOption(Icons.location_on, 'Saved Locations'),
-        _profileOption(Icons.payment, 'Payment Methods'),
-        _profileOption(Icons.notifications, 'Notifications'),
-        _profileOption(Icons.language, 'Language & Settings'),
-        _profileOption(Icons.help, 'Help & Support'),
-        const SizedBox(height: 16),
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
             onPressed: () {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
               );
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFED1C24),
+              backgroundColor: const Color(0xFF10713C),
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
             child: const Text(
-              'Logout',
+              'Login',
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
