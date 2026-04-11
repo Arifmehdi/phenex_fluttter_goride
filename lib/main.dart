@@ -557,7 +557,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     children: [
                       _buildRoleCard('Driver', 'driver', Icons.drive_eta),
                       const SizedBox(width: 12),
-                      _buildRoleCard('Owner', 'owner', Icons.business),
+                      _buildRoleCard('Corporate', 'corporate', Icons.business),
                       const SizedBox(width: 12),
                       _buildRoleCard('Both', 'both', Icons.people),
                     ],
@@ -686,6 +686,22 @@ class RiderHomeScreen extends StatefulWidget {
 
 class _RiderHomeScreenState extends State<RiderHomeScreen> {
   int _selectedIndex = 0;
+  final List<String> _locations = ['', '']; // Starts with: pickup, destination
+  final int _maxAdditionalStops = 2;
+
+  void _addStop() {
+    if (_additionalStopsCount < _maxAdditionalStops) {
+      setState(() => _locations.insert(_locations.length - 1, ''));
+    }
+  }
+
+  void _removeStop(int index) {
+    if (index > 0 && index < _locations.length - 1) {
+      setState(() => _locations.removeAt(index));
+    }
+  }
+
+  int get _additionalStopsCount => _locations.length - 2;
 
   @override
   Widget build(BuildContext context) {
@@ -744,32 +760,99 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
                     style: TextStyle(color: Colors.white, fontSize: 14),
                   ),
                   const SizedBox(height: 12),
-                  TextField(
-                    decoration: InputDecoration(
-                      hintText: 'Enter pickup location',
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
-                      ),
-                      prefixIcon: const Icon(Icons.location_on),
-                    ),
+                  ...List.generate(
+                    _locations.length,
+                    (index) {
+                      final isPickup = index == 0;
+                      final isDestination = index == _locations.length - 1;
+                      final stopNumber = isPickup ? 1 : isDestination ? _locations.length : index;
+                      return AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        transitionBuilder: (child, animation) {
+                          return SlideTransition(
+                            position: Tween<Offset>(
+                              begin: const Offset(1, 0),
+                              end: Offset.zero,
+                            ).animate(CurvedAnimation(
+                              parent: animation,
+                              curve: Curves.easeOutCubic,
+                            )),
+                            child: FadeTransition(opacity: animation, child: child),
+                          );
+                        },
+                        child: Padding(
+                          key: ValueKey(index),
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            children: [
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 300),
+                                width: 24,
+                                height: 24,
+                                decoration: BoxDecoration(
+                                  color: isPickup ? Colors.white : Colors.white.withValues(alpha: 0.3),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '$stopNumber',
+                                    style: TextStyle(
+                                      color: const Color(0xFF10713C),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextField(
+                                  decoration: InputDecoration(
+                                    hintText: isPickup ? 'Pickup location' : isDestination ? 'Final destination' : 'Stop $stopNumber',
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    prefixIcon: Icon(
+                                      isPickup ? Icons.location_on : isDestination ? Icons.flag : Icons.circle,
+                                      size: 18,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (!isPickup && !isDestination)
+                                IconButton(
+                                  icon: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 300),
+                                    child: const Icon(Icons.remove_circle, color: Colors.white, size: 20),
+                                  ),
+                                  onPressed: () => _removeStop(index),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    transitionBuilder: (child, animation) {
+                      return FadeTransition(opacity: animation, child: child);
+                    },
+                    child: _additionalStopsCount < _maxAdditionalStops
+                      ? TextButton.icon(
+                          key: const ValueKey('addStopBtn'),
+                          onPressed: _addStop,
+                          icon: const Icon(Icons.add_circle, color: Colors.white, size: 18),
+                          label: const Text('Add Stop', style: TextStyle(color: Colors.white, fontSize: 13)),
+                        )
+                      : const SizedBox.shrink(key: ValueKey('noAddBtn')),
                   ),
                   const SizedBox(height: 12),
-                  TextField(
-                    decoration: InputDecoration(
-                      hintText: 'Enter destination',
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
-                      ),
-                      prefixIcon: const Icon(Icons.flag),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(

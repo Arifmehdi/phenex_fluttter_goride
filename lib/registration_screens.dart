@@ -39,7 +39,7 @@ class _OwnerProfileScreenState extends State<OwnerProfileScreen> {
   final ImagePicker _imagePicker = ImagePicker();
 
   bool get _isDriver => widget.selectedRole == 'driver' || widget.selectedRole == 'both';
-  bool get _isOwner => widget.selectedRole == 'owner' || widget.selectedRole == 'both';
+  bool get _isOwner => widget.selectedRole == 'corporate' || widget.selectedRole == 'both';
 
   Future<void> _selectDate(BuildContext context, TextEditingController controller) async {
     final DateTime? picked = await showDatePicker(

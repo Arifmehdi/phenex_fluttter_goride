@@ -12,6 +12,8 @@ class DhakaMapScreen extends StatefulWidget {
 class _DhakaMapScreenState extends State<DhakaMapScreen> {
   final LatLng _dhakaCenter = LatLng(23.8103, 90.4125);
   late final MapController _mapController;
+  final List<String> _locations = ['', '']; // Starts with: pickup, destination
+  final int _maxAdditionalStops = 2;
 
   @override
   void initState() {
@@ -21,6 +23,20 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
       _showLocationBottomSheet();
     });
   }
+
+  void _addStop() {
+    if (_additionalStopsCount < _maxAdditionalStops) {
+      setState(() => _locations.insert(_locations.length - 1, ''));
+    }
+  }
+
+  void _removeStop(int index) {
+    if (index > 0 && index < _locations.length - 1) {
+      setState(() => _locations.removeAt(index));
+    }
+  }
+
+  int get _additionalStopsCount => _locations.length - 2;
 
   void _showLocationBottomSheet() {
     showModalBottomSheet(
@@ -67,56 +83,87 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
                     ),
                     child: Column(
                       children: [
-                        Row(
-                          children: [
-                            Column(
+                        ...List.generate(_locations.length, (index) {
+                          final isPickup = index == 0;
+                          final isDestination = index == _locations.length - 1;
+                          final stopNumber = isPickup ? 1 : isDestination ? _locations.length : index;
+                          return AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            transitionBuilder: (child, animation) {
+                              return SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: const Offset(1, 0),
+                                  end: Offset.zero,
+                                ).animate(CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOutCubic,
+                                )),
+                                child: FadeTransition(opacity: animation, child: child),
+                              );
+                            },
+                            child: Column(
+                              key: ValueKey(index),
                               children: [
-                                Container(
-                                  width: 12,
-                                  height: 12,
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFF10713C),
-                                    shape: BoxShape.circle,
-                                  ),
+                                Row(
+                                  children: [
+                                    Column(
+                                      children: [
+                                        AnimatedContainer(
+                                          duration: const Duration(milliseconds: 300),
+                                          width: 12,
+                                          height: 12,
+                                          decoration: BoxDecoration(
+                                            color: isPickup ? const Color(0xFF10713C) : isDestination ? const Color(0xFFED1C24) : Colors.grey,
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                        if (!isDestination)
+                                          AnimatedContainer(
+                                            duration: const Duration(milliseconds: 300),
+                                            width: 2,
+                                            height: 30,
+                                            color: Colors.grey[400],
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: TextField(
+                                        decoration: InputDecoration(
+                                          hintText: isPickup ? 'Pickup location' : isDestination ? 'Final destination' : 'Stop $stopNumber',
+                                          hintStyle: TextStyle(color: Colors.grey[600], fontSize: 14),
+                                          border: InputBorder.none,
+                                        ),
+                                      ),
+                                    ),
+                                    if (!isPickup && !isDestination)
+                                      IconButton(
+                                        icon: Icon(Icons.close, size: 18, color: Colors.grey[600]),
+                                        onPressed: () => _removeStop(index),
+                                      ),
+                                  ],
                                 ),
-                                Container(
-                                  width: 2,
-                                  height: 30,
-                                  color: Colors.grey[400],
-                                ),
-                                Container(
-                                  width: 12,
-                                  height: 12,
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFFED1C24),
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
+                                if (!isDestination) Divider(color: Colors.grey[300]),
                               ],
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                children: [
-                                  TextField(
-                                    decoration: InputDecoration(
-                                      hintText: 'Pickup Location',
-                                      hintStyle: TextStyle(color: Colors.grey[600], fontSize: 14),
-                                      border: InputBorder.none,
-                                    ),
-                                  ),
-                                  Divider(color: Colors.grey[300]),
-                                  TextField(
-                                    decoration: InputDecoration(
-                                      hintText: 'Where to?',
-                                      hintStyle: TextStyle(color: Colors.grey[600], fontSize: 14),
-                                      border: InputBorder.none,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                          );
+                        }),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          transitionBuilder: (child, animation) {
+                            return FadeTransition(opacity: animation, child: child);
+                          },
+                          child: _additionalStopsCount < _maxAdditionalStops
+                            ? Padding(
+                                key: const ValueKey('addStopBtn'),
+                                padding: const EdgeInsets.only(top: 8),
+                                child: TextButton.icon(
+                                  onPressed: _addStop,
+                                  icon: const Icon(Icons.add_circle, size: 18),
+                                  label: const Text('Add Stop'),
+                                ),
+                              )
+                            : const SizedBox.shrink(key: ValueKey('noAddBtn')),
                         ),
                       ],
                     ),

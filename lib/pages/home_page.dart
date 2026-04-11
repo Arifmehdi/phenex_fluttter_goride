@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'quick_action_screens.dart';
 import 'dhaka_map_screen.dart';
+import 'rent_car_booking_screen.dart';
 import '../main.dart' show LoginScreen;
 
 class HomePage extends StatefulWidget {
@@ -495,9 +496,15 @@ class _HomePageState extends State<HomePage> {
   Widget _buildServiceCard(ServiceItem service, BuildContext context) {
     return GestureDetector(
       onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const DhakaMapScreen()),
-        );
+        if (service.title == 'Rent Car') {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const RentCarBookingScreen()),
+          );
+        } else {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const DhakaMapScreen()),
+          );
+        }
       },
       child: Container(
         width: 80,
