@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'registration_screens.dart';
 import 'pages/home_page.dart';
 
 void main() {
@@ -473,32 +474,41 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
   final TextEditingController _otpController = TextEditingController();
   bool _isOtpSent = false;
   String? _errorMessage;
+  String _selectedRole = 'driver';
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
 
   void _sendOtp() {
-    if (_phoneController.text.length >= 10 && _nameController.text.isNotEmpty) {
-      setState(() {
-        _isOtpSent = true;
-        _errorMessage = null;
-      });
-    } else {
-      setState(() {
-        _errorMessage = 'Please enter valid details';
-      });
+    if (_nameController.text.isEmpty || _phoneController.text.length < 10) {
+      setState(() => _errorMessage = 'Please enter valid name and phone number');
+      return;
     }
+    if (_passwordController.text.length < 6) {
+      setState(() => _errorMessage = 'Password must be at least 6 characters');
+      return;
+    }
+    if (_passwordController.text != _confirmPasswordController.text) {
+      setState(() => _errorMessage = 'Passwords do not match');
+      return;
+    }
+    setState(() {
+      _isOtpSent = true;
+      _errorMessage = null;
+    });
   }
 
   void _verifyOtp() {
     if (_otpController.text.length == 4) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const RiderHomeScreen()),
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => OtpSuccessScreen(selectedRole: _selectedRole)),
       );
     } else {
-      setState(() {
-        _errorMessage = 'Please enter a valid OTP';
-      });
+      setState(() => _errorMessage = 'Please enter a valid OTP');
     }
   }
 
@@ -520,29 +530,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Center(
-                  child: Column(
-                    children: [
-                      Image.asset(
-                        'assets/go_ride_logo.png',
-                        height: 60,
-                        width: 60,
-                        errorBuilder: (context, error, stackTrace) {
-                          return const Icon(Icons.directions_car, size: 60, color: Color(0xFF10713C));
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'GoRide',
-                        style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF10713C)),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 40),
-                const Text(
-                  'Create Account',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                Text(
+                  _isOtpSent ? 'Verify OTP' : 'Create Account',
+                  style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -553,103 +543,68 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 32),
                 if (!_isOtpSent) ...[
-                  TextField(
-                    controller: _nameController,
-                    decoration: InputDecoration(
-                      labelText: 'Full Name',
-                      hintText: 'Enter your name',
-                      prefixIcon: const Icon(Icons.person),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
+                  _buildTextField(_nameController, 'Full Name', Icons.person),
                   const SizedBox(height: 16),
-                  TextField(
-                    controller: _phoneController,
-                    keyboardType: TextInputType.phone,
-                    decoration: InputDecoration(
-                      labelText: 'Mobile Number',
-                      hintText: '+880 1700-000000',
-                      prefixIcon: const Icon(Icons.phone),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
+                  _buildTextField(_phoneController, 'Mobile Number', Icons.phone, keyboardType: TextInputType.phone),
                   const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _sendOtp,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF10713C),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        'Send OTP',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                      ),
-                    ),
+                  _buildPasswordField(_passwordController, 'Password', _obscurePassword, (v) => setState(() => _obscurePassword = v)),
+                  const SizedBox(height: 16),
+                  _buildPasswordField(_confirmPasswordController, 'Confirm Password', _obscureConfirmPassword, (v) => setState(() => _obscureConfirmPassword = v)),
+                  const SizedBox(height: 20),
+                  const Text('Select Role', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      _buildRoleCard('Driver', 'driver', Icons.drive_eta),
+                      const SizedBox(width: 12),
+                      _buildRoleCard('Owner', 'owner', Icons.business),
+                      const SizedBox(width: 12),
+                      _buildRoleCard('Both', 'both', Icons.people),
+                    ],
                   ),
+                  const SizedBox(height: 24),
                 ] else ...[
-                  TextField(
-                    controller: _otpController,
-                    keyboardType: TextInputType.number,
-                    maxLength: 4,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 24, letterSpacing: 8),
-                    decoration: InputDecoration(
-                      labelText: 'OTP',
-                      hintText: '----',
-                      counterText: '',
-                      prefixIcon: const Icon(Icons.lock),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10713C).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.phone, color: Color(0xFF10713C)),
+                        const SizedBox(width: 12),
+                        Text('OTP sent to ${_phoneController.text}', style: const TextStyle(fontSize: 14, color: Color(0xFF10713C))),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _verifyOtp,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF10713C),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        'Verify OTP',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                      ),
-                    ),
-                  ),
+                  _buildTextField(_otpController, 'OTP', Icons.lock, keyboardType: TextInputType.number),
                   const SizedBox(height: 16),
                   Center(
                     child: TextButton(
-                      onPressed: () {
-                        setState(() {
-                          _isOtpSent = false;
-                          _otpController.clear();
-                        });
-                      },
-                      child: const Text('Change Phone Number'),
+                      onPressed: () => setState(() { _isOtpSent = false; _otpController.clear(); }),
+                      child: const Text('Change phone number', style: TextStyle(color: Color(0xFF10713C))),
                     ),
                   ),
+                  const SizedBox(height: 16),
                 ],
                 if (_errorMessage != null) ...[
                   const SizedBox(height: 16),
-                  Text(
-                    _errorMessage!,
-                    style: const TextStyle(color: Color(0xFFED1C24)),
-                  ),
+                  Text(_errorMessage!, style: const TextStyle(color: Color(0xFFED1C24))),
                 ],
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _isOtpSent ? _verifyOtp : _sendOtp,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10713C),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(_isOtpSent ? 'Verify OTP' : 'Create Account', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                  ),
+                ),
                 const SizedBox(height: 24),
                 Center(
                   child: Row(
@@ -658,19 +613,62 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       const Text('Already have an account?'),
                       TextButton(
                         onPressed: () => Navigator.of(context).pop(),
-                        child: const Text(
-                          'Login',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF10713C),
-                          ),
-                        ),
+                        child: const Text('Login', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF10713C))),
                       ),
                     ],
                   ),
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextField(TextEditingController controller, String label, IconData icon, {TextInputType? keyboardType}) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  Widget _buildPasswordField(TextEditingController controller, String label, bool obscure, Function(bool) onToggle) {
+    return TextField(
+      controller: controller,
+      obscureText: obscure,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: const Icon(Icons.lock),
+        suffixIcon: IconButton(icon: Icon(obscure ? Icons.visibility_off : Icons.visibility), onPressed: () => onToggle(!obscure)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  Widget _buildRoleCard(String title, String value, IconData icon) {
+    final isSelected = _selectedRole == value;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedRole = value),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF10713C) : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: isSelected ? const Color(0xFF10713C) : Colors.grey.shade300),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: isSelected ? Colors.white : const Color(0xFF666666), size: 24),
+              const SizedBox(height: 8),
+              Text(title, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isSelected ? Colors.white : const Color(0xFF333333))),
+            ],
           ),
         ),
       ),
