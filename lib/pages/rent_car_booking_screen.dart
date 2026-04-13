@@ -13,6 +13,8 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
   TimeOfDay _pickupTime = TimeOfDay.now();
   String? _selectedDistrict;
   String? _selectedThana;
+  String? _pickupDistrict;
+  String? _pickupThana;
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _pickupLocationController = TextEditingController();
 
@@ -99,7 +101,7 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
     }
   }
 
-  void _showDistrictPicker() {
+  void _showDistrictPicker({bool isPickup = false}) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -112,28 +114,40 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Select District',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Text(
+              isPickup ? 'Select Pickup District' : 'Select District',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             Expanded(
               child: ListView.builder(
                 itemCount: _districts.length,
                 itemBuilder: (context, index) {
+                  final isSelected = isPickup 
+                      ? (_pickupDistrict == _districts[index])
+                      : (_selectedDistrict == _districts[index]);
                   return ListTile(
                     dense: true,
                     title: Text(_districts[index]),
-                    trailing: _selectedDistrict == _districts[index]
+                    trailing: isSelected
                         ? const Icon(Icons.check, color: Color(0xFF10713C))
                         : null,
                     onTap: () {
                       setState(() {
-                        _selectedDistrict = _districts[index];
-                        if (_selectedDistrict == 'All') {
-                          _selectedThana = 'All';
+                        if (isPickup) {
+                          _pickupDistrict = _districts[index];
+                          if (_pickupDistrict == 'All') {
+                            _pickupThana = 'All';
+                          } else {
+                            _pickupThana = _districtThanas[_pickupDistrict]?.first ?? 'All';
+                          }
                         } else {
-                          _selectedThana = _filteredThanas.first;
+                          _selectedDistrict = _districts[index];
+                          if (_selectedDistrict == 'All') {
+                            _selectedThana = 'All';
+                          } else {
+                            _selectedThana = _filteredThanas.first;
+                          }
                         }
                       });
                       Navigator.pop(ctx);
@@ -148,7 +162,15 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
     );
   }
 
-  void _showThanaPicker() {
+  void _showThanaPicker({bool isPickup = false}) {
+    final district = isPickup ? _pickupDistrict : _selectedDistrict;
+    final List<String> thanas;
+    if (district == null || district == 'All') {
+      thanas = _districtThanas['All']!;
+    } else {
+      thanas = _districtThanas[district] ?? ['All'];
+    }
+    
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -156,7 +178,6 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        final thanas = _filteredThanas;
         return Container(
           height: MediaQuery.of(context).size.height * 0.35,
           padding: const EdgeInsets.all(16),
@@ -164,8 +185,8 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _selectedDistrict != null && _selectedDistrict != 'All'
-                    ? 'Select Thana ($_selectedDistrict)'
+                district != null && district != 'All'
+                    ? 'Select Thana ($district)'
                     : 'Select Thana',
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
@@ -174,14 +195,23 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                 child: ListView.builder(
                   itemCount: thanas.length,
                   itemBuilder: (context, index) {
+                    final isSelected = isPickup 
+                        ? (_pickupThana == thanas[index])
+                        : (_selectedThana == thanas[index]);
                     return ListTile(
                       dense: true,
                       title: Text(thanas[index]),
-                      trailing: _selectedThana == thanas[index]
+                      trailing: isSelected
                           ? const Icon(Icons.check, color: Color(0xFF10713C))
                           : null,
                       onTap: () {
-                        setState(() => _selectedThana = thanas[index]);
+                        setState(() {
+                          if (isPickup) {
+                            _pickupThana = thanas[index];
+                          } else {
+                            _selectedThana = thanas[index];
+                          }
+                        });
                         Navigator.pop(ctx);
                       },
                     );
@@ -204,12 +234,12 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
         foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.all(16),
+Container(
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
@@ -226,9 +256,9 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                 children: [
                   const Text(
                     'Trip Type',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       Expanded(
@@ -236,7 +266,7 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                           onTap: () => setState(() => _isWithReturn = true),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
                             decoration: BoxDecoration(
                               color: _isWithReturn
                                   ? const Color(0xFF10713C)
@@ -270,13 +300,13 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: GestureDetector(
                           onTap: () => setState(() => _isWithReturn = false),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
                             decoration: BoxDecoration(
                               color: !_isWithReturn
                                   ? const Color(0xFF10713C)
@@ -315,9 +345,9 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
@@ -334,9 +364,9 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                 children: [
                   const Text(
                     'Pickup Date & Time',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       Expanded(
@@ -344,8 +374,8 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                           onTap: _showDatePicker,
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 14,
+                              horizontal: 8,
+                              vertical: 8,
                             ),
                             decoration: BoxDecoration(
                               color: Colors.grey[100],
@@ -365,14 +395,14 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: GestureDetector(
                           onTap: _showTimePicker,
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 14,
+                              horizontal: 8,
+                              vertical: 8,
                             ),
                             decoration: BoxDecoration(
                               color: Colors.grey[100],
@@ -397,9 +427,9 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
@@ -416,17 +446,97 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                 children: [
                   const Text(
                     'Pickup Location',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => _showDistrictPicker(isPickup: true),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.map,
+                                    size: 18, color: Color(0xFF10713C)),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _pickupDistrict ?? 'District',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: _pickupDistrict != null
+                                          ? Colors.black
+                                          : Colors.grey[600],
+                                    ),
+                                  ),
+                                ),
+                                Icon(Icons.arrow_drop_down,
+                                    size: 20, color: Colors.grey[600]),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => _showThanaPicker(isPickup: true),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.location_city,
+                                    size: 18, color: Color(0xFF10713C)),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _pickupThana ?? 'Thana',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: _pickupThana != null
+                                          ? Colors.black
+                                          : Colors.grey[600],
+                                    ),
+                                  ),
+                                ),
+                                Icon(Icons.arrow_drop_down,
+                                    size: 20, color: Colors.grey[600]),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
                   TextField(
                     controller: _pickupLocationController,
+                    maxLines: 2,
                     decoration: InputDecoration(
-                      hintText: 'Enter pickup location',
+                      hintText: 'Enter full address',
                       filled: true,
                       fillColor: Colors.grey[100],
-                      prefixIcon: const Icon(Icons.location_on,
-                          color: Color(0xFF10713C), size: 18),
+                      prefixIcon: const Padding(
+                        padding: EdgeInsets.only(bottom: 50),
+                        child: Icon(Icons.home,
+                            color: Color(0xFF10713C), size: 18),
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: BorderSide.none,
@@ -436,9 +546,9 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
@@ -454,10 +564,10 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Delivery Address',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    'Destination Location',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       Expanded(
@@ -465,8 +575,8 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                           onTap: _showDistrictPicker,
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 14,
+                              horizontal: 8,
+                              vertical: 8,
                             ),
                             decoration: BoxDecoration(
                               color: Colors.grey[100],
@@ -495,14 +605,14 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: GestureDetector(
                           onTap: _showThanaPicker,
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 14,
+                              horizontal: 8,
+                              vertical: 8,
                             ),
                             decoration: BoxDecoration(
                               color: Colors.grey[100],
@@ -533,10 +643,10 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 4),
                   TextField(
                     controller: _addressController,
-                    maxLines: 3,
+                    maxLines: 2,
                     decoration: InputDecoration(
                       hintText: 'Enter full address',
                       filled: true,
@@ -555,7 +665,7 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -564,7 +674,7 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF10713C),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -572,7 +682,7 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                 child: const Text(
                   'Search Cars',
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                   ),

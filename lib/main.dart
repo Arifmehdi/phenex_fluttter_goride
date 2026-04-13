@@ -304,24 +304,35 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 32),
                 if (!_isOtpSent) ...[
-                  TextField(
-                    controller: _phoneController,
-                    keyboardType: TextInputType.phone,
-                    decoration: InputDecoration(
-                      labelText: 'Mobile Number',
-                      hintText: '+880 1700-000000',
-                      prefixIcon: const Icon(Icons.phone),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+TextField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(
+                    labelText: 'Email / Phone',
+                    prefixIcon: const Icon(Icons.person),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _sendOtp,
-                      style: ElevatedButton.styleFrom(
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _otpController,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    prefixIcon: const Icon(Icons.lock),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _verifyOtp,
+                    style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF10713C),
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
@@ -329,7 +340,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       child: const Text(
-                        'Send OTP',
+                        'Login',
                         style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                     ),
@@ -465,7 +476,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
 // ============== REGISTER SCREEN ==============
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({Key? key}) : super(key: key);
+  final String? selectedRole;
+  const RegisterScreen({Key? key, this.selectedRole}) : super(key: key);
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -479,9 +491,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _otpController = TextEditingController();
   bool _isOtpSent = false;
   String? _errorMessage;
-  String _selectedRole = 'driver';
+  late String _selectedRole;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedRole = widget.selectedRole ?? 'driver';
+  }
 
   void _sendOtp() {
     if (_nameController.text.isEmpty || _phoneController.text.length < 10) {
@@ -531,19 +549,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _isOtpSent ? 'Verify OTP' : 'Create Account',
+                  _isOtpSent ? 'Verify OTP' : (widget.selectedRole == 'corporate' ? 'Register Company' : 'Create Account'),
                   style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   _isOtpSent
                       ? 'Enter the OTP sent to your phone'
-                      : 'Register to get started',
+                      : (widget.selectedRole == 'corporate' ? 'Register your company to get started' : 'Register to get started'),
                   style: const TextStyle(color: Colors.grey, fontSize: 16),
                 ),
                 const SizedBox(height: 32),
                 if (!_isOtpSent) ...[
-                  _buildTextField(_nameController, 'Full Name', Icons.person),
+                  _buildTextField(_nameController, widget.selectedRole == 'corporate' ? 'Company Name' : 'Full Name', widget.selectedRole == 'corporate' ? Icons.business : Icons.person),
                   const SizedBox(height: 16),
                   _buildTextField(_phoneController, 'Mobile Number', Icons.phone, keyboardType: TextInputType.phone),
                   const SizedBox(height: 16),
@@ -551,18 +569,48 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   const SizedBox(height: 16),
                   _buildPasswordField(_confirmPasswordController, 'Confirm Password', _obscureConfirmPassword, (v) => setState(() => _obscureConfirmPassword = v)),
                   const SizedBox(height: 20),
-                  const Text('Select Role', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      _buildRoleCard('Driver', 'driver', Icons.drive_eta),
-                      const SizedBox(width: 12),
-                      _buildRoleCard('Corporate', 'corporate', Icons.business),
-                      const SizedBox(width: 12),
-                      _buildRoleCard('Both', 'both', Icons.people),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
+                  if (widget.selectedRole != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10713C).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFF10713C)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            widget.selectedRole == 'corporate' ? Icons.business : Icons.person,
+                            color: const Color(0xFF10713C),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            widget.selectedRole == 'corporate' ? 'Corporate Account' : '${widget.selectedRole} Account',
+                            style: const TextStyle(
+                              color: Color(0xFF10713C),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ] else ...[
+                    const Text('Select Role', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _buildRoleCard('Driver', 'driver', Icons.drive_eta),
+                        const SizedBox(width: 12),
+                        _buildRoleCard('Car Owner', 'owner', Icons.car_rental),
+                        const SizedBox(width: 12),
+                        _buildRoleCard('Corporate', 'corporate', Icons.business),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                  ],
                 ] else ...[
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -612,7 +660,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     children: [
                       const Text('Already have an account?'),
                       TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
+onPressed: () => Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(builder: (_) => const LoginScreen()),
+                        ),
                         child: const Text('Login', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF10713C))),
                       ),
                     ],
@@ -686,22 +736,7 @@ class RiderHomeScreen extends StatefulWidget {
 
 class _RiderHomeScreenState extends State<RiderHomeScreen> {
   int _selectedIndex = 0;
-  final List<String> _locations = ['', '']; // Starts with: pickup, destination
-  final int _maxAdditionalStops = 2;
-
-  void _addStop() {
-    if (_additionalStopsCount < _maxAdditionalStops) {
-      setState(() => _locations.insert(_locations.length - 1, ''));
-    }
-  }
-
-  void _removeStop(int index) {
-    if (index > 0 && index < _locations.length - 1) {
-      setState(() => _locations.removeAt(index));
-    }
-  }
-
-  int get _additionalStopsCount => _locations.length - 2;
+  final List<String> _locations = ['', ''];
 
   @override
   Widget build(BuildContext context) {
@@ -830,28 +865,14 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
                                     duration: const Duration(milliseconds: 300),
                                     child: const Icon(Icons.remove_circle, color: Colors.white, size: 20),
                                   ),
-                                  onPressed: () => _removeStop(index),
+                                  onPressed: () {},
                                 ),
                             ],
                           ),
                         ),
                       );
                     },
-                  ),
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    transitionBuilder: (child, animation) {
-                      return FadeTransition(opacity: animation, child: child);
-                    },
-                    child: _additionalStopsCount < _maxAdditionalStops
-                      ? TextButton.icon(
-                          key: const ValueKey('addStopBtn'),
-                          onPressed: _addStop,
-                          icon: const Icon(Icons.add_circle, color: Colors.white, size: 18),
-                          label: const Text('Add Stop', style: TextStyle(color: Colors.white, fontSize: 13)),
-                        )
-                      : const SizedBox.shrink(key: ValueKey('noAddBtn')),
-                  ),
+                    ),
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,

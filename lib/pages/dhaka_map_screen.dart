@@ -12,8 +12,7 @@ class DhakaMapScreen extends StatefulWidget {
 class _DhakaMapScreenState extends State<DhakaMapScreen> {
   final LatLng _dhakaCenter = LatLng(23.8103, 90.4125);
   late final MapController _mapController;
-  final List<String> _locations = ['', '']; // Starts with: pickup, destination
-  final int _maxAdditionalStops = 2;
+  final List<String> _locations = ['', '']; // pickup, destination
 
   @override
   void initState() {
@@ -23,20 +22,6 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
       _showLocationBottomSheet();
     });
   }
-
-  void _addStop() {
-    if (_additionalStopsCount < _maxAdditionalStops) {
-      setState(() => _locations.insert(_locations.length - 1, ''));
-    }
-  }
-
-  void _removeStop(int index) {
-    if (index > 0 && index < _locations.length - 1) {
-      setState(() => _locations.removeAt(index));
-    }
-  }
-
-  int get _additionalStopsCount => _locations.length - 2;
 
   void _showLocationBottomSheet() {
     showModalBottomSheet(
@@ -139,7 +124,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
                                     if (!isPickup && !isDestination)
                                       IconButton(
                                         icon: Icon(Icons.close, size: 18, color: Colors.grey[600]),
-                                        onPressed: () => _removeStop(index),
+                                        onPressed: null,
                                       ),
                                   ],
                                 ),
@@ -148,23 +133,6 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
                             ),
                           );
                         }),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 300),
-                          transitionBuilder: (child, animation) {
-                            return FadeTransition(opacity: animation, child: child);
-                          },
-                          child: _additionalStopsCount < _maxAdditionalStops
-                            ? Padding(
-                                key: const ValueKey('addStopBtn'),
-                                padding: const EdgeInsets.only(top: 8),
-                                child: TextButton.icon(
-                                  onPressed: _addStop,
-                                  icon: const Icon(Icons.add_circle, size: 18),
-                                  label: const Text('Add Stop'),
-                                ),
-                              )
-                            : const SizedBox.shrink(key: ValueKey('noAddBtn')),
-                        ),
                       ],
                     ),
                   ),

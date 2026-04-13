@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'quick_action_screens.dart';
 import 'dhaka_map_screen.dart';
 import 'rent_car_booking_screen.dart';
-import '../main.dart' show LoginScreen;
+import '../main.dart' show LoginScreen, RegisterScreen;
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -499,6 +499,10 @@ class _HomePageState extends State<HomePage> {
         if (service.title == 'Rent Car') {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const RentCarBookingScreen()),
+          );
+        } else if (service.title == 'Corporate') {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const RegisterScreen(selectedRole: 'corporate')),
           );
         } else {
           Navigator.of(context).push(
