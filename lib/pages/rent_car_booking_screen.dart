@@ -8,15 +8,21 @@ class RentCarBookingScreen extends StatefulWidget {
 }
 
 class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
-  bool _isWithReturn = true;
+  bool _isWithReturn = false;
   DateTime _pickupDate = DateTime.now();
   TimeOfDay _pickupTime = TimeOfDay.now();
+  DateTime _returnDate = DateTime.now().add(const Duration(days: 1));
+  TimeOfDay _returnTime = TimeOfDay.now();
+
   String? _selectedDistrict;
   String? _selectedThana;
   String? _pickupDistrict;
   String? _pickupThana;
+
   final TextEditingController _addressController = TextEditingController();
-  final TextEditingController _pickupLocationController = TextEditingController();
+  final TextEditingController _pickupLocationController =
+      TextEditingController();
+  final List<TextEditingController> _additionalStopsControllers = [];
 
   final List<String> _districts = [
     'All',
@@ -35,32 +41,105 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
   final Map<String, List<String>> _districtThanas = {
     'All': ['All'],
     'Dhaka': [
-      'Gulshan', 'Banani', 'Uttara', 'Dhanmondi', 'Mirpur', 'Mohammadpur',
-      'Lalbagh', 'Hazaribagh', 'Paltan', 'Ramna', 'Sabujbagh', 'Badda',
-      'Baridhara', 'Bashundhara', 'Cantonment',
+      'Gulshan',
+      'Banani',
+      'Uttara',
+      'Dhanmondi',
+      'Mirpur',
+      'Mohammadpur',
+      'Lalbagh',
+      'Hazaribagh',
+      'Paltan',
+      'Ramna',
+      'Sabujbagh',
+      'Badda',
+      'Baridhara',
+      'Bashundhara',
+      'Cantonment',
     ],
-    'Gazipur': ['Gazipur Sadar', 'Kaliakair', 'Kapasia', 'Sreepur', 'Tarakanda'],
-    'Narayanganj': ['Narayanganj Sadar', 'Bandar', 'Fatullah', 'Siddhirganj', 'Sonargaon'],
-    'Munshiganj': ['Munshiganj Sadar', 'Gazaria', 'Lohajong', 'Serchip', 'Tongibari'],
-    'Manikganj': ['Manikganj Sadar', 'Daulatpur', 'Ghior', 'Harirampur', 'Shibalaya'],
-    'Tangail': ['Tangail Sadar', 'Basail', 'Bhuapur', 'Delduar', 'Gopalpur', 'Kalihati'],
-    'Mymensingh': ['Mymensingh Sadar', 'Bhaluka', 'Fulpur', 'Gouripur', 'Ishwarganj'],
-    'Jamalpur': ['Jamalpur Sadar', 'Bokshiganj', 'Dewanganj', 'Madarganj', 'Mithabginj'],
-    'Netrokona': ['Netrokona Sadar', 'Atpara', 'Barhatta', 'Durgapur', 'Khalajabganj'],
-    'Kishoreganj': ['Kishoreganj Sadar', 'Bajitpur', 'Hossainpur', 'Itna', 'Katiadi'],
+    'Gazipur': [
+      'Gazipur Sadar',
+      'Kaliakair',
+      'Kapasia',
+      'Sreepur',
+      'Tarakanda',
+    ],
+    'Narayanganj': [
+      'Narayanganj Sadar',
+      'Bandar',
+      'Fatullah',
+      'Siddhirganj',
+      'Sonargaon',
+    ],
+    'Munshiganj': [
+      'Munshiganj Sadar',
+      'Gazaria',
+      'Lohajong',
+      'Serchip',
+      'Tongibari',
+    ],
+    'Manikganj': [
+      'Manikganj Sadar',
+      'Daulatpur',
+      'Ghior',
+      'Harirampur',
+      'Shibalaya',
+    ],
+    'Tangail': [
+      'Tangail Sadar',
+      'Basail',
+      'Bhuapur',
+      'Delduar',
+      'Gopalpur',
+      'Kalihati',
+    ],
+    'Mymensingh': [
+      'Mymensingh Sadar',
+      'Bhaluka',
+      'Fulpur',
+      'Gouripur',
+      'Ishwarganj',
+    ],
+    'Jamalpur': [
+      'Jamalpur Sadar',
+      'Bokshiganj',
+      'Dewanganj',
+      'Madarganj',
+      'Mithabginj',
+    ],
+    'Netrokona': [
+      'Netrokona Sadar',
+      'Atpara',
+      'Barhatta',
+      'Durgapur',
+      'Khalajabganj',
+    ],
+    'Kishoreganj': [
+      'Kishoreganj Sadar',
+      'Bajitpur',
+      'Hossainpur',
+      'Itna',
+      'Katiadi',
+    ],
   };
 
-  List<String> get _filteredThanas {
-    if (_selectedDistrict == null || _selectedDistrict == 'All') {
-      return _districtThanas['All']!;
-    }
-    return _districtThanas[_selectedDistrict] ?? ['All'];
+  void _addStop() {
+    setState(() {
+      _additionalStopsControllers.add(TextEditingController());
+    });
   }
 
-  void _showDatePicker() async {
+  void _removeStop(int index) {
+    setState(() {
+      _additionalStopsControllers[index].dispose();
+      _additionalStopsControllers.removeAt(index);
+    });
+  }
+
+  void _showDatePicker({bool isReturn = false}) async {
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: _pickupDate,
+      initialDate: isReturn ? _returnDate : _pickupDate,
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
       builder: (context, child) {
@@ -76,14 +155,20 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
       },
     );
     if (picked != null) {
-      setState(() => _pickupDate = picked);
+      setState(() {
+        if (isReturn) {
+          _returnDate = picked;
+        } else {
+          _pickupDate = picked;
+        }
+      });
     }
   }
 
-  void _showTimePicker() async {
+  void _showTimePicker({bool isReturn = false}) async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
-      initialTime: _pickupTime,
+      initialTime: isReturn ? _returnTime : _pickupTime,
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -97,7 +182,13 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
       },
     );
     if (picked != null) {
-      setState(() => _pickupTime = picked);
+      setState(() {
+        if (isReturn) {
+          _returnTime = picked;
+        } else {
+          _pickupTime = picked;
+        }
+      });
     }
   }
 
@@ -123,7 +214,7 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
               child: ListView.builder(
                 itemCount: _districts.length,
                 itemBuilder: (context, index) {
-                  final isSelected = isPickup 
+                  final isSelected = isPickup
                       ? (_pickupDistrict == _districts[index])
                       : (_selectedDistrict == _districts[index]);
                   return ListTile(
@@ -139,14 +230,18 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                           if (_pickupDistrict == 'All') {
                             _pickupThana = 'All';
                           } else {
-                            _pickupThana = _districtThanas[_pickupDistrict]?.first ?? 'All';
+                            _pickupThana =
+                                _districtThanas[_pickupDistrict]?.first ??
+                                'All';
                           }
                         } else {
                           _selectedDistrict = _districts[index];
                           if (_selectedDistrict == 'All') {
                             _selectedThana = 'All';
                           } else {
-                            _selectedThana = _filteredThanas.first;
+                            _selectedThana =
+                                (_districtThanas[_selectedDistrict] ?? ['All'])
+                                    .first;
                           }
                         }
                       });
@@ -170,7 +265,7 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
     } else {
       thanas = _districtThanas[district] ?? ['All'];
     }
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -188,14 +283,17 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
                 district != null && district != 'All'
                     ? 'Select Thana ($district)'
                     : 'Select Thana',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 16),
               Expanded(
                 child: ListView.builder(
                   itemCount: thanas.length,
                   itemBuilder: (context, index) {
-                    final isSelected = isPickup 
+                    final isSelected = isPickup
                         ? (_pickupThana == thanas[index])
                         : (_selectedThana == thanas[index]);
                     return ListTile(
@@ -238,7 +336,7 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-Container(
+            Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -263,39 +361,44 @@ Container(
                     children: [
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setState(() => _isWithReturn = true),
+                          onTap: () => setState(() => _isWithReturn = false),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            height: 44,
                             decoration: BoxDecoration(
-                              color: _isWithReturn
+                              color: !_isWithReturn
                                   ? const Color(0xFF10713C)
-                                  : Colors.grey[200],
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Center(
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.replay,
-                                    color: _isWithReturn
-                                        ? Colors.white
-                                        : Colors.grey[600],
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'With Return',
-                                    style: TextStyle(
-                                      color: _isWithReturn
-                                          ? Colors.white
-                                          : Colors.grey[600],
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
+                                  : Colors.grey[100],
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: !_isWithReturn
+                                    ? const Color(0xFF10713C)
+                                    : Colors.grey.shade300,
+                                width: 1.5,
                               ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.arrow_forward,
+                                  color: !_isWithReturn
+                                      ? Colors.white
+                                      : Colors.grey[600],
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Without Return',
+                                  style: TextStyle(
+                                    color: !_isWithReturn
+                                        ? Colors.white
+                                        : Colors.grey[700],
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -303,39 +406,44 @@ Container(
                       const SizedBox(width: 8),
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setState(() => _isWithReturn = false),
+                          onTap: () => setState(() => _isWithReturn = true),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            height: 44,
                             decoration: BoxDecoration(
-                              color: !_isWithReturn
+                              color: _isWithReturn
                                   ? const Color(0xFF10713C)
-                                  : Colors.grey[200],
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Center(
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.arrow_forward,
-                                    color: !_isWithReturn
-                                        ? Colors.white
-                                        : Colors.grey[600],
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Without Return',
-                                    style: TextStyle(
-                                      color: !_isWithReturn
-                                          ? Colors.white
-                                          : Colors.grey[600],
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
+                                  : Colors.grey[100],
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: _isWithReturn
+                                    ? const Color(0xFF10713C)
+                                    : Colors.grey.shade300,
+                                width: 1.5,
                               ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.replay,
+                                  color: _isWithReturn
+                                      ? Colors.white
+                                      : Colors.grey[600],
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'With Return',
+                                  style: TextStyle(
+                                    color: _isWithReturn
+                                        ? Colors.white
+                                        : Colors.grey[700],
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -362,16 +470,25 @@ Container(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Pickup Date & Time',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  Text(
+                    _isWithReturn
+                        ? 'Pickup & Return Details'
+                        : 'Pickup Date & Time',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 4),
+                  const Text(
+                    'Pickup:',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
                   Row(
                     children: [
                       Expanded(
                         child: GestureDetector(
-                          onTap: _showDatePicker,
+                          onTap: () => _showDatePicker(isReturn: false),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
@@ -383,8 +500,11 @@ Container(
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.calendar_today,
-                                    size: 18, color: Color(0xFF10713C)),
+                                const Icon(
+                                  Icons.calendar_today,
+                                  size: 18,
+                                  color: Color(0xFF10713C),
+                                ),
                                 const SizedBox(width: 8),
                                 Text(
                                   '${_pickupDate.day}/${_pickupDate.month}/${_pickupDate.year}',
@@ -398,7 +518,7 @@ Container(
                       const SizedBox(width: 8),
                       Expanded(
                         child: GestureDetector(
-                          onTap: _showTimePicker,
+                          onTap: () => _showTimePicker(isReturn: false),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
@@ -410,8 +530,11 @@ Container(
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.access_time,
-                                    size: 18, color: Color(0xFF10713C)),
+                                const Icon(
+                                  Icons.access_time,
+                                  size: 18,
+                                  color: Color(0xFF10713C),
+                                ),
                                 const SizedBox(width: 8),
                                 Text(
                                   _pickupTime.format(context),
@@ -424,6 +547,76 @@ Container(
                       ),
                     ],
                   ),
+                  if (_isWithReturn) ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Stay / Return:',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => _showDatePicker(isReturn: true),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.event_available,
+                                    size: 18,
+                                    color: Color(0xFFED1C24),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${_returnDate.day}/${_returnDate.month}/${_returnDate.year}',
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => _showTimePicker(isReturn: true),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.access_time,
+                                    size: 18,
+                                    color: Color(0xFFED1C24),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    _returnTime.format(context),
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -465,8 +658,11 @@ Container(
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.map,
-                                    size: 18, color: Color(0xFF10713C)),
+                                const Icon(
+                                  Icons.map,
+                                  size: 18,
+                                  color: Color(0xFF10713C),
+                                ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
@@ -479,8 +675,11 @@ Container(
                                     ),
                                   ),
                                 ),
-                                Icon(Icons.arrow_drop_down,
-                                    size: 20, color: Colors.grey[600]),
+                                Icon(
+                                  Icons.arrow_drop_down,
+                                  size: 20,
+                                  color: Colors.grey[600],
+                                ),
                               ],
                             ),
                           ),
@@ -501,8 +700,11 @@ Container(
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.location_city,
-                                    size: 18, color: Color(0xFF10713C)),
+                                const Icon(
+                                  Icons.location_city,
+                                  size: 18,
+                                  color: Color(0xFF10713C),
+                                ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
@@ -515,8 +717,11 @@ Container(
                                     ),
                                   ),
                                 ),
-                                Icon(Icons.arrow_drop_down,
-                                    size: 20, color: Colors.grey[600]),
+                                Icon(
+                                  Icons.arrow_drop_down,
+                                  size: 20,
+                                  color: Colors.grey[600],
+                                ),
                               ],
                             ),
                           ),
@@ -534,8 +739,11 @@ Container(
                       fillColor: Colors.grey[100],
                       prefixIcon: const Padding(
                         padding: EdgeInsets.only(bottom: 50),
-                        child: Icon(Icons.home,
-                            color: Color(0xFF10713C), size: 18),
+                        child: Icon(
+                          Icons.home,
+                          color: Color(0xFF10713C),
+                          size: 18,
+                        ),
                       ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -572,7 +780,7 @@ Container(
                     children: [
                       Expanded(
                         child: GestureDetector(
-                          onTap: _showDistrictPicker,
+                          onTap: () => _showDistrictPicker(isPickup: false),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
@@ -584,8 +792,11 @@ Container(
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.map,
-                                    size: 18, color: Color(0xFF10713C)),
+                                const Icon(
+                                  Icons.map,
+                                  size: 18,
+                                  color: Color(0xFF10713C),
+                                ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
@@ -598,8 +809,11 @@ Container(
                                     ),
                                   ),
                                 ),
-                                Icon(Icons.arrow_drop_down,
-                                    size: 20, color: Colors.grey[600]),
+                                Icon(
+                                  Icons.arrow_drop_down,
+                                  size: 20,
+                                  color: Colors.grey[600],
+                                ),
                               ],
                             ),
                           ),
@@ -608,7 +822,7 @@ Container(
                       const SizedBox(width: 8),
                       Expanded(
                         child: GestureDetector(
-                          onTap: _showThanaPicker,
+                          onTap: () => _showThanaPicker(isPickup: false),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
@@ -620,8 +834,11 @@ Container(
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.location_city,
-                                    size: 18, color: Color(0xFF10713C)),
+                                const Icon(
+                                  Icons.location_city,
+                                  size: 18,
+                                  color: Color(0xFF10713C),
+                                ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
@@ -634,8 +851,11 @@ Container(
                                     ),
                                   ),
                                 ),
-                                Icon(Icons.arrow_drop_down,
-                                    size: 20, color: Colors.grey[600]),
+                                Icon(
+                                  Icons.arrow_drop_down,
+                                  size: 20,
+                                  color: Colors.grey[600],
+                                ),
                               ],
                             ),
                           ),
@@ -648,13 +868,16 @@ Container(
                     controller: _addressController,
                     maxLines: 2,
                     decoration: InputDecoration(
-                      hintText: 'Enter full address',
+                      hintText: 'Enter destination address',
                       filled: true,
                       fillColor: Colors.grey[100],
                       prefixIcon: const Padding(
                         padding: EdgeInsets.only(bottom: 50),
-                        child: Icon(Icons.home,
-                            color: Color(0xFF10713C), size: 18),
+                        child: Icon(
+                          Icons.flag,
+                          color: Color(0xFF10713C),
+                          size: 18,
+                        ),
                       ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -662,6 +885,65 @@ Container(
                       ),
                     ),
                   ),
+
+                  if (_isWithReturn) ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Multiple Stops / Where to go',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...List.generate(
+                      _additionalStopsControllers.length,
+                      (index) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _additionalStopsControllers[index],
+                                decoration: InputDecoration(
+                                  hintText: 'Stop ${index + 1}',
+                                  filled: true,
+                                  fillColor: Colors.grey[100],
+                                  prefixIcon: const Icon(
+                                    Icons.add_location,
+                                    color: Color(0xFF10713C),
+                                    size: 18,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.remove_circle,
+                                color: Colors.red,
+                              ),
+                              onPressed: () => _removeStop(index),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: _addStop,
+                      icon: const Icon(
+                        Icons.add_circle_outline,
+                        color: Color(0xFF10713C),
+                      ),
+                      label: const Text(
+                        'Add Another Place',
+                        style: TextStyle(color: Color(0xFF10713C)),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -689,6 +971,7 @@ Container(
                 ),
               ),
             ),
+            const SizedBox(height: 100),
           ],
         ),
       ),
@@ -699,6 +982,9 @@ Container(
   void dispose() {
     _addressController.dispose();
     _pickupLocationController.dispose();
+    for (var controller in _additionalStopsControllers) {
+      controller.dispose();
+    }
     super.dispose();
   }
 }

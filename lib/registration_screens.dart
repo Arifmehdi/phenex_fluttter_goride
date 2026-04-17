@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'locale_controller.dart';
 import 'package:image_picker/image_picker.dart';
 
 class OwnerProfileScreen extends StatefulWidget {
@@ -403,14 +405,266 @@ class StepIndicator extends StatelessWidget {
   }
 }
 
-class DriverDashboardScreen extends StatelessWidget {
-  const DriverDashboardScreen({Key? key}) : super(key: key);
+class DriverDashboardScreen extends StatefulWidget {
+  final String userRole;
+  const DriverDashboardScreen({super.key, this.userRole = 'driver'});
+
+  @override
+  State<DriverDashboardScreen> createState() => _DriverDashboardScreenState();
+}
+
+class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
+  final LocaleController localeController = Get.find<LocaleController>();
+  bool _isOnline = false;
+  
+  // Simulation of profile completeness
+  final double _progress = 0.4; // 40% after Phase 1
 
   @override
   Widget build(BuildContext context) {
+    final isCorporate = widget.userRole == 'corporate';
+    
     return Scaffold(
-      appBar: AppBar(title: const Text('Driver Dashboard'), backgroundColor: const Color(0xFF10713C)),
-      body: const Center(child: Text('Driver Dashboard')),
+      appBar: AppBar(
+        title: Text(isCorporate ? localeController.get('Corporate Dashboard', 'কর্পোরেট ড্যাশবোর্ড') : localeController.get('Driver Dashboard', 'ড্রাইভার ড্যাশবোর্ড')),
+        backgroundColor: const Color(0xFF10713C),
+        actions: [
+          if (!isCorporate)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Text(_isOnline ? 'Online' : 'Offline', style: const TextStyle(fontSize: 12)),
+                  Switch(
+                    value: _isOnline,
+                    onChanged: (v) => setState(() => _isOnline = v),
+                    activeColor: Colors.white,
+                    activeTrackColor: Colors.lightGreenAccent,
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildProfileSummary(isCorporate),
+            const SizedBox(height: 20),
+            _buildProgressSection(),
+            const SizedBox(height: 24),
+            _buildWalletCard(),
+            const SizedBox(height: 24),
+            _buildStatsGrid(),
+            const SizedBox(height: 24),
+            _buildRecentActivity(),
+            const SizedBox(height: 24),
+            _buildActionButtons(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileSummary(bool isCorporate) {
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 35,
+          backgroundColor: const Color(0xFF10713C),
+          child: Icon(isCorporate ? Icons.business : Icons.person, size: 35, color: Colors.white),
+        ),
+        const SizedBox(width: 16),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isCorporate ? 'TechCorp Ltd.' : 'Karim Ahmed',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            Text(
+              isCorporate ? localeController.get('Verified Account', 'ভেরিফাইড অ্যাকাউন্ট') : localeController.get('Level 1 Driver', 'লেভেল ১ ড্রাইভার'),
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+          ],
+        ),
+        const Spacer(),
+        IconButton(icon: const Icon(Icons.settings_outlined, color: Colors.grey), onPressed: () {}),
+      ],
+    );
+  }
+
+  Widget _buildProgressSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10713C).withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF10713C).withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(localeController.get('Profile Completion', 'প্রোফাইল সম্পন্ন'), style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text('${(_progress * 100).toInt()}%', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF10713C))),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: LinearProgressIndicator(
+              value: _progress,
+              minHeight: 10,
+              backgroundColor: Colors.grey.shade200,
+              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF10713C)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => OwnerProfileScreen(selectedRole: widget.userRole))),
+            child: Row(
+              children: [
+                Text(
+                  localeController.get('Complete Phase 2 & 3 now', 'ফেজ ২ এবং ৩ সম্পন্ন করুন'),
+                  style: const TextStyle(fontSize: 13, color: Color(0xFF10713C), fontWeight: FontWeight.bold),
+                ),
+                const Icon(Icons.arrow_forward_ios, size: 12, color: Color(0xFF10713C)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWalletCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [Color(0xFF10713C), Color(0xFF0D5A30)]),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: const Color(0xFF10713C).withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 5))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(localeController.get('Available Balance', 'বর্তমান ব্যালেন্স'), style: const TextStyle(color: Colors.white70, fontSize: 14)),
+          const SizedBox(height: 8),
+          const Text('৳ 1,250.00', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              _buildWalletAction(Icons.account_balance_wallet, localeController.get('Withdraw', 'উত্তোলন')),
+              const SizedBox(width: 20),
+              _buildWalletAction(Icons.history, localeController.get('History', 'ইতিহাস')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWalletAction(IconData icon, String label) {
+    return Row(
+      children: [
+        Icon(icon, color: Colors.white70, size: 18),
+        const SizedBox(width: 8),
+        Text(label, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
+      ],
+    );
+  }
+
+  Widget _buildStatsGrid() {
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      mainAxisSpacing: 12,
+      crossAxisSpacing: 12,
+      childAspectRatio: 1.6,
+      children: [
+        _buildStatItem(localeController.get('Total Trips', 'মোট ট্রিপ'), '45', Icons.directions_car, Colors.blue),
+        _buildStatItem(localeController.get('Rating', 'রেটিং'), '4.8', Icons.star, Colors.orange),
+        _buildStatItem(localeController.get('Acceptance', 'গ্রহণযোগ্যতা'), '92%', Icons.check_circle, Colors.green),
+        _buildStatItem(localeController.get('Cancelled', 'বাতিল'), '2', Icons.cancel, Colors.red),
+      ],
+    );
+  }
+
+  Widget _buildStatItem(String label, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 5)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 6),
+              Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentActivity() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(localeController.get('Pending Requests', 'অপেক্ষমান অনুরোধ'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade200)),
+          child: ListTile(
+            contentPadding: const EdgeInsets.all(12),
+            leading: CircleAvatar(backgroundColor: Colors.orange.shade50, child: const Icon(Icons.local_offer, color: Colors.orange)),
+            title: const Text('Trip to Dhaka Airport', style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: const Text('15 km • ৳ 450 Base Fare'),
+            trailing: ElevatedButton(
+              onPressed: () {},
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10713C)),
+              child: const Text('Bid Now', style: TextStyle(color: Colors.white, fontSize: 12)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionButtons() {
+    return Column(
+      children: [
+        _buildMenuButton(Icons.directions_car, localeController.get('My Fleet', 'আমার বহর')),
+        _buildMenuButton(Icons.description, localeController.get('Documents', 'নথি')),
+        _buildMenuButton(Icons.support_agent, localeController.get('Support', 'সহায়তা')),
+      ],
+    );
+  }
+
+  Widget _buildMenuButton(IconData icon, String title) {
+    return ListTile(
+      leading: Icon(icon, color: const Color(0xFF10713C)),
+      title: Text(title),
+      trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+      onTap: () {},
     );
   }
 }
