@@ -1,0 +1,267 @@
+Great — your PRD already clearly defines everything. Now I’ll convert it into a Flutter app implementation guide (step-by-step) so you can build the registration system properly.
+
+✅ 1. Understand Roles (VERY IMPORTANT)
+
+From your PRD
+
+You have 4 user roles:
+
+One-Time Client (no full registration)
+Corporate Client
+Owner / Driver
+Admin (web only)
+
+👉 In Flutter app, focus on:
+
+Owner / Driver
+Corporate Client
+✅ 2. Registration Flow Design (Based on PRD)
+🔹 Owner / Driver (Main Case)
+
+Use Progressive Registration (Best Practice)
+
+📱 Phase 1 (Quick Signup — App Screen 1)
+
+Fields:
+
+Full Name
+Mobile Number
+Password
+Confirm Password
+Role:
+Driver
+Owner
+Both
+
+👉 After submit:
+
+Send OTP
+Verify OTP
+Create account
+Redirect to Dashboard
+📱 Phase 2 (Profile Screen)
+
+Fields:
+
+Father Name (optional)
+Date of Birth
+WhatsApp Number
+Email
+NID Number
+Address
+Emergency Contact
+📱 Phase 3 (Vehicle + Driver Info)
+
+Driver:
+
+License Number
+Expiry Date
+Experience
+Upload:
+NID
+License
+Photo
+
+Car:
+
+Model
+Brand
+Category
+Registration Number
+Seat Capacity
+AC / Non-AC
+Fuel Type
+Color
+Location
+Rates
+
+Uploads:
+
+Car Documents
+Car Photos (Front, Side, Rear, Interior)
+🔹 Corporate Registration
+📱 Single Screen Form
+
+Fields:
+
+Company Name
+Contact Person
+Mobile
+Email
+Address
+Billing Cycle
+Service Type
+Number of Cars
+Password
+✅ 3. Flutter App Structure (Clean Architecture)
+📁 Folder Structure
+lib/
+ ├── core/
+ ├── features/
+ │    ├── auth/
+ │    │     ├── screens/
+ │    │     ├── widgets/
+ │    │     ├── controller/
+ │    │     ├── model/
+ │    │     ├── service/
+ │
+ │    ├── owner/
+ │    ├── corporate/
+ │
+ ├── routes/
+ ├── main.dart
+✅ 4. Screens You Need
+🔐 Auth Screens
+Splash Screen
+Role Selection Screen
+Login Screen
+Register Screen (Phase 1)
+OTP Verification Screen
+👤 Owner/Driver Screens
+Dashboard
+Profile Completion (Phase 2)
+Car & Document Upload (Phase 3)
+🏢 Corporate Screens
+Corporate Register
+Corporate Dashboard
+✅ 5. Step-by-Step Implementation
+🟢 STEP 1 — Create Flutter Project
+flutter create goride_app
+cd goride_app
+🟢 STEP 2 — Add Packages
+dependencies:
+  get: ^4.6.6
+  dio: ^5.4.0
+  image_picker: ^1.0.7
+  flutter_form_builder:
+🟢 STEP 3 — Role Selection UI
+enum UserRole { driver, owner, both, corporate }
+🟢 STEP 4 — Registration API Model
+class RegisterRequest {
+  String name;
+  String phone;
+  String password;
+  String role;
+
+  RegisterRequest({
+    required this.name,
+    required this.phone,
+    required this.password,
+    required this.role,
+  });
+
+  Map<String, dynamic> toJson() => {
+    "name": name,
+    "phone": phone,
+    "password": password,
+    "role": role,
+  };
+}
+🟢 STEP 5 — OTP Flow (Important)
+Flow:
+User submits form
+Call API → send OTP
+Show OTP screen
+Verify OTP
+Save token
+🟢 STEP 6 — API Service (Laravel Backend Ready)
+class AuthService {
+  final Dio dio = Dio();
+
+  Future register(RegisterRequest data) async {
+    return await dio.post('/register', data: data.toJson());
+  }
+
+  Future verifyOtp(String phone, String otp) async {
+    return await dio.post('/verify-otp', data: {
+      "phone": phone,
+      "otp": otp
+    });
+  }
+}
+🟢 STEP 7 — State Management (GetX)
+class AuthController extends GetxController {
+  var isLoading = false.obs;
+
+  void registerUser(RegisterRequest data) async {
+    try {
+      isLoading(true);
+      await AuthService().register(data);
+      Get.to(() => OtpScreen());
+    } finally {
+      isLoading(false);
+    }
+  }
+}
+🟢 STEP 8 — Multi-Step Form (IMPORTANT)
+
+Use:
+
+Stepper Widget OR
+Separate Screens (better UX)
+
+Recommended:
+👉 Separate screens (Phase 1 → Phase 2 → Phase 3)
+
+✅ 6. Backend Mapping (Laravel)
+
+From PRD DB:
+
+users → basic info
+owners → nid, address
+drivers → license info
+cars → vehicle info
+vehicle_documents → uploads
+
+👉 Flutter sends data step-by-step.
+
+✅ 7. UI Best Practices (From PRD)
+
+✔ Mobile First
+✔ Large input fields
+✔ Bangla + English toggle
+✔ Progress bar (VERY IMPORTANT)
+
+Example:
+
+Profile 20% Complete
+[█████-----]
+✅ 8. Important UX Logic
+
+✔ Do NOT show full form at once
+✔ Keep registration under 30 seconds first
+✔ Allow save & continue later
+✔ Upload step by step
+
+✅ 9. Common Mistakes (Avoid)
+
+❌ One long form
+❌ OTP before form
+❌ No progress indicator
+❌ Too many required fields at start
+
+✅ 10. Final Flow Summary
+Select Role
+   ↓
+Quick Register (30 sec)
+   ↓
+OTP Verify
+   ↓
+Dashboard
+   ↓
+Complete Profile (Phase 2)
+   ↓
+Add Car + Documents (Phase 3)
+   ↓
+Admin Review
+🚀 If You Want Next Step
+
+I can help you with:
+
+Full Flutter UI code (ready screens)
+Laravel API routes + controller
+Database migration
+Complete GetX architecture
+
+Just tell me:
+👉 “give full flutter registration UI code”

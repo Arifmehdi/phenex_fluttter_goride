@@ -134,7 +134,9 @@ class RoleSelectionScreen extends StatelessWidget {
               title: 'Driver',
               description: 'Earn by driving your own car',
               onTap: () => Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const UnifiedDashboard(role: 'driver')),
+                MaterialPageRoute(
+                  builder: (_) => const UnifiedDashboard(role: 'driver'),
+                ),
               ),
             ),
             const SizedBox(height: 20),
@@ -144,7 +146,9 @@ class RoleSelectionScreen extends StatelessWidget {
               title: 'Car Owner',
               description: 'Manage your fleet of cars',
               onTap: () => Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const UnifiedDashboard(role: 'owner')),
+                MaterialPageRoute(
+                  builder: (_) => const UnifiedDashboard(role: 'owner'),
+                ),
               ),
             ),
             const SizedBox(height: 20),
@@ -154,7 +158,21 @@ class RoleSelectionScreen extends StatelessWidget {
               title: 'Corporate',
               description: 'Manage fleet and billing',
               onTap: () => Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const UnifiedDashboard(role: 'corporate')),
+                MaterialPageRoute(
+                  builder: (_) => const UnifiedDashboard(role: 'corporate'),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            _roleCard(
+              context,
+              icon: Icons.admin_panel_settings,
+              title: 'Admin',
+              description: 'Manage platform & users',
+              onTap: () => Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (_) => const UnifiedDashboard(role: 'admin'),
+                ),
               ),
             ),
           ],
