@@ -1062,7 +1062,14 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      drawer: const SidebarMenu(role: 'solo'),
+      drawer: SidebarMenu(
+        role: 'solo',
+        onSelectedIndexChanged: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
+      ),
       appBar: AppBar(
         leading: Builder(
           builder: (context) => IconButton(
@@ -1874,7 +1881,14 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      drawer: const SidebarMenu(role: 'driver'),
+      drawer: SidebarMenu(
+        role: 'driver',
+        onSelectedIndexChanged: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
+      ),
       appBar: AppBar(
         leading: Builder(
           builder: (context) => IconButton(
@@ -2328,7 +2342,14 @@ class _CorporateDashboardScreenState extends State<CorporateDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      drawer: const SidebarMenu(role: 'corporate'),
+      drawer: SidebarMenu(
+        role: 'corporate',
+        onSelectedIndexChanged: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
+      ),
       appBar: AppBar(
         leading: Builder(
           builder: (context) => IconButton(

@@ -29,7 +29,14 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
       () => Scaffold(
         key: _scaffoldKey,
         appBar: _buildAppBar(),
-        drawer: SidebarMenu(role: widget.role),
+        drawer: SidebarMenu(
+          role: widget.role,
+          onSelectedIndexChanged: (index) {
+            setState(() {
+              _selectedIndex = index;
+            });
+          },
+        ),
         body: IndexedStack(
           index: _selectedIndex,
           children: [
