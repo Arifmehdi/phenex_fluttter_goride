@@ -1,8 +1,13 @@
+import '../main.dart';
+import 'home_page.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
 import '../locale_controller.dart';
 import '../registration_screens.dart' show OwnerProfileScreen;
 import 'dashboard_details_pages.dart';
+import '../services/api_service.dart';
+import '../widgets/sidebar_menu.dart';
 
 class UnifiedDashboard extends StatefulWidget {
   final String role; // 'driver', 'owner', 'corporate', 'admin'
@@ -16,12 +21,15 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
   final LocaleController localeController = Get.find<LocaleController>();
   bool _isOnline = false;
   int _selectedIndex = 0;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   Widget build(BuildContext context) {
     return Obx(
       () => Scaffold(
+        key: _scaffoldKey,
         appBar: _buildAppBar(),
+        drawer: SidebarMenu(role: widget.role),
         body: IndexedStack(
           index: _selectedIndex,
           children: [
@@ -32,11 +40,21 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
           ],
         ),
         bottomNavigationBar: BottomNavigationBar(
-          currentIndex: _selectedIndex,
+          currentIndex: _selectedIndex + 1,
           type: BottomNavigationBarType.fixed,
           selectedItemColor: const Color(0xFF10713C),
-          onTap: (index) => setState(() => _selectedIndex = index),
+          onTap: (index) {
+            if (index == 0) {
+              Get.offAll(() => HomePage());
+            } else {
+              setState(() => _selectedIndex = index - 1);
+            }
+          },
           items: [
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.public),
+              label: 'Portal',
+            ),
             BottomNavigationBarItem(
               icon: const Icon(Icons.dashboard),
               label: localeController.get('Home', 'হোম'),
@@ -84,6 +102,10 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
       title = localeController.get('Admin Dashboard', 'অ্যাডমিন ড্যাশবোর্ড');
 
     return AppBar(
+      leading: IconButton(
+        icon: const Icon(Icons.menu),
+        onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+      ),
       title: Text(
         title,
         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -702,7 +724,11 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
           Icons.logout,
           localeController.get('Logout', 'লগআউট'),
           color: Colors.red,
-          onTap: () => Get.offAllNamed('/'),
+          onTap: () async {
+            final apiService = Get.find<ApiService>();
+            await apiService.logout();
+            Get.offAll(() => const SplashScreen());
+          },
         ),
       ],
     );
@@ -722,3 +748,4 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
     );
   }
 }
+

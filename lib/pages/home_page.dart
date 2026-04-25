@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
+import '../services/api_service.dart';
 
 import 'quick_action_screens.dart';
 import 'dhaka_map_screen.dart';
 import 'rent_car_booking_screen.dart';
-import '../main.dart' show LoginScreen, RegisterScreen;
+import '../main.dart' show GoRideApp, LoginScreen, RegisterScreen, SplashScreen;
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -100,17 +103,25 @@ class _HomePageState extends State<HomePage> {
           unselectedItemColor: Colors.grey,
           selectedFontSize: 12,
           unselectedFontSize: 12,
-          iconSize: 26,
           onTap: (index) {
             if (index == 3) {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-              );
+              final apiService = Get.find<ApiService>();
+              if (apiService.isLoggedIn()) {
+                final user = apiService.getUser();
+                final role = user?['role'] as String?;
+                Get.offAll(() => GoRideApp.getDashboardForRole(role));
+              } else {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                );
+              }
             } else {
-              setState(() => _selectedIndex = index);
+              setState(() {
+                _selectedIndex = index;
+              });
             }
           },
-          items: const [
+          items: [
             BottomNavigationBarItem(
               icon: Icon(Icons.home_outlined),
               activeIcon: Icon(Icons.home),
@@ -190,7 +201,21 @@ class _HomePageState extends State<HomePage> {
               childAspectRatio: 1,
               children: services.map((service) {
                 return GestureDetector(
-                  onTap: () {},
+                  onTap: () {
+                    if (service.title == 'Rent Car') {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const RentCarBookingScreen()),
+                      );
+                    } else if (service.title == 'Corporate') {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const RegisterScreen(selectedRole: 'corporate')),
+                      );
+                    } else {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const DhakaMapScreen()),
+                      );
+                    }
+                  },
                   child: Card(
                     elevation: 4,
                     child: Container(
@@ -401,8 +426,11 @@ class _HomePageState extends State<HomePage> {
             _buildAccountMenuItem(Icons.payment, 'Payment Methods', () {}),
             _buildAccountMenuItem(Icons.settings, 'Settings', () {}),
             _buildAccountMenuItem(Icons.help, 'Help & Support', () {}),
-            _buildAccountMenuItem(Icons.logout, 'Logout', () {}),
-          ],
+            _buildAccountMenuItem(Icons.logout, 'Logout', () async {
+              final apiService = Get.find<ApiService>();
+              await apiService.logout();
+              Get.offAll(() => const SplashScreen());
+            }),          ],
         ),
       ),
     );

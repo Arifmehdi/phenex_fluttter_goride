@@ -1,0 +1,770 @@
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+GoRide Bangladesh 
+Product Requirements Document 
+Version 3.0 — Enhanced & Final 
+Document Type 
+Product Name 
+Product Requirements Document (PRD) 
+GoRide Bangladesh 
+Platform 
+Version 
+Website (Phase 1) | Mobile App (Phase 2) 
+3.0 — Enhanced from v2.2 
+Date 
+Status 
+March 2026 
+Final — Ready for Developer Handoff 
+Language 
+English (Bilingual: English & Bangla) 
+GoRide Bangladesh  |  Confidential  |  Page 1 of 25 
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+1. Product Overview 
+GoRide Bangladesh is a bilingual car rental and transport marketplace serving individuals, corporate 
+clients, car owners, and drivers across Bangladesh. The platform is designed to be mobile-first, Bangla
+friendly, and built for scale from day one. 
+Attribute 
+Detail 
+Product Name 
+GoRide Bangladesh 
+Type 
+Car rental & transport marketplace 
+Phase 1 Platform 
+Website (Responsive, mobile-first) 
+Phase 2 Platform 
+Mobile App (Android + iOS) 
+Target Market 
+Bangladesh — nationwide 
+Languages 
+English and Bangla (bilingual toggle) 
+1.1 Business Lines 
+• Owners / Drivers — onboard cars and drivers to supply the fleet 
+• Corporate Clients — manage company transport, billing, and fleet usage 
+• One-Time / Solo Clients — book transport on demand without full registration 
+• Tours & Travels — structured tour packages (Phase 2, structure prepared now) 
+1.2 Business Objectives 
+• Onboard car owners and drivers to build supply 
+• Capture one-time and corporate client demand 
+• Enable corporate clients to monitor usage and billing independently 
+• Give owners/drivers full visibility of trips, ratings, and documents 
+• Give admin complete operational control with automation support 
+• Build a platform architected for future scaling (app, payments, tracking) 
+GoRide Bangladesh  |  Confidential  |  Page 2 of 25 
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+2. Core Principles 
+Principle 
+Description 
+Mobile-First 
+Majority of Bangladesh users access services via 
+smartphone 
+Bilingual 
+English and Bangla — correct Bangla text, no 
+Hindi content 
+Low Friction 
+Users experience value before being asked to 
+verify or register 
+Progressive Onboarding 
+Long forms broken into steps; users can save and 
+continue later 
+Automation-First Admin 
+Document verification automated via API/OCR; 
+manual review only for exceptions 
+Scalable Data Structure 
+Database designed to support future mobile app, 
+payments, live tracking 
+Security by Default 
+HTTPS, CSRF, rate limiting, RBAC, password 
+hashing from day one 
+Bangladesh-Relevant Content 
+Only locally available vehicle categories and 
+realistic tour destinations 
+Brand Consistency 
+GoRide logo used exactly as provided, green
+and-white theme throughout 
+GoRide Bangladesh  |  Confidential  |  Page 3 of 25 
+GoRide Bangladesh — Product Requirements Document Version 3.0 — Final 
+GoRide Bangladesh  |  Confidential  |  Page 4 of 25 
+3. User Types & Personas 
+3.1 One-Time / Solo Client 
+A person who needs a single trip — airport transfer, event, day trip. May be tech-savvy or not. Primarily 
+mobile. Wants speed and simplicity with no commitment to register. 
+ 
+Attribute Detail 
+Authentication OTP verification (at time of form submission, not 
+before) 
+Key Actions Fill booking form → OTP verify → submission 
+confirmed 
+Pain Point Addressed OTP moved to end of funnel; user fills form freely 
+first 
+ 
+3.2 Corporate Client 
+A company transport manager or admin who needs ongoing fleet management, billing transparency, 
+and the ability to submit new car requests without calling the GoRide team. 
+ 
+Attribute Detail 
+Authentication Login + Password (email or phone) 
+Key Actions View fleet, track billing, submit car requests, view 
+history 
+Unique Need Billing visibility — outstanding amounts, next 
+billing date, invoice download 
+ 
+3.3 Car Owner / Driver 
+An individual who owns one or more cars, or drives for an owner. May have limited digital literacy. 
+Likely registers via mobile from the field (e.g. sitting in traffic after seeing a Facebook ad). 
+ 
+Attribute Detail 
+Authentication OTP for mobile verify, then Login + Password 
+Key Actions Register (progressive), upload documents, 
+manage cars, view trips/ratings 
+Pain Point Addressed Registration split into quick signup (30 sec) + 
+dashboard document completion 
+Admin Follow-Up If profile incomplete after 3 days, admin can call 
+the captured lead 
+ 
+3.4 Admin 
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+GoRide internal staff who manage all platform operations — user approvals, document review, 
+corporate account management, content updates, and billing. 
+Attribute 
+Detail 
+Authentication 
+Secure admin login with role-based access 
+control (RBAC) 
+Key Actions 
+Approve/reject drivers, manage corporates, 
+update content, review submissions 
+Scalability Requirement 
+Admin workload kept manageable via API/OCR 
+automation on document verification 
+GoRide Bangladesh  |  Confidential  |  Page 5 of 25 
+GoRide Bangladesh — Product Requirements Document Version 3.0 — Final 
+GoRide Bangladesh  |  Confidential  |  Page 6 of 25 
+4. UX Flow — Key Improvements (v3.0) 
+This section captures the critical UX changes recommended in v3.0. These are not optional — they 
+directly impact conversion rates and platform scalability. 
+ 
+4.1 One-Time Client Booking Flow (Revised) 
+Previous flow required OTP verification BEFORE the booking form. This creates high drop-off. The 
+revised flow moves OTP to the end of the funnel. 
+ 
+Step Action Rationale 
+Step 1 User fills full booking form 
+(destination, date, car type, etc.) 
+User experiences value first; 
+builds psychological investment 
+Step 2 User clicks 'Request Car' / 
+'Submit' 
+User is at the point of 
+commitment 
+Step 3 Popup appears: enter mobile 
+number → OTP sent 
+User is motivated to complete; 
+conversion rate significantly 
+higher 
+Step 4 OTP verified → booking 
+submitted → confirmation 
+shown 
+Smooth, logical end to the 
+journey 
+ 
+Spam/bot protection is handled via backend rate limiting and CAPTCHA — NOT by front-loading OTP 
+before the form. 
+ 
+4.2 Owner / Driver Registration Flow (Progressive Profiling) 
+The previous flow required all documents, photos, and car details in one long form. This is unsuitable 
+for mobile and causes high abandonment. The revised flow uses progressive profiling. 
+ 
+Phase What's Collected Time Required 
+Phase 1 — Quick Signup Full Name, Mobile Number, 
+Password, Role 
+(Owner/Driver/Both) 
+~30 seconds 
+Phase 2 — Dashboard Entry User lands in dashboard; sees 
+visual progress bar (e.g. 'Profile 
+20% complete') 
+Immediate motivation 
+Phase 3 — Personal Details NID, address, emergency 
+contact — completed at own 
+pace 
+5–10 minutes 
+Phase 4 — Car & Documents Car details, registration papers, 
+photos — uploaded step by step 
+10–20 minutes (can be done in 
+multiple sessions) 
+Phase 5 — Admin Review Admin notified when profile 
+reaches completable threshold 
+Async 
+ 
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+Car photo uploads should be presented as a visual checklist (Front View, Side View, Rear View, 
+Interior) — each item gets a checkmark when uploaded, making the process feel manageable. 
+If a driver submits only Phase 1 (name + phone) and does not return within 3 days, admin can call the 
+captured lead and offer support. 
+4.3 Admin Verification — Hybrid Automation Model 
+The previous design relied entirely on manual admin verification. This will not scale beyond early 
+operations. v3.0 introduces a hybrid model. 
+Document Type 
+Verification Method 
+NID (National ID) 
+Manual Review When 
+API integration with Porichoy or 
+equivalent BD NID gateway 
+Driving License 
+API returns mismatch or error 
+OCR reads expiry date and 
+license number from uploaded 
+photo 
+OCR confidence score is low / 
+image blurry 
+Vehicle Documents (Tax Token, 
+Fitness, Insurance) 
+OCR extracts key fields 
+OCR fails or fields unreadable 
+Corporate Documents (Trade 
+License) 
+Admin manual review 
+Always (lower volume, higher 
+value) 
+Estimated outcome: ~90% of driver profiles can be auto-approved or auto-flagged, reducing admin 
+workload by more than half. Admin focuses time on exceptions, corporate accounts, and platform 
+growth. 
+NOTE: NID/OCR automation is a CORE requirement in Phase 1, not a future feature. Without it, the 
+admin panel will become a bottleneck as the platform grows. 
+GoRide Bangladesh  |  Confidential  |  Page 7 of 25 
+GoRide Bangladesh — Product Requirements Document Version 3.0 — Final 
+GoRide Bangladesh  |  Confidential  |  Page 8 of 25 
+5. Website Structure 
+5.1 Navigation / Header 
+• Logo — left aligned, original asset only, no alteration 
+• Menu: Home | About Us | Services | Car Fleet | Tours & Travels | Contact Us 
+• Language Toggle: বাাংলা | English — top right 
+• Login Button — extreme right 
+• WhatsApp floating button — fixed position, all pages 
+ 
+5.2 Page Map 
+Page Purpose 
+Home 4 user-type entry cards + statistics + sliders + 
+testimonials 
+About Us Company intro, mission, vision, trust points 
+Services Airport pickup/drop, corporate, events (marriage, 
+birthday, funeral), tours 
+Car Fleet Bangladesh-relevant categories and example 
+models 
+Tours & Travels Destination packages (structure ready; content 
+activated Phase 2) 
+Contact Us Phone, WhatsApp, email, address, contact form, 
+social links 
+One-Time Booking Booking form → OTP → submission 
+Corporate Portal Registration, login, dashboard, billing, car 
+requests 
+Owner/Driver Portal Registration (progressive), login, dashboard, car 
+management 
+Admin Panel Full platform management — users, documents, 
+billing, content 
+404 Page Bilingual friendly error page with navigation back 
+to home 
+Maintenance Page Bilingual page shown during deployments 
+Privacy Policy Required for data collection and future GDPR
+adjacent compliance 
+  
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+6. Homepage Requirements 
+6.1 Hero — 4 Entry Cards 
+Card 
+Label 
+Action 
+Owners / Drivers 
+Earn with Your Car 
+→ Owner/Driver registration 
+flow 
+Corporate Clients 
+Manage Your Company 
+Transport 
+One-Time / Solo Clients 
+Travel Anywhere, Anytime 
+→ Corporate registration/login 
+Tours & Travels 
+→ Booking form 
+Explore Travel Packages 
+6.2 Homepage Additional Sections (in order) 
+→ Tours page 
+• Counter / Statistics section: Satisfied Customers | Total Fleet | Destinations Covered | Corporate 
+Clients — all admin-editable 
+• Rolling slider: Corporate client logos 
+• Rolling testimonials / reviews 
+• Rolling car brand/maker logos 
+• Rolling tours & travel destinations / packages 
+• Footer: Contact details | Social media links | Useful links | Privacy Policy link 
+GoRide Bangladesh  |  Confidential  |  Page 9 of 25 
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+7. Forms & Data Collection 
+7.1 One-Time Client Booking Form 
+Shown immediately — NO OTP required before this form. OTP triggered only on submission. 
+1. Full Name 
+2. Pickup Location 
+3. Destination 
+4. Journey Date 
+5. Journey Time 
+6. Trip Type — One-way | Round Trip | Hourly Rental | Airport Pickup | Airport Drop 
+7. Car Type — Sedan | SUV | Microbus | Premium | Economy 
+8. Number of Passengers 
+9. Luggage Requirement 
+10. WhatsApp Number (optional) 
+11. Special Notes 
+12. Preferred Language — English | Bangla 
+13. Submit → triggers OTP popup 
+System: Save to DB → notify admin → SMS confirmation (optional) → show thank-you message. 
+7.2 Corporate Client Registration 
+14. Company Name 
+15. Contact Person Name & Designation 
+16. Company Mobile Number 
+17. Company Email Address 
+18. Office Address & City 
+19. Preferred Billing Method & Payment Cycle (Weekly / Monthly / Other) 
+20. Service Type Needed (Office transport | Executive | Rental | Event | Airport) 
+21. Expected Number of Cars & Preferred Car Types 
+22. Required Service Area 
+23. Password & Confirm Password 
+24. Agreement Checkbox 
+25. Optional uploads: Trade License, Company Documents, VAT/TIN 
+7.3 Corporate Dashboard — Features 
+• Dashboard blocks: Active cars | Ongoing assignments | Billing summary | Next billing date | 
+Outstanding invoices | Recent requests 
+• Car List: Model | Registration | Assigned driver | Status | Location 
+• Billing List: Invoice date | Due date | Amount | Paid/Unpaid | PDF download 
+• New Car Request Form 
+• Support / Issue Submission Form 
+GoRide Bangladesh  |  Confidential  |  Page 10 of 25 
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+7.4 Owner / Driver Registration — Progressive (3-Phase) 
+Phase 1 — Quick Signup (~30 seconds) 
+26. Full Name 
+27. Mobile Number + OTP Verify 
+28. Password + Confirm Password 
+29. Role Selection: Driver | Owner | Both 
+→ Account created. User enters dashboard immediately. 
+Phase 2 — Personal Details (completed from dashboard) 
+30. Father's / Guardian's Name (optional) 
+31. Date of Birth 
+32. WhatsApp Number 
+33. Email Address 
+34. NID Number — auto-verified via API 
+35. Present & Permanent Address, City, Area 
+36. Emergency Contact Name & Number 
+Phase 3 — Driver & Vehicle Details (completed from dashboard) 
+Driver Information: 
+37. Driver Full Name | License Number | License Expiry | Experience 
+38. Driver Photo | NID Upload | License Upload 
+Car Information (repeatable — owner can add multiple cars): 
+39. Car Model | Brand | Category | Registration Number 
+40. Seat Capacity | AC/Non-AC | Fuel Type | Color 
+41. Service Location / Operating Area 
+42. Airport Service? | Outstation Service? 
+43. Daily Rate | Airport Rate | Hourly Rate | Tour/Overnight Rate 
+Vehicle Documents (presented as visual checklist with checkmarks): 
+• Car Registration Paper 
+• Tax Token Copy 
+• Fitness Certificate 
+• Insurance Document 
+• Route Permit (if applicable) 
+Car Photos (presented as visual checklist — one upload per angle): 
+• Front View | Side View | Rear View | Interior | Additional 
+7.5 Driver Update / Replacement Form 
+GoRide Bangladesh  |  Confidential  |  Page 11 of 25 
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+44. Car Selection 
+45. New Driver Name | Mobile | License Number | Expiry 
+46. NID Upload | Driver Photo | License Upload 
+47. Effective From Date | Notes 
+7.6 Tours & Travels Inquiry Form (structure only — activated Phase 2) 
+48. Full Name | Mobile | Email 
+49. Destination | Travel Date | Number of Travelers 
+50. Package Type | Notes 
+7.7 Contact Us Form 
+51. Name | Mobile | Email | Subject | Message 
+GoRide Bangladesh  |  Confidential  |  Page 12 of 25 
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+8. Admin Panel 
+8.1 User Management 
+• Corporate Clients — view, approve, reject, edit, suspend 
+• One-Time Client Requests — view all submissions with filter/search 
+• Owners / Drivers — manage profiles, approval status, documents 
+• Admin-Created Users — create internal accounts with RBAC roles 
+8.2 Driver / Owner Approval Workflow 
+Status 
+Meaning 
+Trigger 
+Pending Review 
+Default after registration 
+Auto-Approved 
+Auto-set on submission 
+NID + docs verified via 
+API/OCR 
+Automated 
+Verified 
+Manually approved by admin 
+Need More Documents 
+Admin action 
+Specific docs missing or 
+unreadable 
+Admin flags 
+Rejected 
+Does not meet requirements 
+Suspended 
+Admin action 
+Temporarily removed from 
+platform 
+Admin action 
+8.3 Document Management 
+• View and download all uploaded documents 
+• Check license / document expiry dates — flagged when near expiry 
+• Flag missing or unreadable documents 
+• OCR-extracted data shown alongside uploaded image for quick verification 
+8.4 Corporate Management 
+• Review and approve new corporate applications 
+• Update billing records — add invoice, mark paid/unpaid 
+• Generate or manually enter invoice data (PDF download available) 
+• Assign vehicles to corporate accounts if needed 
+8.5 Content Management (Admin-Editable) 
+• Homepage statistics counters 
+• Corporate logo slider 
+• Reviews / testimonials 
+• Car brand logo slider 
+• Tour destination packages 
+GoRide Bangladesh  |  Confidential  |  Page 13 of 25 
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+• Contact information 
+GoRide Bangladesh  |  Confidential  |  Page 14 of 25 
+GoRide Bangladesh — Product Requirements Document Version 3.0 — Final 
+GoRide Bangladesh  |  Confidential  |  Page 15 of 25 
+9. Recommended Tech Stack 
+Based on GoRide's requirements — bilingual, mobile-first, form-heavy, scalable — the following stack 
+is recommended: 
+ 
+Layer Recommended Technology Rationale 
+Backend / API Laravel (PHP) Mature, excellent for form 
+handling, file uploads, OTP, role 
+management; large BD 
+developer pool 
+Frontend Next.js (React) SEO-friendly, fast rendering, 
+good for bilingual routing; or 
+Vue.js if simpler preferred 
+Database MySQL Reliable, widely supported, 
+good for relational data (users, 
+cars, trips, billing) 
+Admin Panel Laravel Nova or custom React 
+admin 
+Full-featured; Nova reduces 
+admin build time significantly 
+File Storage AWS S3 or DigitalOcean 
+Spaces 
+Scalable, secure 
+document/photo storage with 
+access control 
+Hosting DigitalOcean Droplet or Vultr 
+(BD region) 
+Low latency for Bangladesh 
+users; cost-effective 
+OTP / SMS SSL Wireless (Bangladesh
+local) or Twilio 
+SSL Wireless preferred for BD 
+numbers and cost; Twilio as 
+fallback 
+Email SendGrid or Amazon SES Transactional email for 
+registrations, billing, 
+confirmations 
+NID Verification Porichoy API (bd.gov gateway) Official BD NID verification API 
+OCR Google Vision API or Tesseract 
+(open source) 
+Extract text from 
+license/document photos 
+CAPTCHA / Bot Protection hCaptcha or Google 
+reCAPTCHA v3 
+Protects booking form and OTP 
+trigger without blocking real 
+users 
+Analytics Google Analytics 4 + Facebook 
+Pixel 
+Track conversions, user 
+behavior, ad performance 
+CDN Cloudflare Speed, DDoS protection, 
+caching for BD users 
+  
+GoRide Bangladesh — Product Requirements Document Version 3.0 — Final 
+GoRide Bangladesh  |  Confidential  |  Page 16 of 25 
+10. Security Requirements 
+All security requirements are mandatory from Phase 1. Security is not a future feature. 
+ 
+Requirement Detail 
+HTTPS / SSL All pages served over HTTPS; HTTP redirects to 
+HTTPS automatically 
+CSRF Protection CSRF tokens on all form submissions 
+OTP Rate Limiting Maximum 3 OTP requests per mobile number per 
+10 minutes; IP-level limiting also applied 
+SQL Injection / XSS All inputs sanitized; parameterized queries; output 
+escaping throughout 
+Password Policy Minimum 8 characters; bcrypt hashing; no 
+plaintext storage 
+Role-Based Access Control (RBAC) Admin, Corporate, Owner/Driver, One-Time Client 
+— each role sees only permitted data and actions 
+File Upload Restrictions Allowed types: JPG, PNG, PDF only; max file size 
+enforced; files stored with randomized names 
+Session Management Secure session tokens; session timeout after 
+inactivity (configurable per role) 
+Admin Access Admin panel at non-obvious URL; additional 2FA 
+recommended for admin accounts 
+Data Privacy Personal data (NID, photos, documents) 
+accessible to admin only; not exposed to other 
+users 
+  
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+11. SEO Requirements 
+SEO is essential for a service business to be discoverable in Bangladesh. All items below are required 
+from Phase 1. 
+• Unique meta title and description for every page 
+• Structured data / schema markup: LocalBusiness, Service, FAQPage where applicable 
+• XML Sitemap auto-generated and submitted to Google Search Console 
+• robots.txt configured correctly (admin panel excluded from indexing) 
+• Bilingual pages use hreflang tags (en / bn) 
+• Canonical URLs set on all pages 
+• Open Graph tags on all public pages (for Facebook and WhatsApp link preview: title, 
+description, image) 
+• Google Analytics 4 installed and configured from launch 
+• Facebook Pixel installed for ad tracking and retargeting 
+• Page speed targets: under 3 seconds on 4G mobile (Bangladesh average conditions) 
+• Image optimization: WebP format, lazy loading for sliders and car photos 
+• Core Web Vitals: LCP, CLS, FID targets met before launch 
+GoRide Bangladesh  |  Confidential  |  Page 17 of 25 
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+12. Bilingual Requirements 
+• English and Bangla toggle — only one language visible at a time 
+• Bangla font: Kalpurush preferred; fallback to another high-quality Bangla web font 
+• All Bangla text must be written by a native Bangla speaker — no machine translation for final 
+content 
+• Zero Hindi characters permitted anywhere on the platform 
+• Language toggle usable on mobile (visible, accessible, not hidden in menus) 
+• Bilingual content applies to: all public pages, all forms (labels, placeholders, error messages), 
+dashboard sections, email/SMS notifications, 404 and maintenance pages 
+• Developer must clarify: is bilingual content entry included in the scope, or provided by GoRide? 
+GoRide Bangladesh  |  Confidential  |  Page 18 of 25 
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+13. Design Requirements 
+Element 
+Specification 
+Primary Color 
+Secondary Color 
+Green (#1A7A3C or brand-specified green) 
+White 
+Accent 
+Minimal — avoid distracting colors 
+Card Style 
+Light shadow, clean borders, rounded corners 
+Typography 
+Clean sans-serif; Bangla font Kalpurush or 
+equivalent 
+Icons 
+Clean line-art or flat iconography; no clip art 
+Logo 
+Original GoRide asset only; no stretching, 
+recoloring, or alteration 
+Forms 
+Large input fields; clear labels; visible error states; 
+Bangla-labeled fields 
+Buttons 
+Large, thumb-friendly on mobile; clear call-to
+action text 
+Responsiveness 
+Fully responsive — tested on mobile (360px width 
+minimum), tablet, desktop 
+GoRide Bangladesh  |  Confidential  |  Page 19 of 25 
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+14. Performance & Mobile Requirements 
+Bangladesh users predominantly access services on mobile with variable connection quality. 
+Performance is a product requirement, not an afterthought. 
+• Target page load time: under 3 seconds on 4G (Bangladesh average) 
+• All images optimized and served in WebP format 
+• Lazy loading on sliders, car photo galleries, and logo sections 
+• OTP flow fully optimized for mobile — large input, numeric keyboard triggered automatically 
+• All forms fully usable on screens as small as 360px wide 
+• Dashboards remain functional and readable on mobile screens 
+• Language toggle visible and accessible on mobile without extra navigation 
+• WhatsApp floating button on all pages — fixed bottom-right corner 
+• Browser compatibility: Chrome (Android), Samsung Internet, Firefox, Safari (iOS), Chrome 
+(Desktop) 
+GoRide Bangladesh  |  Confidential  |  Page 20 of 25 
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+15. Notifications 
+Trigger 
+Channel 
+Recipient 
+OTP Request 
+SMS (SSL Wireless) 
+New one-time booking 
+User mobile 
+SMS + Dashboard 
+Admin 
+New driver/owner registration 
+Email + Dashboard 
+Admin 
+SMS + Email 
+Registration status change 
+(Approved/Rejected/Needs 
+Docs) 
+Driver/Owner 
+New corporate application 
+Email + Dashboard 
+Corporate account approved 
+Admin 
+Email 
+Corporate contact 
+New corporate car request 
+Email + Dashboard 
+Admin 
+Document expiry reminder (30 
+days before) 
+Email + Dashboard 
+Driver/Owner + Admin 
+New contact form submission 
+Email 
+Admin 
+WhatsApp automation: optional in Phase 2 via WhatsApp Business API. 
+GoRide Bangladesh  |  Confidential  |  Page 21 of 25 
+GoRide Bangladesh — Product Requirements Document Version 3.0 — Final 
+GoRide Bangladesh  |  Confidential  |  Page 22 of 25 
+16. Database & Data Structure 
+The database must be designed to support current requirements and future expansion (app, payments, 
+live tracking). Google Sheets may be used for export/reporting but must not be the primary data store. 
+ 
+Table / Entity Key Fields 
+users id, name, phone, email, role, status, created_at 
+otp_logs id, phone, otp_code, attempts, verified_at, 
+expires_at 
+one_time_bookings id, name, phone, pickup, destination, date, time, 
+trip_type, car_type, status 
+corporate_accounts id, company_name, contact_name, phone, email, 
+billing_cycle, status 
+corporate_car_requests id, corporate_id, pickup, date, car_type, duration, 
+status 
+owners id, user_id, nid_number, nid_verified, address, 
+status 
+drivers id, user_id, license_number, license_expiry, 
+experience, photo_path, status 
+cars id, owner_id, driver_id, model, brand, category, 
+reg_number, seat_capacity, status 
+vehicle_documents id, car_id, doc_type, file_path, expiry_date, 
+ocr_extracted, verified 
+trips id, booking_id, car_id, driver_id, start_time, 
+end_time, status 
+reviews id, trip_id, rating, comment, reviewer_type, status 
+invoices id, corporate_id, amount, due_date, paid_date, 
+status, pdf_path 
+content_sliders id, type (logo/review/tour), image_path, title, 
+active 
+site_counters key, value (customers, fleet, destinations, 
+corporates) 
+  
+GoRide Bangladesh — Product Requirements Document Version 3.0 — Final 
+GoRide Bangladesh  |  Confidential  |  Page 23 of 25 
+17. Development Scope & Modules 
+Quotation should address each module separately with timeline and cost estimates. 
+ 
+Module Contents 
+Module 1 — Foundation Homepage, static pages (About, Services, Car 
+Fleet, Tours, Contact), bilingual layout, 
+header/footer, WhatsApp button, language toggle, 
+404 page, maintenance page, privacy policy page 
+Module 2 — Auth & OTP Login/logout for all roles, forgot/reset password, 
+OTP flow (revised — at form submission), session 
+management, RBAC 
+Module 3 — One-Time Booking Booking form, OTP popup trigger, submission, 
+admin notification, SMS confirmation 
+Module 4 — Owner/Driver Registration Progressive 3-phase registration, document 
+uploads with visual checklist, car photo checklist, 
+multi-car management, driver update form 
+Module 5 — Owner/Driver Dashboard Profile, car management (add/edit/deactivate), trip 
+history, ratings, document status, progress bar 
+Module 6 — Corporate Portal Registration, login, dashboard 
+(fleet/billing/requests), new car request form, 
+support form 
+Module 7 — Admin Panel User management, driver/owner approval 
+workflow, document management (with OCR data 
+display), corporate management, billing, content 
+management, form submissions view 
+Module 8 — Automation & Integrations NID API (Porichoy), OCR for documents, SMS 
+gateway (SSL Wireless), email (SendGrid), 
+CAPTCHA, Google Analytics 4, Facebook Pixel 
+Module 9 — Dynamic Homepage Content Admin-managed counters, logo sliders, review 
+sliders, tour package slider 
+Module 10 — Tours & Travels (Phase 2) Tour package management, inquiry form, 
+destination pages 
+  
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+18. Future Scope (Phase 2+) 
+Not required in current quotation unless developer wishes to indicate optional cost estimates. 
+Feature 
+Notes 
+Payment Gateway 
+SSLCommerz or bKash integration for online 
+booking payments 
+Automated Trip Matching 
+Algorithm to match booking requests to available 
+drivers/cars 
+Live Vehicle Tracking 
+GPS integration in mobile app 
+Mobile App (Android + iOS) 
+React Native or Flutter — same backend API 
+In-App / WhatsApp Chat 
+Direct communication between client and 
+driver/admin 
+WhatsApp Automation 
+Booking confirmations, status updates via 
+WhatsApp Business API 
+Rating Analytics 
+Dashboard for admin to analyze driver 
+performance trends 
+Invoice Automation 
+Auto-generate and email PDF invoices on billing 
+cycle 
+Pricing Algorithm 
+Dynamic pricing based on distance, car type, 
+demand 
+Driver Training Portal 
+Onboarding materials, guidelines for new drivers 
+GoRide Bangladesh  |  Confidential  |  Page 24 of 25 
+GoRide Bangladesh — Product Requirements Document 
+Version 3.0 — Final 
+19. Developer Quotation Requirements 
+The developer's quotation must address each of the following items explicitly: 
+52. Total estimated development time — per module and overall 
+53. Technology stack — with justification for any deviation from Section 9 recommendations 
+54. Admin panel details — features included, UI approach 
+55. Security approach — how each item in Section 10 is addressed 
+56. OTP integration — which SMS gateway, cost structure, fallback plan 
+57. NID API integration — which gateway (Porichoy or equivalent), setup process 
+58. OCR integration — which service, accuracy expectations 
+59. Hosting / server recommendation — provider, specifications, estimated monthly cost 
+60. Bilingual content entry — is this included, or does GoRide supply translated strings? 
+61. File storage — where documents/photos stored, backup policy, access control 
+62. Maintenance and support terms — post-launch support period, bug fix policy 
+63. Revision policy — number of revision rounds included 
+64. Browser/device testing — which devices and browsers tested before handoff 
+65. Deployment process — staging environment, go-live checklist 
+End of Document 
+GoRide Bangladesh PRD v3.0 — Enhanced & Final | March 2026 
+GoRide Bangladesh  |  Confidential  |  Page 25 of 25

@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
+import 'package:dio/dio.dart';
 import 'locale_controller.dart';
 import 'registration_screens.dart';
 import 'pages/home_page.dart';
 import 'pages/dashboard_page.dart';
+import 'services/api_service.dart';
+import 'widgets/sidebar_menu.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await GetStorage.init();
+  Get.put(ApiService());
   Get.put(LocaleController());
   runApp(const GoRideApp());
 }
@@ -15,6 +22,18 @@ class GoRideApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ApiService apiService = Get.find<ApiService>();
+    
+    // Determine initial route based on login status
+    Widget initialScreen;
+    if (apiService.isLoggedIn()) {
+      final user = apiService.getUser();
+      final role = user?['role'] as String?;
+      initialScreen = getDashboardForRole(role);
+    } else {
+      initialScreen = const SplashScreen();
+    }
+
     return GetMaterialApp(
       title: 'GoRide',
       debugShowCheckedModeBanner: false,
@@ -28,8 +47,26 @@ class GoRideApp extends StatelessWidget {
           foregroundColor: Colors.white,
         ),
       ),
-      home: const SplashScreen(),
+      home: initialScreen,
     );
+  }
+
+  static Widget getDashboardForRole(String? role) {
+    switch (role) {
+      case 'admin':
+        return const UnifiedDashboard(role: 'admin');
+      case 'corporate':
+        return const UnifiedDashboard(role: 'corporate');
+      case 'owner':
+        return const UnifiedDashboard(role: 'owner');
+      case 'driver':
+        return const UnifiedDashboard(role: 'driver');
+      case 'solo':
+        return const RiderHomeScreen();
+      default:
+        // If role is unknown but logged in, show rider home as default or splash to re-verify
+        return const RiderHomeScreen();
+    }
   }
 }
 
@@ -42,16 +79,55 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  final ApiService _apiService = Get.find<ApiService>();
+
   @override
   void initState() {
     super.initState();
+    _checkSession();
+  }
+
+  void _checkSession() {
     Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        Navigator.of(
-          context,
-        ).pushReplacement(MaterialPageRoute(builder: (_) => const HomePage()));
+      if (!mounted) return;
+
+      if (_apiService.isLoggedIn()) {
+        final user = _apiService.getUser();
+        final role = user?['role'] as String?;
+        _navigateToDashboard(role);
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => HomePage()),
+        );
       }
     });
+  }
+
+  void _navigateToDashboard(String? role) {
+    Widget destination;
+    switch (role) {
+      case 'admin':
+        destination = const UnifiedDashboard(role: 'admin');
+        break;
+      case 'corporate':
+        destination = const UnifiedDashboard(role: 'corporate');
+        break;
+      case 'owner':
+        destination = const UnifiedDashboard(role: 'owner');
+        break;
+      case 'driver':
+        destination = const UnifiedDashboard(role: 'driver');
+        break;
+      case 'solo':
+        destination = const RiderHomeScreen();
+        break;
+      default:
+        destination = const RiderHomeScreen();
+    }
+
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => destination),
+    );
   }
 
   @override
@@ -59,38 +135,56 @@ class _SplashScreenState extends State<SplashScreen> {
     return Scaffold(
       body: Container(
         color: const Color(0xFF10713C),
-        child: Center(
+        child: SafeArea(
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Image.asset(
-                'assets/go_ride_logo.png',
-                height: 100,
-                width: 100,
-                errorBuilder: (context, error, stackTrace) {
-                  return Icon(
-                    Icons.directions_car,
-                    size: 80,
-                    color: Colors.white,
-                  );
-                },
-              ),
-              const SizedBox(height: 30),
-              const Text(
-                'GoRide',
-                style: TextStyle(
-                  fontSize: 48,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+              // Top section - Logo, Title, Slogan
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Image.asset(
+                        'assets/go_ride_logo.png',
+                        height: 100,
+                        width: 100,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Icon(
+                            Icons.directions_car,
+                            size: 80,
+                            color: Colors.white,
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 30),
+                      const Text(
+                        'GoRide',
+                        style: TextStyle(
+                          fontSize: 48,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      const Text(
+                        'Your Journey, Our Priority',
+                        style: TextStyle(fontSize: 16, color: Colors.white70),
+                      ),
+                      const SizedBox(height: 40),
+                      const CircularProgressIndicator(color: Colors.white),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 10),
-              const Text(
-                'Your Journey, Our Priority',
-                style: TextStyle(fontSize: 16, color: Colors.white70),
+              // Footer at bottom
+              Padding(
+                padding: const EdgeInsets.only(bottom: 20),
+                child: const Text(
+                  '© 2026 Phenexsoft IT. All rights reserved.',
+                  style: TextStyle(fontSize: 12, color: Colors.white70),
+                ),
               ),
-              const SizedBox(height: 40),
-              const CircularProgressIndicator(color: Colors.white),
             ],
           ),
         ),
@@ -240,9 +334,101 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _otpController = TextEditingController();
-  bool _isOtpSent = false;
+  final TextEditingController _passwordController = TextEditingController();
+  final FocusNode _passwordFocusNode = FocusNode();
+  bool _isLoading = false;
+  bool _obscurePassword = true;
   String? _errorMessage;
+  final ApiService _apiService = Get.find<ApiService>();
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    _passwordController.dispose();
+    _passwordFocusNode.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    if (_phoneController.text.isEmpty || _passwordController.text.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please enter email/phone and password';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final response = await _apiService.login(
+        _phoneController.text,
+        _passwordController.text,
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        final userData = response.data['user'];
+        
+        if (userData != null && userData is Map<String, dynamic>) {
+          final role = userData['role'] as String?;
+          
+          if (!mounted) return;
+          _navigateToDashboard(role);
+        } else {
+          setState(() {
+            _errorMessage = 'Invalid response from server';
+          });
+        }
+      } else {
+        final message = response.data?['message'] ?? 'Login failed';
+        setState(() {
+          _errorMessage = message;
+        });
+      }
+    } on DioException catch (e) {
+      setState(() {
+        _errorMessage = e.response?.data?['message'] ?? 'Connection error. Please try again.';
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Connection error. Please try again.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _navigateToDashboard(String? role) {
+    Widget destination;
+
+    switch (role) {
+      case 'admin':
+        destination = const UnifiedDashboard(role: 'admin');
+        break;
+      case 'corporate':
+        destination = const UnifiedDashboard(role: 'corporate');
+        break;
+      case 'owner':
+        destination = const UnifiedDashboard(role: 'owner');
+        break;
+      case 'driver':
+        destination = const UnifiedDashboard(role: 'driver');
+        break;
+      case 'solo':
+        destination = const RiderHomeScreen();
+        break;
+      default:
+        destination = const RiderHomeScreen();
+    }
+
+    Get.offAll(() => destination);
+  }
 
   void _sendOtp() {
     if (_phoneController.text.isNotEmpty) {
@@ -254,12 +440,6 @@ class _LoginScreenState extends State<LoginScreen> {
         _errorMessage = 'Please enter a valid phone number';
       });
     }
-  }
-
-  void _verifyOtp() {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
-    );
   }
 
   void _loginWithGoogle() {
@@ -325,189 +505,188 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  _isOtpSent
-                      ? 'Enter the OTP sent to your phone'
-                      : 'login with your account',
-                  style: const TextStyle(color: Colors.grey, fontSize: 16),
+                const Text(
+                  'Login with your account',
+                  style: TextStyle(color: Colors.grey, fontSize: 16),
                 ),
                 const SizedBox(height: 32),
-                if (!_isOtpSent) ...[
-                  TextField(
-                    controller: _phoneController,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: InputDecoration(
-                      labelText: 'Email / Phone',
-                      prefixIcon: const Icon(Icons.person),
-                      border: OutlineInputBorder(
+                _buildTextField(
+                  _phoneController,
+                  'Email / Phone',
+                  Icons.person,
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 16),
+                _buildPasswordField(
+                  _passwordController,
+                  'Password',
+                  _obscurePassword,
+                  _passwordFocusNode,
+                  (v) {
+                    setState(() {
+                      _obscurePassword = v;
+                    });
+                    // Maintain focus after toggle
+                    _passwordFocusNode.requestFocus();
+                  },
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _login,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10713C),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _otpController,
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      prefixIcon: const Icon(Icons.lock),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _verifyOtp,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF10713C),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        'Login',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  const Row(
-                    children: [
-                      Expanded(child: Divider()),
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
-                        child: Text('or', style: TextStyle(color: Colors.grey)),
-                      ),
-                      Expanded(child: Divider()),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _loginWithGoogle,
-                      icon: const Icon(Icons.all_inbox),
-                      label: const Text('Continue with Google'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _loginWithFacebook,
-                      icon: const Icon(Icons.facebook),
-                      label: const Text('Continue with Facebook'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                ] else ...[
-                  TextField(
-                    controller: _otpController,
-                    keyboardType: TextInputType.number,
-                    maxLength: 4,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 24, letterSpacing: 8),
-                    decoration: InputDecoration(
-                      labelText: 'OTP',
-                      hintText: '----',
-                      counterText: '',
-                      prefixIcon: const Icon(Icons.lock),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _verifyOtp,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF10713C),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        'Verify OTP',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Center(
-                    child: TextButton(
-                      onPressed: () {
-                        setState(() {
-                          _isOtpSent = false;
-                          _otpController.clear();
-                        });
-                      },
-                      child: const Text('Change Phone Number'),
-                    ),
-                  ),
-                ],
-                if (_errorMessage != null) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    _errorMessage!,
-                    style: const TextStyle(color: Color(0xFFED1C24)),
-                  ),
-                ],
-                const SizedBox(height: 24),
-                if (!_isOtpSent)
-                  Center(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text("Don't have an account?"),
-                        TextButton(
-                          onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const RegisterScreen(),
-                              ),
-                            );
-                          },
-                          child: const Text(
-                            'Register',
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text(
+                            'Login',
                             style: TextStyle(
+                              fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: Color(0xFF10713C),
+                              color: Colors.white,
                             ),
                           ),
-                        ),
-                      ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (_errorMessage != null)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFED1C24).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFED1C24)),
+                    ),
+                    child: Text(
+                      _errorMessage!,
+                      style: const TextStyle(color: Color(0xFFED1C24)),
+                      textAlign: TextAlign.center,
                     ),
                   ),
+                const SizedBox(height: 24),
+                const Row(
+                  children: [
+                    Expanded(child: Divider()),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Text('or', style: TextStyle(color: Colors.grey)),
+                    ),
+                    Expanded(child: Divider()),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _loginWithGoogle,
+                    icon: const Icon(Icons.all_inbox),
+                    label: const Text('Continue with Google'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _loginWithFacebook,
+                    icon: const Icon(Icons.facebook),
+                    label: const Text('Continue with Facebook'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Center(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text("Don't have an account?"),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const RegisterScreen(),
+                            ),
+                          );
+                        },
+                        child: const Text(
+                          'Register',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF10713C),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildTextField(
+    TextEditingController controller,
+    String label,
+    IconData icon, {
+    TextInputType? keyboardType,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  Widget _buildPasswordField(
+    TextEditingController controller,
+    String label,
+    bool obscure,
+    FocusNode focusNode,
+    Function(bool) onToggle,
+  ) {
+    return TextField(
+      controller: controller,
+      obscureText: obscure,
+      focusNode: focusNode,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: const Icon(Icons.lock),
+        suffixIcon: IconButton(
+          icon: Icon(obscure ? Icons.visibility_off : Icons.visibility),
+          onPressed: () => onToggle(!obscure),
+        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -883,7 +1062,14 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawer: const SidebarMenu(role: 'solo'),
       appBar: AppBar(
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
         title: const Text('GoRide'),
         actions: [
           IconButton(icon: const Icon(Icons.notifications), onPressed: () {}),
@@ -894,20 +1080,19 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
         children: [_buildBookingTab(), _buildHistoryTab(), _buildProfileTab()],
       ),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
+        currentIndex: _selectedIndex + 1,
         backgroundColor: Colors.white,
         selectedItemColor: const Color(0xFF10713C),
         unselectedItemColor: Colors.grey,
         onTap: (index) {
-          if (index == 2) {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (_) => const LoginScreen()),
-            );
+          if (index == 0) {
+            Get.offAll(() => HomePage());
           } else {
-            setState(() => _selectedIndex = index);
+            setState(() => _selectedIndex = index - 1);
           }
         },
         items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.public), label: 'Portal'),
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Book'),
           BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Account'),
@@ -1268,54 +1453,87 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
   }
 
   Widget _buildProfileTab() {
+    final apiService = Get.find<ApiService>();
+    final user = apiService.getUser();
+    final name = user?['name'] ?? 'Guest User';
+    final mobile = user?['mobile'] ?? (apiService.isLoggedIn() ? '' : 'Please login to view your profile');
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Padding(
-          padding: EdgeInsets.only(top: 16, bottom: 24),
+        Padding(
+          padding: const EdgeInsets.only(top: 16, bottom: 24),
           child: Center(
             child: Column(
               children: [
-                CircleAvatar(
+                const CircleAvatar(
                   radius: 50,
                   backgroundColor: Color(0xFF10713C),
                   child: Icon(Icons.person, size: 50, color: Colors.white),
                 ),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 Text(
-                  'Guest User',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  name,
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Text(
-                  'Please login to view your profile',
-                  style: TextStyle(color: Colors.grey),
+                  mobile,
+                  style: const TextStyle(color: Colors.grey),
                 ),
               ],
             ),
           ),
         ),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: () {
-              Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF10713C),
-              padding: const EdgeInsets.symmetric(vertical: 14),
+        if (!apiService.isLoggedIn())
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF10713C),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: const Text(
+                'Login',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
-            child: const Text(
-              'Login',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
+          )
+        else ...[
+          _profileOption(Icons.edit, 'Edit Profile'),
+          _profileOption(Icons.history, 'Trip History'),
+          _profileOption(Icons.payment, 'Payment Methods'),
+          _profileOption(Icons.help, 'Help & Support'),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () async {
+                await apiService.logout();
+                Get.offAll(() => const SplashScreen());
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFED1C24),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: const Text(
+                'Logout',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -1656,7 +1874,14 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawer: const SidebarMenu(role: 'driver'),
       appBar: AppBar(
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
         title: const Text('Driver Dashboard'),
         actions: [
           IconButton(icon: const Icon(Icons.notifications), onPressed: () {}),
@@ -1672,12 +1897,19 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
+        currentIndex: _selectedIndex + 1,
         backgroundColor: Colors.white,
         selectedItemColor: const Color(0xFF10713C),
         unselectedItemColor: Colors.grey,
-        onTap: (index) => setState(() => _selectedIndex = index),
+        onTap: (index) {
+          if (index == 0) {
+            Get.offAll(() => HomePage());
+          } else {
+            setState(() => _selectedIndex = index - 1);
+          }
+        },
         items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.public), label: 'Portal'),
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(
             icon: Icon(Icons.directions_car),
@@ -2046,27 +2278,27 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         _profileOption(Icons.history, 'Trip History'),
         _profileOption(Icons.help, 'Help & Support'),
         const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFED1C24),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
-            child: const Text(
-              'Logout',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () async {
+                final apiService = Get.find<ApiService>();
+                await apiService.logout();
+                Get.offAll(() => const SplashScreen());
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFED1C24),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: const Text(
+                'Logout',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -2096,7 +2328,14 @@ class _CorporateDashboardScreenState extends State<CorporateDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawer: const SidebarMenu(role: 'corporate'),
       appBar: AppBar(
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
         title: const Text('Corporate Dashboard'),
         actions: [
           IconButton(icon: const Icon(Icons.notifications), onPressed: () {}),
@@ -2112,12 +2351,19 @@ class _CorporateDashboardScreenState extends State<CorporateDashboardScreen> {
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
+        currentIndex: _selectedIndex + 1,
         backgroundColor: Colors.white,
         selectedItemColor: const Color(0xFF10713C),
         unselectedItemColor: Colors.grey,
-        onTap: (index) => setState(() => _selectedIndex = index),
+        onTap: (index) {
+          if (index == 0) {
+            Get.offAll(() => HomePage());
+          } else {
+            setState(() => _selectedIndex = index - 1);
+          }
+        },
         items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.public), label: 'Portal'),
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(
             icon: Icon(Icons.local_shipping),
@@ -2455,27 +2701,27 @@ class _CorporateDashboardScreenState extends State<CorporateDashboardScreen> {
         _profileOption(Icons.receipt, 'Tax Info'),
         _profileOption(Icons.help, 'Help & Support'),
         const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFED1C24),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
-            child: const Text(
-              'Logout',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () async {
+                final apiService = Get.find<ApiService>();
+                await apiService.logout();
+                Get.offAll(() => const SplashScreen());
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFED1C24),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: const Text(
+                'Logout',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
