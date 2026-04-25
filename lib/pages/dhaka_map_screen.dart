@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
+import 'package:flutter_map/flutter_map.dart' as fmap;
+import 'package:latlong2/latlong.dart' as latlong;
+import 'package:geolocator/geolocator.dart';
+
+// Set this to true to use Google Maps, false to fallback to OpenStreetMap
+const bool useGoogleMaps = false;
 
 class DhakaMapScreen extends StatefulWidget {
   const DhakaMapScreen({super.key});
@@ -10,17 +15,76 @@ class DhakaMapScreen extends StatefulWidget {
 }
 
 class _DhakaMapScreenState extends State<DhakaMapScreen> {
-  final LatLng _dhakaCenter = LatLng(23.8103, 90.4125);
-  late final MapController _mapController;
+  // Common coordinates
+  static const latlong.LatLng _dhakaCenterFallback = latlong.LatLng(
+    23.8103,
+    90.4125,
+  );
+  static const gmaps.LatLng _dhakaCenterGmaps = gmaps.LatLng(23.8103, 90.4125);
+
+  // Google Maps controllers and state
+  gmaps.GoogleMapController? _gMapController;
+  bool _gMapError = false;
+
+  // Flutter Map (OSM) controllers
+  late final fmap.MapController _fMapController;
+
   final List<String> _locations = ['', '']; // pickup, destination
+  Position? _currentPosition;
 
   @override
   void initState() {
     super.initState();
-    _mapController = MapController();
+    _fMapController = fmap.MapController();
+    _checkPermission();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showLocationBottomSheet();
     });
+  }
+
+  Future<void> _checkPermission() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return;
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+
+    if (permission == LocationPermission.deniedForever) return;
+
+    _getCurrentLocation();
+  }
+
+  Future<void> _getCurrentLocation() async {
+    try {
+      Position position = await Geolocator.getCurrentPosition();
+      setState(() {
+        _currentPosition = position;
+      });
+
+      if (useGoogleMaps && !_gMapError && _gMapController != null) {
+        _gMapController!.animateCamera(
+          gmaps.CameraUpdate.newCameraPosition(
+            gmaps.CameraPosition(
+              target: gmaps.LatLng(position.latitude, position.longitude),
+              zoom: 15,
+            ),
+          ),
+        );
+      } else if (!useGoogleMaps || _gMapError) {
+        _fMapController.move(
+          latlong.LatLng(position.latitude, position.longitude),
+          15,
+        );
+      }
+    } catch (e) {
+      debugPrint("Error getting location: $e");
+    }
   }
 
   void _showLocationBottomSheet() {
@@ -47,7 +111,10 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
                   const Expanded(
                     child: Text(
                       'Select Location',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -71,66 +138,69 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
                         ...List.generate(_locations.length, (index) {
                           final isPickup = index == 0;
                           final isDestination = index == _locations.length - 1;
-                          final stopNumber = isPickup ? 1 : isDestination ? _locations.length : index;
-                          return AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
-                            transitionBuilder: (child, animation) {
-                              return SlideTransition(
-                                position: Tween<Offset>(
-                                  begin: const Offset(1, 0),
-                                  end: Offset.zero,
-                                ).animate(CurvedAnimation(
-                                  parent: animation,
-                                  curve: Curves.easeOutCubic,
-                                )),
-                                child: FadeTransition(opacity: animation, child: child),
-                              );
-                            },
-                            child: Column(
-                              key: ValueKey(index),
-                              children: [
-                                Row(
-                                  children: [
-                                    Column(
-                                      children: [
-                                        AnimatedContainer(
-                                          duration: const Duration(milliseconds: 300),
-                                          width: 12,
-                                          height: 12,
-                                          decoration: BoxDecoration(
-                                            color: isPickup ? const Color(0xFF10713C) : isDestination ? const Color(0xFFED1C24) : Colors.grey,
-                                            shape: BoxShape.circle,
-                                          ),
-                                        ),
-                                        if (!isDestination)
-                                          AnimatedContainer(
-                                            duration: const Duration(milliseconds: 300),
-                                            width: 2,
-                                            height: 30,
-                                            color: Colors.grey[400],
-                                          ),
-                                      ],
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: TextField(
-                                        decoration: InputDecoration(
-                                          hintText: isPickup ? 'Pickup location' : isDestination ? 'Final destination' : 'Stop $stopNumber',
-                                          hintStyle: TextStyle(color: Colors.grey[600], fontSize: 14),
-                                          border: InputBorder.none,
+                          final stopNumber = isPickup
+                              ? 1
+                              : isDestination
+                              ? _locations.length
+                              : index;
+                          return Column(
+                            key: ValueKey(index),
+                            children: [
+                              Row(
+                                children: [
+                                  Column(
+                                    children: [
+                                      Container(
+                                        width: 12,
+                                        height: 12,
+                                        decoration: BoxDecoration(
+                                          color: isPickup
+                                              ? const Color(0xFF10713C)
+                                              : isDestination
+                                              ? const Color(0xFFED1C24)
+                                              : Colors.grey,
+                                          shape: BoxShape.circle,
                                         ),
                                       ),
-                                    ),
-                                    if (!isPickup && !isDestination)
-                                      IconButton(
-                                        icon: Icon(Icons.close, size: 18, color: Colors.grey[600]),
-                                        onPressed: null,
+                                      if (!isDestination)
+                                        Container(
+                                          width: 2,
+                                          height: 30,
+                                          color: Colors.grey[400],
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextField(
+                                      decoration: InputDecoration(
+                                        hintText: isPickup
+                                            ? 'Pickup location'
+                                            : isDestination
+                                            ? 'Final destination'
+                                            : 'Stop $stopNumber',
+                                        hintStyle: TextStyle(
+                                          color: Colors.grey[600],
+                                          fontSize: 14,
+                                        ),
+                                        border: InputBorder.none,
                                       ),
-                                  ],
-                                ),
-                                if (!isDestination) Divider(color: Colors.grey[300]),
-                              ],
-                            ),
+                                    ),
+                                  ),
+                                  if (!isPickup && !isDestination)
+                                    IconButton(
+                                      icon: Icon(
+                                        Icons.close,
+                                        size: 18,
+                                        color: Colors.grey[600],
+                                      ),
+                                      onPressed: null,
+                                    ),
+                                ],
+                              ),
+                              if (!isDestination)
+                                Divider(color: Colors.grey[300]),
+                            ],
                           );
                         }),
                       ],
@@ -150,7 +220,11 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
                       ),
                       child: const Text(
                         'Find Rides',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
@@ -158,21 +232,43 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
               ),
             ),
             const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Popular Places',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            Expanded(
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
                   ),
-                  const SizedBox(height: 12),
-                  _buildPopularPlace(Icons.home, 'Home', 'Gulshan 2, Dhaka'),
-                  _buildPopularPlace(Icons.work, 'Office', 'Banani, Dhaka'),
-                  _buildPopularPlace(Icons.flight, 'Airport', 'Hazrat Shahjalal International'),
-                  _buildPopularPlace(Icons.store, 'Shopping', 'Jamuna Future Park'),
-                ],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Popular Places',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _buildPopularPlace(
+                        Icons.home,
+                        'Home',
+                        'Gulshan 2, Dhaka',
+                      ),
+                      _buildPopularPlace(Icons.work, 'Office', 'Banani, Dhaka'),
+                      _buildPopularPlace(
+                        Icons.flight,
+                        'Airport',
+                        'Hazrat Shahjalal International',
+                      ),
+                      _buildPopularPlace(
+                        Icons.store,
+                        'Shopping',
+                        'Jamuna Future Park',
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ],
@@ -199,14 +295,99 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                Text(address, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  address,
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                ),
               ],
             ),
           ),
           const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
         ],
       ),
+    );
+  }
+
+  Widget _buildGoogleMap() {
+    return gmaps.GoogleMap(
+      initialCameraPosition: const gmaps.CameraPosition(
+        target: _dhakaCenterGmaps,
+        zoom: 13,
+      ),
+      onMapCreated: (controller) {
+        _gMapController = controller;
+        if (_currentPosition != null) {
+          _gMapController!.animateCamera(
+            gmaps.CameraUpdate.newCameraPosition(
+              gmaps.CameraPosition(
+                target: gmaps.LatLng(
+                  _currentPosition!.latitude,
+                  _currentPosition!.longitude,
+                ),
+                zoom: 15,
+              ),
+            ),
+          );
+        }
+      },
+      myLocationEnabled: true,
+      myLocationButtonEnabled: true,
+      markers: {
+        gmaps.Marker(
+          markerId: const gmaps.MarkerId('center'),
+          position: _dhakaCenterGmaps,
+          icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(
+            gmaps.BitmapDescriptor.hueGreen,
+          ),
+        ),
+      },
+    );
+  }
+
+  Widget _buildFlutterMap() {
+    return fmap.FlutterMap(
+      mapController: _fMapController,
+      options: fmap.MapOptions(
+        initialCenter: _currentPosition != null
+            ? latlong.LatLng(
+                _currentPosition!.latitude,
+                _currentPosition!.longitude,
+              )
+            : _dhakaCenterFallback,
+        initialZoom: 13,
+      ),
+      children: [
+        fmap.TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.goride.app',
+        ),
+        fmap.MarkerLayer(
+          markers: [
+            fmap.Marker(
+              point: _currentPosition != null
+                  ? latlong.LatLng(
+                      _currentPosition!.latitude,
+                      _currentPosition!.longitude,
+                    )
+                  : _dhakaCenterFallback,
+              width: 40,
+              height: 40,
+              child: const Icon(
+                Icons.location_on,
+                color: Color(0xFF10713C),
+                size: 40,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -218,29 +399,9 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
         backgroundColor: const Color(0xFF10713C),
         foregroundColor: Colors.white,
       ),
-      body: FlutterMap(
-        mapController: _mapController,
-        options: MapOptions(
-          initialCenter: _dhakaCenter,
-          initialZoom: 13,
-        ),
-        children: [
-          TileLayer(
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.goride.app',
-          ),
-          MarkerLayer(
-            markers: [
-              Marker(
-                point: _dhakaCenter,
-                width: 40,
-                height: 40,
-                child: const Icon(Icons.location_on, color: Color(0xFF10713C), size: 40),
-              ),
-            ],
-          ),
-        ],
-      ),
+      body: (useGoogleMaps && !_gMapError)
+          ? _buildGoogleMap()
+          : _buildFlutterMap(),
     );
   }
 }
