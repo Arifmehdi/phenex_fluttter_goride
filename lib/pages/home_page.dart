@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import 'quick_action_screens.dart';
 import 'dhaka_map_screen.dart';
 import 'rent_car_booking_screen.dart';
+import 'location_selection_screen.dart';
 import '../main.dart' show GoRideApp, LoginScreen, RegisterScreen, SplashScreen;
 
 class HomePage extends StatefulWidget {
@@ -180,6 +181,20 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _showLocationPopup(BuildContext context, {String? rideType}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      useSafeArea: true,
+      transitionAnimationController: AnimationController(
+        vsync: Navigator.of(context),
+        duration: const Duration(milliseconds: 600),
+      ),
+      builder: (context) => LocationSelectionScreen(initialRideType: rideType),
+    );
+  }
+
   Widget _buildServicesTab(BuildContext context) {
     return SingleChildScrollView(
       child: Padding(
@@ -201,22 +216,19 @@ class _HomePageState extends State<HomePage> {
               childAspectRatio: 1,
               children: services.map((service) {
                 return GestureDetector(
-                  onTap: () {
-                    if (service.title == 'Rent Car') {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const RentCarBookingScreen()),
-                      );
-                    } else if (service.title == 'Corporate') {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const RegisterScreen(selectedRole: 'corporate')),
-                      );
-                    } else {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const DhakaMapScreen()),
-                      );
-                    }
-                  },
-                  child: Card(
+                    onTap: () {
+                      if (service.title == 'Rent Car') {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const RentCarBookingScreen()),
+                        );
+                      } else if (service.title == 'Corporate') {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const RegisterScreen(selectedRole: 'corporate')),
+                        );
+                      } else {
+                        _showLocationPopup(context, rideType: service.title);
+                      }
+                    },                  child: Card(
                     elevation: 4,
                     child: Container(
                       decoration: BoxDecoration(
@@ -485,11 +497,7 @@ class _HomePageState extends State<HomePage> {
                 border: InputBorder.none,
                 hintStyle: const TextStyle(color: Colors.grey),
               ),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const DhakaMapScreen()),
-                );
-              },
+              onTap: () => _showLocationPopup(context),
             ),
           ),
           Icon(Icons.search, color: Colors.grey[400]),
@@ -533,12 +541,9 @@ class _HomePageState extends State<HomePage> {
             MaterialPageRoute(builder: (_) => const RegisterScreen(selectedRole: 'corporate')),
           );
         } else {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const DhakaMapScreen()),
-          );
+          _showLocationPopup(context, rideType: service.title);
         }
-      },
-      child: Container(
+      },      child: Container(
         width: 80,
         margin: const EdgeInsets.only(right: 12),
         decoration: BoxDecoration(
