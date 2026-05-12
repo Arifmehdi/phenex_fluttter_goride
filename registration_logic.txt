@@ -1,0 +1,112 @@
+    public function mainRegister(Request $request)
+    {
+        // dd($request->all());
+        $request->validate([
+            'name'               => 'required|string|max:255',
+            'email'              => 'required|email|unique:users,email',
+            'password'           => 'required|string|min:8|confirmed',
+            'role'               => 'nullable|string|in:user,driver,owner,corporate,solo',
+            'company_name'       => 'nullable|string|max:255',
+            'vehicle_type'       => 'nullable|string|max:255',
+        ]);
+// dd($request->all());
+        $role = $request->input('role', 'solo'); // Default to solo/user
+
+        $user = User::create([
+            'company_name'     => $request->company_name,
+            'vehicle_type'     => $request->vehicle_type,
+            'name'             => $request->name,
+            'email'            => $request->email,
+            'password'         => Hash::make($request->password),
+            'role'             => $role,
+            'status'           => ($role === 'solo' || $role === 'user') ? 'active' : 'pending',
+        ]);
+
+        // Auto login
+        Auth::login($user);
+
+        // Merge session cart
+        $this->cartSessionToUser();
+
+        // Redirect based on dashboard index
+        return redirect()->route('dashboard.index')
+                        ->with('success', 'Registration successful! Welcome, ' . $user->name);
+    }
+
+here controller logic
+
+Route::post('/register', [ApiAuthController::class, 'register']);  
+
+register api 
+
+@extends('goride.layouts.master')
+
+@section('title', 'Register | GoRide Bangladesh')
+
+@section('content')
+<div class="login-page-bg">
+    <div class="login-card">
+        <div class="login-logo">
+            <img src="{{ asset('goride/assets/go_ride_logo.jpg') }}" alt="GoRide Bangladesh">
+            <h2>Create Account</h2>
+            <p>Join GoRide Bangladesh today</p>
+        </div>
+
+        <div class="login-tabs">
+            <div class="login-tab active" onclick="location.href='{{ route('registration') }}'">Customer</div>
+            <div class="login-tab" onclick="location.href='{{ route('registration.driver') }}'">Driver / Owner</div>
+            <div class="login-tab" onclick="location.href='{{ route('registration.corporate') }}'">Corporate</div>
+        </div>
+
+        <form action="{{ route('main.register') }}" method="POST">
+            @csrf
+            @if ($errors->any())
+                <div style="background: #fee2e2; color: #991b1b; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 14px;">
+                    <ul style="margin: 0; padding-left: 20px;">
+                        @foreach ($errors->all() as $error)
+                            <li>{{ $error }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+            <input type="hidden" name="role" value="solo">
+            <div class="form-group">
+                <label>Full Name</label>
+                <input type="text" name="name" class="form-control" placeholder="Enter your full name" value="{{ old('name') }}" required autofocus>
+                @error('name')
+                    <span style="color:#ef4444; font-size:12px;">{{ $message }}</span>
+                @enderror
+            </div>
+            <div class="form-group">
+                <label>Email Address</label>
+                <input type="email" name="email" class="form-control" placeholder="example@email.com" value="{{ old('email') }}" required>
+                @error('email')
+                    <span style="color:#ef4444; font-size:12px;">{{ $message }}</span>
+                @enderror
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" name="password" class="form-control" placeholder="••••••••" required>
+                @error('password')
+                    <span style="color:#ef4444; font-size:12px;">{{ $message }}</span>
+                @enderror
+            </div>
+            <div class="form-group">
+                <label>Confirm Password</label>
+                <input type="password" name="password_confirmation" class="form-control" placeholder="••••••••" required>
+            </div>
+            
+            <button type="submit" class="btn-primary">Register Now <i class="fas fa-user-plus"></i></button>
+        </form>
+
+        <div style="text-align:center;margin-top:28px;padding-top:24px;border-top:1px solid var(--border);">
+            <p style="font-size:14px;color:var(--text-light);margin-bottom:14px;">Already have an account?</p>
+            <a href="{{ route('login') }}" class="login-btn" style="display:inline-block; width:100%; text-align:center; background:var(--accent); color:var(--text); border:1.5px solid var(--border);">Back to Login</a>
+        </div>
+    </div>
+</div>
+@endsection
+
+
+
+here register html

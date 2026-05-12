@@ -430,18 +430,6 @@ class _LoginScreenState extends State<LoginScreen> {
     Get.offAll(() => destination);
   }
 
-  void _sendOtp() {
-    if (_phoneController.text.isNotEmpty) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
-      );
-    } else {
-      setState(() {
-        _errorMessage = 'Please enter a valid phone number';
-      });
-    }
-  }
-
   void _loginWithGoogle() {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
@@ -703,45 +691,221 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _companyNameController = TextEditingController();
+  final TextEditingController _vehicleTypeController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _mobileController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController =
       TextEditingController();
-  final TextEditingController _otpController = TextEditingController();
-  bool _isOtpSent = false;
+  final ApiService _apiService = Get.find<ApiService>();
   String? _errorMessage;
   late String _selectedRole;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  bool _isLoading = false;
+
+  // Role tabs: 0=Customer, 1=Driver/Owner, 2=Corporate
+  int _selectedTabIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _selectedRole = widget.selectedRole ?? 'driver';
+    _selectedRole = widget.selectedRole ?? 'solo';
+    _updateTabIndexFromRole(_selectedRole);
   }
 
-  void _sendOtp() {
-    if (_nameController.text.isNotEmpty && _phoneController.text.isNotEmpty) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => OtpSuccessScreen(selectedRole: _selectedRole),
-        ),
-      );
-    } else {
-      setState(() => _errorMessage = 'Please enter name and phone number');
+  void _updateTabIndexFromRole(String role) {
+    switch (role) {
+      case 'driver':
+      case 'owner':
+        _selectedTabIndex = 1;
+        break;
+      case 'corporate':
+        _selectedTabIndex = 2;
+        break;
+      case 'solo':
+      case 'user':
+      default:
+        _selectedTabIndex = 0;
+        break;
     }
   }
 
-  void _verifyOtp() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => OtpSuccessScreen(selectedRole: _selectedRole),
-      ),
-    );
+  Future<void> _register() async {
+    setState(() {
+      _errorMessage = null;
+    });
+
+    // Validate inputs
+    if (_nameController.text.isEmpty) {
+      setState(() => _errorMessage = 'Please enter your name');
+      return;
+    }
+
+    if (_emailController.text.isEmpty) {
+      setState(() => _errorMessage = 'Please enter your email');
+      return;
+    }
+
+    if (_mobileController.text.isEmpty) {
+      setState(() => _errorMessage = 'Please enter your mobile number');
+      return;
+    }
+
+    if (_passwordController.text.isEmpty) {
+      setState(() => _errorMessage = 'Please enter a password');
+      return;
+    }
+
+    if (_passwordController.text.length < 8) {
+      setState(() => _errorMessage = 'Password must be at least 8 characters');
+      return;
+    }
+
+    if (_passwordController.text != _confirmPasswordController.text) {
+      setState(() => _errorMessage = 'Passwords do not match');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    // Build request data matching API expectations
+    final data = <String, dynamic>{
+      'name': _nameController.text,
+      'email': _emailController.text,
+      'mobile': _mobileController.text,
+      'password': _passwordController.text,
+      'password_confirmation': _confirmPasswordController.text,
+      'role': _selectedRole,
+    };
+
+    // Add company_name for corporate/owner roles
+    if (_selectedRole == 'corporate' && _companyNameController.text.isNotEmpty) {
+      data['company_name'] = _companyNameController.text;
+    }
+
+    // Add vehicle_type for driver/owner roles
+    if ((_selectedRole == 'driver' || _selectedRole == 'owner') &&
+        _vehicleTypeController.text.isNotEmpty) {
+      data['vehicle_type'] = _vehicleTypeController.text;
+    }
+
+    try {
+      final response = await _apiService.register(data);
+
+      // Handle response
+      bool isSuccess = false;
+
+      // Check if the response indicates success
+      // The API may return 200/201 (JSON or HTML) or 302 (redirect)
+      if (response.statusCode == 200 || response.statusCode == 201 || response.statusCode == 302) {
+        // If JSON response with no errors, it's success
+        if (response.data is Map && response.data['error'] == null && response.data['errors'] == null) {
+          isSuccess = true;
+        }
+        // If HTML response (redirect), treat as success
+        else if (response.data is! Map) {
+          isSuccess = true;
+        }
+        // If JSON with errors, extract error message
+        else {
+          String message = 'Registration failed';
+          if (response.data['message'] != null) {
+            message = response.data['message'].toString();
+          } else if (response.data['errors'] != null) {
+            final errors = response.data['errors'] as Map;
+            if (errors.isNotEmpty) {
+              final firstError = errors.values.first;
+              if (firstError is List && firstError.isNotEmpty) {
+                message = firstError.first.toString();
+              }
+            }
+          }
+          setState(() {
+            _errorMessage = message;
+          });
+          setState(() {
+            _isLoading = false;
+          });
+          return;
+        }
+      }
+
+      // If not success by response, try to login to verify registration
+      if (!isSuccess) {
+        try {
+          final loginResponse = await _apiService.login(
+            _emailController.text,
+            _passwordController.text,
+          );
+          if (loginResponse.statusCode == 200) {
+            isSuccess = true;
+          }
+        } catch (_) {
+          // Login failed, show error below
+        }
+      }
+
+      if (isSuccess) {
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => OtpSuccessScreen(selectedRole: _selectedRole),
+          ),
+        );
+      } else {
+        setState(() {
+          _errorMessage = 'Registration failed. Please try again.';
+        });
+      }
+    } on DioException catch (e) {
+      // Handle Dio specific errors
+      String message = 'Connection error. Please try again.';
+
+      if (e.response != null) {
+        if (e.response!.data is Map) {
+          message = e.response!.data?['message'] ??
+              e.response!.data?['error'] ??
+              'Registration failed';
+        } else if (e.response!.statusCode == 422) {
+          // Validation error - try to extract field errors
+          if (e.response!.data is Map && e.response!.data['errors'] != null) {
+            final errors = e.response!.data['errors'] as Map;
+            final firstError = errors.values.first;
+            if (firstError is List && firstError.isNotEmpty) {
+              message = firstError.first.toString();
+            }
+          } else {
+            message = 'Validation failed. Please check your inputs.';
+          }
+        }
+      }
+
+      setState(() {
+        _errorMessage = message;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'An error occurred. Please try again.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isCorporate = _selectedRole == 'corporate';
+    final isSolo = _selectedRole == 'solo' || _selectedRole == 'user';
+    final isDriverOrOwner = !isCorporate && !isSolo;
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -758,169 +922,147 @@ class _RegisterScreenState extends State<RegisterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  _isOtpSent
-                      ? 'Verify OTP'
-                      : (widget.selectedRole == 'corporate'
-                            ? 'Register Company'
-                            : 'Create Account'),
-                  style: const TextStyle(
+                const Text(
+                  'Create Account',
+                  style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  _isOtpSent
-                      ? 'Enter the OTP sent to your phone'
-                      : (widget.selectedRole == 'corporate'
-                            ? 'Register your company to get started'
-                            : 'Register to get started'),
-                  style: const TextStyle(color: Colors.grey, fontSize: 16),
+                const Text(
+                  'Join GoRide Bangladesh today',
+                  style: TextStyle(color: Colors.grey, fontSize: 16),
                 ),
-                const SizedBox(height: 32),
-                if (!_isOtpSent) ...[
+                const SizedBox(height: 24),
+
+                // Role Tabs (like web version)
+                _buildRoleTabs(),
+
+                const SizedBox(height: 24),
+
+                // Name field (Company Name for corporate)
+                _buildTextField(
+                  _nameController,
+                  isCorporate ? 'Company Name' : 'Full Name',
+                  isCorporate ? Icons.business : Icons.person,
+                ),
+                const SizedBox(height: 16),
+
+                // Company Name field (shown for corporate)
+                if (isCorporate) ...[
                   _buildTextField(
-                    _nameController,
-                    widget.selectedRole == 'corporate'
-                        ? 'Company Name'
-                        : 'Full Name',
-                    widget.selectedRole == 'corporate'
-                        ? Icons.business
-                        : Icons.person,
-                  ),
-                  const SizedBox(height: 16),
-                  _buildTextField(
-                    _phoneController,
-                    'Mobile Number',
-                    Icons.phone,
-                    keyboardType: TextInputType.phone,
-                  ),
-                  const SizedBox(height: 16),
-                  _buildPasswordField(
-                    _passwordController,
-                    'Password',
-                    _obscurePassword,
-                    (v) => setState(() => _obscurePassword = v),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildPasswordField(
-                    _confirmPasswordController,
-                    'Confirm Password',
-                    _obscureConfirmPassword,
-                    (v) => setState(() => _obscureConfirmPassword = v),
-                  ),
-                  const SizedBox(height: 20),
-                  if (widget.selectedRole != null) ...[
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF10713C).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFF10713C)),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            widget.selectedRole == 'corporate'
-                                ? Icons.business
-                                : Icons.person,
-                            color: const Color(0xFF10713C),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            widget.selectedRole == 'corporate'
-                                ? 'Corporate Account'
-                                : '${widget.selectedRole} Account',
-                            style: const TextStyle(
-                              color: Color(0xFF10713C),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                  ] else ...[
-                    const Text(
-                      'Select Role',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        _buildRoleCard('Driver', 'driver', Icons.drive_eta),
-                        const SizedBox(width: 12),
-                        _buildRoleCard('Car Owner', 'owner', Icons.car_rental),
-                        const SizedBox(width: 12),
-                        _buildRoleCard(
-                          'Corporate',
-                          'corporate',
-                          Icons.business,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                  ],
-                ] else ...[
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF10713C).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.phone, color: Color(0xFF10713C)),
-                        const SizedBox(width: 12),
-                        Text(
-                          'OTP sent to ${_phoneController.text}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Color(0xFF10713C),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  _buildTextField(
-                    _otpController,
-                    'OTP',
-                    Icons.lock,
-                    keyboardType: TextInputType.number,
-                  ),
-                  const SizedBox(height: 16),
-                  Center(
-                    child: TextButton(
-                      onPressed: () => setState(() {
-                        _isOtpSent = false;
-                        _otpController.clear();
-                      }),
-                      child: const Text(
-                        'Change phone number',
-                        style: TextStyle(color: Color(0xFF10713C)),
-                      ),
-                    ),
+                    _companyNameController,
+                    'Company Name',
+                    Icons.business,
                   ),
                   const SizedBox(height: 16),
                 ],
+
+                // Email field (required for API)
+                _buildTextField(
+                  _emailController,
+                  'Email Address',
+                  Icons.email,
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 16),
+
+                // Mobile field (API expects 'mobile')
+                _buildTextField(
+                  _mobileController,
+                  'Mobile Number',
+                  Icons.phone,
+                  keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 16),
+
+                // Vehicle Type field (shown for driver/owner)
+                if (isDriverOrOwner) ...[
+                  _buildTextField(
+                    _vehicleTypeController,
+                    'Vehicle Type',
+                    Icons.directions_car,
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // Password field
+                _buildPasswordField(
+                  _passwordController,
+                  'Password',
+                  _obscurePassword,
+                  (v) => setState(() => _obscurePassword = v),
+                ),
+                const SizedBox(height: 16),
+
+                // Confirm Password field
+                _buildPasswordField(
+                  _confirmPasswordController,
+                  'Confirm Password',
+                  _obscureConfirmPassword,
+                  (v) => setState(() => _obscureConfirmPassword = v),
+                ),
+
+                const SizedBox(height: 20),
+
+                // Role indicator
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10713C).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        isCorporate
+                            ? Icons.business
+                            : (isDriverOrOwner ? Icons.drive_eta : Icons.person),
+                        color: const Color(0xFF10713C),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        isCorporate
+                            ? 'Corporate Account'
+                            : (isDriverOrOwner ? 'Driver/Owner Account' : 'Customer Account'),
+                        style: const TextStyle(
+                          color: Color(0xFF10713C),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // Error message
                 if (_errorMessage != null) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    _errorMessage!,
-                    style: const TextStyle(color: Color(0xFFED1C24)),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFED1C24).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFED1C24)),
+                    ),
+                    child: Text(
+                      _errorMessage!,
+                      style: const TextStyle(color: Color(0xFFED1C24)),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
+                  const SizedBox(height: 16),
                 ],
+
+                // Register button
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _isOtpSent ? _verifyOtp : _sendOtp,
+                    onPressed: _isLoading ? null : _register,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF10713C),
                       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -928,14 +1070,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: Text(
-                      _isOtpSent ? 'Verify OTP' : 'Create Account',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text(
+                            'Register Now',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -962,6 +1113,67 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Role tabs like web version
+  Widget _buildRoleTabs() {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+      ),
+      child: Row(
+        children: [
+          _buildRoleTab('Customer', 0),
+          _buildRoleTab('Driver / Owner', 1),
+          _buildRoleTab('Corporate', 2),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoleTab(String title, int index) {
+    final isActive = _selectedTabIndex == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedTabIndex = index;
+            // Update role based on tab selection
+            switch (index) {
+              case 0:
+                _selectedRole = 'solo';
+                break;
+              case 1:
+                _selectedRole = 'driver'; // Default to driver for tab 1
+                break;
+              case 2:
+                _selectedRole = 'corporate';
+                break;
+            }
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: isActive ? const Color(0xFF10713C) : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          child: Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: isActive ? const Color(0xFF10713C) : Colors.grey,
+              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+              fontSize: 13,
             ),
           ),
         ),
@@ -1003,45 +1215,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           onPressed: () => onToggle(!obscure),
         ),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-
-  Widget _buildRoleCard(String title, String value, IconData icon) {
-    final isSelected = _selectedRole == value;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _selectedRole = value),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF10713C) : Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isSelected
-                  ? const Color(0xFF10713C)
-                  : Colors.grey.shade300,
-            ),
-          ),
-          child: Column(
-            children: [
-              Icon(
-                icon,
-                color: isSelected ? Colors.white : const Color(0xFF666666),
-                size: 24,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: isSelected ? Colors.white : const Color(0xFF333333),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

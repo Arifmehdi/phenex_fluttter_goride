@@ -11,6 +11,10 @@ class ApiService extends g.GetxController {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     },
+    followRedirects: false,
+    validateStatus: (status) {
+      return status != null && status < 500;
+    },
   ));
 
   final GetStorage _storage = GetStorage();
@@ -61,16 +65,42 @@ class ApiService extends g.GetxController {
   Future<Response> register(Map<String, dynamic> data) async {
     try {
       final response = await _dio.post('/register', data: data);
-      
-      if (response.statusCode == 201) {
-        await _storage.write('token', response.data['token']);
-        await _storage.write('user', response.data['user']);
-        _isLoggedIn.value = true;
+
+      // Handle successful registration
+      // The API may return HTML redirect (302 followed) or JSON
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        // If response is JSON with token (API login after registration)
+        if (response.data is Map && response.data['token'] != null) {
+          await _storage.write('token', response.data['token']);
+          await _storage.write('user', response.data['user']);
+          _isLoggedIn.value = true;
+        }
+        // If API returns user data without token, save user info
+        else if (response.data is Map && response.data['user'] != null) {
+          await _storage.write('user', response.data['user']);
+        }
+        // If response is HTML (redirect), registration was successful
+        // The server redirects on success, so treat as success
+        else if (response.data is String) {
+          // Registration likely succeeded (server redirected)
+          // We can try to login with the provided credentials
+          _isLoggedIn.value = false;
+        }
       }
-      
+
       return response;
     } on DioException catch (e) {
-      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+      // If registration actually succeeded but server returned non-JSON response
+      if (e.response != null &&
+          (e.response!.statusCode == 200 || e.response!.statusCode == 302)) {
+        // Treat as success - registration likely completed
+        return e.response!;
+      }
+      return e.response ??
+          Response(
+              requestOptions: RequestOptions(path: ''),
+              statusCode: 500,
+              statusMessage: 'Unknown Error');
     }
   }
 
