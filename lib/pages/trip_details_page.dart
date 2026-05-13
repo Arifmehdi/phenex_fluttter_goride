@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart' as fmap;
 import 'package:latlong2/latlong.dart' as latlong;
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class TripDetailsPage extends StatelessWidget {
   final String rideType;
@@ -15,6 +17,31 @@ class TripDetailsPage extends StatelessWidget {
     required this.destination,
     required this.price,
   });
+
+  Future<void> _handleEmergency() async {
+    final Uri launchUri = Uri(scheme: 'tel', path: '999');
+    if (await canLaunchUrl(launchUri)) {
+      await launchUrl(launchUri);
+    }
+  }
+
+  Future<void> _handleSupport() async {
+    final Uri launchUri = Uri(scheme: 'tel', path: '+8801999999999');
+    if (await canLaunchUrl(launchUri)) {
+      await launchUrl(launchUri);
+    }
+  }
+
+  void _handleShareTrip() {
+    Share.share(
+      'I am currently on a GoRide trip!\n'
+      '🚕 Ride: ${rideType.toUpperCase()}\n'
+      '📍 From: $pickup\n'
+      '🏁 To: $destination\n'
+      '💳 Total: ৳${price.toStringAsFixed(0)}\n'
+      'Keep track of my journey for safety.',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,8 +67,8 @@ class TripDetailsPage extends StatelessWidget {
 
           // Draggable Bottom Sheet for details
           DraggableScrollableSheet(
-            initialChildSize: 0.4,
-            minChildSize: 0.4,
+            initialChildSize: 0.45,
+            minChildSize: 0.45,
             maxChildSize: 0.9,
             builder: (context, scrollController) {
               return Container(
@@ -94,6 +121,39 @@ class TripDetailsPage extends StatelessWidget {
                     _buildRouteInfo(),
                     
                     const Divider(height: 48),
+
+                    // Safety & Support
+                    const Text(
+                      'Safety & Support',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        _buildSafetyOption(
+                          icon: Icons.share_location_rounded,
+                          label: 'Share Trip',
+                          color: Colors.blue,
+                          onTap: _handleShareTrip,
+                        ),
+                        const SizedBox(width: 12),
+                        _buildSafetyOption(
+                          icon: Icons.emergency_share_rounded,
+                          label: 'Emergency',
+                          color: Colors.red,
+                          onTap: _handleEmergency,
+                        ),
+                        const SizedBox(width: 12),
+                        _buildSafetyOption(
+                          icon: Icons.headset_mic_rounded,
+                          label: 'Support',
+                          color: Colors.orange,
+                          onTap: _handleSupport,
+                        ),
+                      ],
+                    ),
+                    
+                    const Divider(height: 48),
                     
                     // Fare Details
                     const Text(
@@ -109,24 +169,6 @@ class TripDetailsPage extends StatelessWidget {
                     
                     const SizedBox(height: 32),
                     
-                    // Safety & Support
-                    const Text(
-                      'Safety & Support',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        _buildSafetyOption(Icons.share, 'Share Trip', Colors.blue),
-                        const SizedBox(width: 12),
-                        _buildSafetyOption(Icons.emergency, 'Emergency', Colors.red),
-                        const SizedBox(width: 12),
-                        _buildSafetyOption(Icons.support_agent, 'Support', Colors.orange),
-                      ],
-                    ),
-                    
-                    const SizedBox(height: 32),
-                    
                     // Driver Summary (Mini)
                     Container(
                       padding: const EdgeInsets.all(16),
@@ -135,14 +177,14 @@ class TripDetailsPage extends StatelessWidget {
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(color: Colors.grey[200]!),
                       ),
-                      child: Row(
+                      child: const Row(
                         children: [
-                          const CircleAvatar(
+                          CircleAvatar(
                             radius: 20,
                             backgroundImage: AssetImage('assets/user-avatar.png'),
                           ),
-                          const SizedBox(width: 12),
-                          const Expanded(
+                          SizedBox(width: 12),
+                          Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -153,8 +195,8 @@ class TripDetailsPage extends StatelessWidget {
                           ),
                           Row(
                             children: [
-                              const Icon(Icons.star, color: Colors.amber, size: 16),
-                              const Text(' 4.9', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Icon(Icons.star, color: Colors.amber, size: 16),
+                              Text(' 4.9', style: TextStyle(fontWeight: FontWeight.bold)),
                             ],
                           ),
                         ],
@@ -267,21 +309,47 @@ class TripDetailsPage extends StatelessWidget {
     );
   }
 
-  Widget _buildSafetyOption(IconData icon, String label, Color color) {
+  Widget _buildSafetyOption({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.1)),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 4),
-            Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color)),
-          ],
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: color.withOpacity(0.15), width: 1.5),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: color, size: 28),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: color.withOpacity(0.8),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

@@ -40,6 +40,8 @@ dependencies:
   dio: ^5.4.0
   image_picker: ^1.0.7
   get_storage: ^2.1.1
+  url_launcher: ^6.3.2
+  share_plus: ^13.1.0
 
 dev_dependencies:
   flutter_test:
