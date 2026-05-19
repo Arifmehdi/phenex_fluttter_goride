@@ -167,46 +167,49 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen> with 
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.9,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 12),
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Container(
+        height: MediaQuery.of(context).size.height * 0.9,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-          ),
-          _buildPopupHeader(),
-          _buildSearchHeader(),
-          const Divider(height: 1, thickness: 1),
-          if (_showSuggestions && _filteredAreas.isNotEmpty)
-            Expanded(
-              child: _buildSuggestionsList(),
-            )
-          else ...[
-            _buildTabs(),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildRecentTab(),
-                  _buildSavedTab(),
-                ],
+            _buildPopupHeader(),
+            _buildSearchHeader(),
+            const Divider(height: 1, thickness: 1),
+            if (_showSuggestions && _filteredAreas.isNotEmpty)
+              Expanded(
+                child: _buildSuggestionsList(),
+              )
+            else ...[
+              _buildTabs(),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildRecentTab(),
+                    _buildSavedTab(),
+                  ],
+                ),
               ),
-            ),
+            ],
+            if (!_showSuggestions) _buildHelpSection(),
           ],
-          if (!_showSuggestions) _buildHelpSection(),
-        ],
+        ),
       ),
     );
   }

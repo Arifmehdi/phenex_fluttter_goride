@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:flutter_map/flutter_map.dart' as fmap;
 import 'package:latlong2/latlong.dart' as latlong;
+import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-class TripDetailsPage extends StatelessWidget {
+class TripDetailsPage extends StatefulWidget {
   final String rideType;
   final String pickup;
   final String destination;
@@ -17,6 +19,47 @@ class TripDetailsPage extends StatelessWidget {
     required this.destination,
     required this.price,
   });
+
+  @override
+  State<TripDetailsPage> createState() => _TripDetailsPageState();
+}
+
+class _TripDetailsPageState extends State<TripDetailsPage> {
+  late final fmap.MapController _mapController;
+  Position? _currentPosition;
+  StreamSubscription<Position>? _positionStreamSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _mapController = fmap.MapController();
+    _startLiveTracking();
+  }
+
+  void _startLiveTracking() {
+    const LocationSettings locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 10,
+    );
+
+    _positionStreamSubscription = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+      (Position position) {
+        if (mounted) {
+          setState(() {
+            _currentPosition = position;
+          });
+          _mapController.move(latlong.LatLng(position.latitude, position.longitude), 15.0);
+        }
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _positionStreamSubscription?.cancel();
+    _mapController.dispose();
+    super.dispose();
+  }
 
   Future<void> _handleEmergency() async {
     final Uri launchUri = Uri(scheme: 'tel', path: '999');
@@ -35,10 +78,10 @@ class TripDetailsPage extends StatelessWidget {
   void _handleShareTrip() {
     Share.share(
       'I am currently on a GoRide trip!\n'
-      '🚕 Ride: ${rideType.toUpperCase()}\n'
-      '📍 From: $pickup\n'
-      '🏁 To: $destination\n'
-      '💳 Total: ৳${price.toStringAsFixed(0)}\n'
+      '🚕 Ride: ${widget.rideType.toUpperCase()}\n'
+      '📍 From: ${widget.pickup}\n'
+      '🏁 To: ${widget.destination}\n'
+      '💳 Total: ৳${widget.price.toStringAsFixed(0)}\n'
       'Keep track of my journey for safety.',
     );
   }
@@ -162,10 +205,10 @@ class TripDetailsPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     _buildFareRow('Base Fare', '৳50.00'),
-                    _buildFareRow('Distance Fare', '৳${(price - 50 - 10).toStringAsFixed(2)}'),
+                    _buildFareRow('Distance Fare', '৳${(widget.price - 50 - 10).toStringAsFixed(2)}'),
                     _buildFareRow('Service Fee', '৳10.00'),
                     const Divider(height: 24),
-                    _buildFareRow('Total (Incl. Tax)', '৳${price.toStringAsFixed(2)}', isTotal: true),
+                    _buildFareRow('Total (Incl. Tax)', '৳${widget.price.toStringAsFixed(2)}', isTotal: true),
                     
                     const SizedBox(height: 32),
                     
@@ -215,8 +258,11 @@ class TripDetailsPage extends StatelessWidget {
 
   Widget _buildMap() {
     return fmap.FlutterMap(
-      options: const fmap.MapOptions(
-        initialCenter: latlong.LatLng(23.8103, 90.4125),
+      mapController: _mapController,
+      options: fmap.MapOptions(
+        initialCenter: _currentPosition != null 
+            ? latlong.LatLng(_currentPosition!.latitude, _currentPosition!.longitude)
+            : const latlong.LatLng(23.8103, 90.4125),
         initialZoom: 15,
       ),
       children: [
@@ -226,12 +272,13 @@ class TripDetailsPage extends StatelessWidget {
         ),
         fmap.MarkerLayer(
           markers: [
-            fmap.Marker(
-              point: const latlong.LatLng(23.8103, 90.4125),
-              width: 40,
-              height: 40,
-              child: const Icon(Icons.my_location, color: Colors.blue, size: 30),
-            ),
+            if (_currentPosition != null)
+              fmap.Marker(
+                point: latlong.LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+                width: 40,
+                height: 40,
+                child: const Icon(Icons.my_location, color: Colors.blue, size: 30),
+              ),
           ],
         ),
       ],
@@ -250,7 +297,7 @@ class TripDetailsPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('Pickup', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  Text(pickup, style: const TextStyle(fontWeight: FontWeight.w500)),
+                  Text(widget.pickup, style: const TextStyle(fontWeight: FontWeight.w500)),
                 ],
               ),
             ),
@@ -272,7 +319,7 @@ class TripDetailsPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('Destination', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  Text(destination, style: const TextStyle(fontWeight: FontWeight.w500)),
+                  Text(widget.destination, style: const TextStyle(fontWeight: FontWeight.w500)),
                 ],
               ),
             ),

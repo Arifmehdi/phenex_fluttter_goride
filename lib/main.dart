@@ -6,6 +6,8 @@ import 'locale_controller.dart';
 import 'registration_screens.dart';
 import 'pages/home_page.dart';
 import 'pages/dashboard_page.dart';
+import 'pages/location_selection_screen.dart';
+import 'pages/rent_car_booking_screen.dart';
 import 'services/api_service.dart';
 import 'widgets/sidebar_menu.dart';
 
@@ -776,31 +778,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final data = <String, dynamic>{
       'name': _nameController.text,
       'email': _emailController.text,
-      'mobile': _mobileController.text,
+      'mobile': _mobileController.text, // Mobile is required by API
       'password': _passwordController.text,
       'password_confirmation': _confirmPasswordController.text,
-      'role': _selectedRole,
+      'role': _selectedRole, // solo, driver, owner, corporate
     };
 
-    // Add company_name for corporate/owner roles
-    if (_selectedRole == 'corporate' && _companyNameController.text.isNotEmpty) {
+    // Add company_name for corporate role
+    if (_selectedRole == 'corporate') {
       data['company_name'] = _companyNameController.text;
     }
 
     // Add vehicle_type for driver/owner roles
-    if ((_selectedRole == 'driver' || _selectedRole == 'owner') &&
-        _vehicleTypeController.text.isNotEmpty) {
+    if (_selectedRole == 'driver' || _selectedRole == 'owner') {
       data['vehicle_type'] = _vehicleTypeController.text;
     }
 
     try {
+      print('Attempting registration with data: $data');
       final response = await _apiService.register(data);
+      print('Registration response status: ${response.statusCode}');
+      print('Registration response data: ${response.data}');
 
       // Handle response
       bool isSuccess = false;
 
       // Check if the response indicates success
-      // The API may return 200/201 (JSON or HTML) or 302 (redirect)
       if (response.statusCode == 200 || response.statusCode == 201 || response.statusCode == 302) {
         // If JSON response with no errors, it's success
         if (response.data is Map && response.data['error'] == null && response.data['errors'] == null) {
@@ -811,27 +814,42 @@ class _RegisterScreenState extends State<RegisterScreen> {
           isSuccess = true;
         }
         // If JSON with errors, extract error message
-        else {
+        else if (response.data is Map) {
           String message = 'Registration failed';
-          if (response.data['message'] != null) {
-            message = response.data['message'].toString();
-          } else if (response.data['errors'] != null) {
+          if (response.data['errors'] != null) {
             final errors = response.data['errors'] as Map;
             if (errors.isNotEmpty) {
               final firstError = errors.values.first;
               if (firstError is List && firstError.isNotEmpty) {
                 message = firstError.first.toString();
+              } else {
+                message = firstError.toString();
               }
             }
+          } else if (response.data['message'] != null) {
+            message = response.data['message'].toString();
           }
-          setState(() {
-            _errorMessage = message;
-          });
-          setState(() {
-            _isLoading = false;
-          });
+          setState(() => _errorMessage = message);
+          setState(() => _isLoading = false);
           return;
         }
+      } else if (response.statusCode == 422) {
+        // Validation error
+        String message = 'Validation failed';
+        if (response.data is Map && response.data['errors'] != null) {
+          final errors = response.data['errors'] as Map;
+          if (errors.isNotEmpty) {
+            final firstError = errors.values.first;
+            if (firstError is List && firstError.isNotEmpty) {
+              message = firstError.first.toString();
+            } else {
+              message = firstError.toString();
+            }
+          }
+        }
+        setState(() => _errorMessage = message);
+        setState(() => _isLoading = false);
+        return;
       }
 
       // If not success by response, try to login to verify registration
@@ -851,9 +869,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       if (isSuccess) {
         if (!mounted) return;
+        
+        // After successful registration, the user might be logged in automatically
+        // or we need to navigate based on the role we just registered with.
+        final user = _apiService.getUser();
+        final role = user?['role'] as String? ?? _selectedRole;
+        
+        print('Registration success! Navigating to dashboard for role: $role');
+        
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (_) => OtpSuccessScreen(selectedRole: _selectedRole),
+            builder: (_) => GoRideApp.getDashboardForRole(role),
           ),
         );
       } else {
@@ -941,20 +967,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                 const SizedBox(height: 24),
 
-                // Name field (Company Name for corporate)
-                _buildTextField(
-                  _nameController,
-                  isCorporate ? 'Company Name' : 'Full Name',
-                  isCorporate ? Icons.business : Icons.person,
-                ),
-                const SizedBox(height: 16),
-
-                // Company Name field (shown for corporate)
+                // Name and Company fields logic
                 if (isCorporate) ...[
                   _buildTextField(
                     _companyNameController,
                     'Company Name',
                     Icons.business,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildTextField(
+                    _nameController,
+                    'Contact Person',
+                    Icons.person,
+                  ),
+                  const SizedBox(height: 16),
+                ] else ...[
+                  _buildTextField(
+                    _nameController,
+                    'Full Name',
+                    Icons.person,
                   ),
                   const SizedBox(height: 16),
                 ],
@@ -1230,10 +1261,13 @@ class RiderHomeScreen extends StatefulWidget {
 
 class _RiderHomeScreenState extends State<RiderHomeScreen> {
   int _selectedIndex = 0;
-  final List<String> _locations = ['', ''];
+  final ApiService _apiService = Get.find<ApiService>();
 
   @override
   Widget build(BuildContext context) {
+    final user = _apiService.getUser();
+    final name = user?['name']?.split(' ')[0] ?? 'User';
+
     return Scaffold(
       drawer: SidebarMenu(
         role: 'solo',
@@ -1244,26 +1278,62 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
         },
       ),
       appBar: AppBar(
+        backgroundColor: const Color(0xFF10713C),
+        elevation: 0,
         leading: Builder(
           builder: (context) => IconButton(
-            icon: const Icon(Icons.menu),
+            icon: const Icon(Icons.menu_open, color: Colors.white, size: 28),
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: const Text('GoRide'),
+        title: Text(
+          'Hello, $name',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+          ),
+        ),
         actions: [
-          IconButton(icon: const Icon(Icons.notifications), onPressed: () {}),
+          IconButton(
+            icon: const Icon(Icons.notifications_none_rounded, color: Colors.white),
+            onPressed: () {},
+          ),
+          const SizedBox(width: 8),
         ],
       ),
       body: IndexedStack(
         index: _selectedIndex,
-        children: [_buildBookingTab(), _buildHistoryTab(), _buildProfileTab()],
+        children: [
+          SingleChildScrollView(child: _buildModernBookingTab()),
+          SingleChildScrollView(child: _buildHistoryTab()),
+          SingleChildScrollView(child: _buildProfileTab()),
+        ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: _buildModernBottomNav(),
+    );
+  }
+
+  Widget _buildModernBottomNav() {
+    return Container(
+      decoration: BoxDecoration(
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, -5),
+          ),
+        ],
+      ),
+      child: BottomNavigationBar(
         currentIndex: _selectedIndex + 1,
+        elevation: 0,
         backgroundColor: Colors.white,
         selectedItemColor: const Color(0xFF10713C),
-        unselectedItemColor: Colors.grey,
+        unselectedItemColor: Colors.grey[400],
+        type: BottomNavigationBarType.fixed,
+        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+        unselectedLabelStyle: const TextStyle(fontSize: 12),
         onTap: (index) {
           if (index == 0) {
             Get.offAll(() => HomePage());
@@ -1272,259 +1342,103 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
           }
         },
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.public), label: 'Portal'),
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Book'),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Account'),
+          BottomNavigationBarItem(icon: Icon(Icons.grid_view_rounded), label: 'Portal'),
+          BottomNavigationBarItem(icon: Icon(Icons.explore_rounded), label: 'Explore'),
+          BottomNavigationBarItem(icon: Icon(Icons.history_rounded), label: 'Trips'),
+          BottomNavigationBarItem(icon: Icon(Icons.person_outline_rounded), label: 'Account'),
         ],
       ),
     );
   }
 
-  Widget _buildBookingTab() {
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            // Quick booking section
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF10713C),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Where to?',
-                    style: TextStyle(color: Colors.white, fontSize: 14),
+  void _showLocationPopup(BuildContext context, {String? rideType}) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Material(
+        color: Colors.transparent,
+        child: LocationSelectionScreen(initialRideType: rideType),
+      ),
+    );
+  }
+
+  void _showRideTypeSelection(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Material(
+        color: Colors.transparent,
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  const SizedBox(height: 12),
-                  ...List.generate(_locations.length, (index) {
-                    final isPickup = index == 0;
-                    final isDestination = index == _locations.length - 1;
-                    final stopNumber = isPickup
-                        ? 1
-                        : isDestination
-                        ? _locations.length
-                        : index;
-                    return AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      transitionBuilder: (child, animation) {
-                        return SlideTransition(
-                          position:
-                              Tween<Offset>(
-                                begin: const Offset(1, 0),
-                                end: Offset.zero,
-                              ).animate(
-                                CurvedAnimation(
-                                  parent: animation,
-                                  curve: Curves.easeOutCubic,
-                                ),
-                              ),
-                          child: FadeTransition(
-                            opacity: animation,
-                            child: child,
-                          ),
-                        );
-                      },
-                      child: Padding(
-                        key: ValueKey(index),
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Row(
-                          children: [
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 300),
-                              width: 24,
-                              height: 24,
-                              decoration: BoxDecoration(
-                                color: isPickup
-                                    ? Colors.white
-                                    : Colors.white.withValues(alpha: 0.3),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '$stopNumber',
-                                  style: TextStyle(
-                                    color: const Color(0xFF10713C),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: TextField(
-                                decoration: InputDecoration(
-                                  hintText: isPickup
-                                      ? 'Pickup location'
-                                      : isDestination
-                                      ? 'Final destination'
-                                      : 'Stop $stopNumber',
-                                  filled: true,
-                                  fillColor: Colors.white,
-                                  isDense: true,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 10,
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    borderSide: BorderSide.none,
-                                  ),
-                                  prefixIcon: Icon(
-                                    isPickup
-                                        ? Icons.location_on
-                                        : isDestination
-                                        ? Icons.flag
-                                        : Icons.circle,
-                                    size: 18,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            if (!isPickup && !isDestination)
-                              IconButton(
-                                icon: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 300),
-                                  child: const Icon(
-                                    Icons.remove_circle,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                ),
-                                onPressed: () {},
-                              ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const BookingFormScreen(),
-                          ),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFED1C24),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                      child: const Text(
-                        'Find Rides',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Select Ride Type',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF10713C),
+                ),
+              ),
+              const Text(
+                'Choose how you want to travel today',
+                style: TextStyle(fontSize: 14, color: Colors.grey),
+              ),
+              const SizedBox(height: 32),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildRideTypeCard(
+                      context,
+                      title: 'Car',
+                      subtitle: 'Comfortable trips',
+                      icon: Icons.directions_car,
+                      color: const Color(0xFF10713C),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildRideTypeCard(
+                      context,
+                      title: 'Bike',
+                      subtitle: 'Faster in traffic',
+                      icon: Icons.two_wheeler,
+                      color: const Color(0xFFED1C24),
                     ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 24),
-            // Car type selector
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Select Car Type',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              const SizedBox(height: 16),
+              _buildRideTypeListItem(
+                context,
+                title: 'Rent a Car',
+                subtitle: 'For long trips and outstation',
+                icon: Icons.car_rental,
+                color: Colors.blue,
+                onTap: () {
+                  Navigator.pop(context);
+                  _showRentCarTypeSelection(context);
+                },
               ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 100,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  _carTypeCard('Sedan', '৳ 50/km', Icons.directions_car),
-                  _carTypeCard('SUV', '৳ 70/km', Icons.directions_car),
-                  _carTypeCard('Microbus', '৳ 40/km', Icons.directions_car),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            // Services section
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Our Services',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-            ),
-            const SizedBox(height: 12),
-            GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              children: [
-                _serviceCard('Airport', Icons.flight),
-                _serviceCard('Events', Icons.event),
-                _serviceCard('Corporate', Icons.business),
-                _serviceCard('Tours', Icons.tour),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _carTypeCard(String name, String price, IconData icon) {
-    return Card(
-      child: Container(
-        width: 100,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          border: Border.all(color: const Color(0xFF10713C)),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 40, color: const Color(0xFF10713C)),
-            const SizedBox(height: 8),
-            Text(
-              name,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-            Text(
-              price,
-              style: const TextStyle(fontSize: 12, color: Color(0xFFED1C24)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _serviceCard(String title, IconData icon) {
-    return Card(
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border.all(color: const Color(0xFF10713C)),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 40, color: const Color(0xFF10713C)),
-              const SizedBox(height: 8),
-              Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
             ],
           ),
         ),
@@ -1532,99 +1446,52 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
     );
   }
 
-  Widget _buildHistoryTab() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const Padding(
-          padding: EdgeInsets.only(bottom: 16),
-          child: Text(
-            'Trip History',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
+  Widget _buildRideTypeCard(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(context);
+        _showLocationPopup(context, rideType: title);
+      },
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.3), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
-        _tripCard(
-          'Dhaka Airport → Gulshan',
-          '৳ 450',
-          '30 mins',
-          '★★★★★',
-          'Completed',
-        ),
-        _tripCard(
-          'Motijheel → Mirpur',
-          '৳ 280',
-          '25 mins',
-          '★★★★☆',
-          'Completed',
-        ),
-        _tripCard(
-          'Banani → Dhanmondi',
-          '৳ 320',
-          '20 mins',
-          '★★★★★',
-          'Completed',
-        ),
-      ],
-    );
-  }
-
-  Widget _tripCard(
-    String route,
-    String price,
-    String time,
-    String rating,
-    String status,
-  ) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  route,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10713C).withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    status,
-                    style: const TextStyle(
-                      color: Color(0xFF10713C),
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 28),
             ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(price, style: const TextStyle(fontSize: 14)),
-                    Text(time, style: const TextStyle(color: Colors.grey)),
-                  ],
-                ),
-                Text(rating, style: const TextStyle(fontSize: 14)),
-              ],
+            const SizedBox(height: 20),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
           ],
         ),
@@ -1632,97 +1499,639 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
     );
   }
 
-  Widget _buildProfileTab() {
-    final apiService = Get.find<ApiService>();
-    final user = apiService.getUser();
-    final name = user?['name'] ?? 'Guest User';
-    final mobile = user?['mobile'] ?? (apiService.isLoggedIn() ? '' : 'Please login to view your profile');
+  Widget _buildRideTypeListItem(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100),
+      ),
+      child: ListTile(
+        onTap: onTap,
+        contentPadding: const EdgeInsets.all(12),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: color),
+        ),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+        trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+      ),
+    );
+  }
 
+  Widget _buildModernBookingTab() {
+    return Padding(
+      padding: const EdgeInsets.all(20.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Search/Booking Bar
+          GestureDetector(
+            onTap: () => _showRideTypeSelection(context),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 15,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+                border: Border.all(color: Colors.grey.shade100),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.search, color: Color(0xFF10713C), size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Where to go?',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        Text(
+                          'Select your ride type',
+                          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10713C).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text(
+                      'Search',
+                      style: TextStyle(
+                        color: Color(0xFF10713C),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+          
+          const Text(
+            'Vehicle Categories',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          _buildCategoryGrid(),
+          
+          const SizedBox(height: 32),
+          const Text(
+            'Quick Actions',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(child: _buildQuickActionCard('Airport', Icons.local_airport, const Color(0xFF10713C))),
+              const SizedBox(width: 16),
+              Expanded(child: _buildQuickActionCard('Hourly', Icons.timer, const Color(0xFFED1C24))),
+              const SizedBox(width: 16),
+              Expanded(child: _buildQuickActionCard('Intercity', Icons.location_city, Colors.blue)),
+            ],
+          ),
+          
+          const SizedBox(height: 32),
+          _buildPromoBanner(),
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+
+  void _showRentCarTypeSelection(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Material(
+        color: Colors.transparent,
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Rent a Car',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF10713C),
+                ),
+              ),
+              const Text(
+                'Choose the trip type that fits your needs',
+                style: TextStyle(fontSize: 14, color: Colors.grey),
+              ),
+              const SizedBox(height: 32),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildRentalTypeCard(
+                      context,
+                      title: 'One Way',
+                      subtitle: 'Without Return',
+                      icon: Icons.trending_flat,
+                      color: const Color(0xFF10713C),
+                      isWithReturn: false,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildRentalTypeCard(
+                      context,
+                      title: 'Round Trip',
+                      subtitle: 'With Return',
+                      icon: Icons.sync,
+                      color: const Color(0xFFED1C24),
+                      isWithReturn: true,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRentalTypeCard(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required bool isWithReturn,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(context);
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => RentCarBookingScreen(initialWithReturn: isWithReturn),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.3), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 28),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryGrid() {
+    final List<Map<String, dynamic>> categories = [
+      {'name': 'Car', 'subtitle': 'Daily commute', 'icon': Icons.directions_car, 'color': const Color(0xFF10713C)},
+      {'name': 'Bike', 'subtitle': 'Quick & fast', 'icon': Icons.two_wheeler, 'color': const Color(0xFFED1C24)},
+      {'name': 'Rent Car', 'subtitle': 'Long trips', 'icon': Icons.car_rental, 'color': Colors.blue},
+      {'name': 'Parcel', 'subtitle': 'Send items', 'icon': Icons.inventory_2_outlined, 'color': Colors.amber[800]},
+    ];
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 1.4,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+      ),
+      itemCount: categories.length,
+      itemBuilder: (context, index) {
+        final cat = categories[index];
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.grey.shade100),
+            boxShadow: [
+              BoxShadow(
+                color: (cat['color'] as Color).withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                if (cat['name'] == 'Rent Car') {
+                  _showRentCarTypeSelection(context);
+                } else {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => LocationSelectionScreen(initialRideType: cat['name']),
+                    ),
+                  );
+                }
+              },
+              borderRadius: BorderRadius.circular(20),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: (cat['color'] as Color).withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(cat['icon'], color: cat['color'], size: 24),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          cat['name'],
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        Text(
+                          cat['subtitle'],
+                          style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildQuickActionCard(String title, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.1)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 28),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPromoBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF10713C), Color(0xFF1D9755)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        image: DecorationImage(
+          image: const AssetImage('assets/banner/banner_01.jpg'),
+          fit: BoxFit.cover,
+          colorFilter: ColorFilter.mode(
+            const Color(0xFF10713C).withOpacity(0.8),
+            BlendMode.darken,
+          ),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFED1C24),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text(
+              'PROMO',
+              style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            '30% OFF on your\nfirst 3 intercity trips',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              height: 1.2,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () {},
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF10713C),
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Claim Offer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryTab() {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(20),
       children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 16, bottom: 24),
-          child: Center(
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Trip History',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            TextButton(
+              onPressed: () {},
+              child: const Text('View All', style: TextStyle(color: Color(0xFF10713C))),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _tripCard('Dhaka Airport → Gulshan', '৳ 450', '30 mins', 'Completed', Icons.check_circle_rounded, Colors.green),
+        _tripCard('Motijheel → Mirpur', '৳ 280', '25 mins', 'Completed', Icons.check_circle_rounded, Colors.green),
+        _tripCard('Banani → Dhanmondi', '৳ 320', '20 mins', 'Cancelled', Icons.cancel_rounded, Colors.red),
+      ],
+    );
+  }
+
+  Widget _tripCard(String route, String price, String time, String status, IconData icon, Color color) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  route,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+              ),
+              Text(
+                price,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF10713C)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.access_time_filled, size: 14, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text(time, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                ],
+              ),
+              Text(
+                status,
+                style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileTab() {
+    final user = _apiService.getUser();
+    final name = user?['name'] ?? 'User';
+    final email = user?['email'] ?? 'user@example.com';
+
+    return Padding(
+      padding: const EdgeInsets.all(20.0),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 15,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
             child: Column(
               children: [
-                const CircleAvatar(
-                  radius: 50,
-                  backgroundColor: Color(0xFF10713C),
-                  child: Icon(Icons.person, size: 50, color: Colors.white),
+                Stack(
+                  children: [
+                    const CircleAvatar(
+                      radius: 45,
+                      backgroundColor: Color(0xFF10713C),
+                      child: Icon(Icons.person, size: 45, color: Colors.white),
+                    ),
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(color: Color(0xFFED1C24), shape: BoxShape.circle),
+                        child: const Icon(Icons.edit, color: Colors.white, size: 14),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 Text(
                   name,
                   style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 4),
                 Text(
-                  mobile,
-                  style: const TextStyle(color: Colors.grey),
+                  email,
+                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildUserStat('4.9', 'Rating'),
+                    _buildUserStat('124', 'Trips'),
+                    _buildUserStat('৳2.4k', 'Saved'),
+                  ],
                 ),
               ],
             ),
           ),
-        ),
-        if (!apiService.isLoggedIn())
+          const SizedBox(height: 24),
+          _profileMenuTile(Icons.wallet_rounded, 'GoRide Wallet', '৳ 1,250.00'),
+          _profileMenuTile(Icons.card_giftcard_rounded, 'Promotions', '3 available'),
+          _profileMenuTile(Icons.support_agent_rounded, 'Help & Support', ''),
+          _profileMenuTile(Icons.settings_suggest_rounded, 'Settings', ''),
+          const SizedBox(height: 32),
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.of(
-                  context,
-                ).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF10713C),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-              child: const Text(
-                'Login',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          )
-        else ...[
-          _profileOption(Icons.edit, 'Edit Profile'),
-          _profileOption(Icons.history, 'Trip History'),
-          _profileOption(Icons.payment, 'Payment Methods'),
-          _profileOption(Icons.help, 'Help & Support'),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
+            child: TextButton(
               onPressed: () async {
-                await apiService.logout();
+                await _apiService.logout();
                 Get.offAll(() => const SplashScreen());
               },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFED1C24),
-                padding: const EdgeInsets.symmetric(vertical: 14),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFED1C24),
+                padding: const EdgeInsets.symmetric(vertical: 16),
               ),
-              child: const Text(
-                'Logout',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              child: const Text('Logout Account', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildUserStat(String value, String label) {
+    return Column(
+      children: [
+        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF10713C))),
+        Text(label, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
       ],
     );
   }
 
-  Widget _profileOption(IconData icon, String title) {
+  Widget _profileMenuTile(IconData icon, String title, String trailing) {
     return ListTile(
-      leading: Icon(icon, color: const Color(0xFF10713C)),
-      title: Text(title),
-      trailing: const Icon(Icons.arrow_forward, color: Colors.grey),
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(color: Colors.grey[50], borderRadius: BorderRadius.circular(10)),
+        child: Icon(icon, color: const Color(0xFF10713C), size: 22),
+      ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (trailing.isNotEmpty)
+            Text(
+              trailing,
+              style: const TextStyle(color: Color(0xFF10713C), fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+          const SizedBox(width: 8),
+          const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+        ],
+      ),
       onTap: () {},
     );
   }

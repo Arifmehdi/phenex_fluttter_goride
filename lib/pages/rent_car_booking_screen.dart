@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
+import 'available_cars_screen.dart';
 
 class RentCarBookingScreen extends StatefulWidget {
-  const RentCarBookingScreen({super.key});
+  final bool initialWithReturn;
+  const RentCarBookingScreen({super.key, this.initialWithReturn = false});
 
   @override
   State<RentCarBookingScreen> createState() => _RentCarBookingScreenState();
 }
 
 class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
-  bool _isWithReturn = false;
+  late bool _isWithReturn;
   DateTime _pickupDate = DateTime.now();
   TimeOfDay _pickupTime = TimeOfDay.now();
   DateTime _returnDate = DateTime.now().add(const Duration(days: 1));
@@ -23,6 +25,44 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
   final TextEditingController _pickupLocationController =
       TextEditingController();
   final List<TextEditingController> _additionalStopsControllers = [];
+
+  void _handleSearch() {
+    if (_pickupDistrict == null || _pickupThana == null || _pickupLocationController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill all pickup details')),
+      );
+      return;
+    }
+    if (_selectedDistrict == null || _selectedThana == null || _addressController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill all destination details')),
+      );
+      return;
+    }
+
+    final bookingData = {
+      'isWithReturn': _isWithReturn,
+      'pickupDate': '${_pickupDate.day}/${_pickupDate.month}/${_pickupDate.year}',
+      'pickupTime': _pickupTime.format(context),
+      'returnDate': _isWithReturn ? '${_returnDate.day}/${_returnDate.month}/${_returnDate.year}' : null,
+      'pickupDistrict': _pickupDistrict,
+      'pickupThana': _pickupThana,
+      'destDistrict': _selectedDistrict,
+      'destThana': _selectedThana,
+    };
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AvailableCarsScreen(bookingData: bookingData),
+      ),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _isWithReturn = widget.initialWithReturn;
+  }
 
   final List<String> _districts = [
     'All',
@@ -951,9 +991,7 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                },
+                onPressed: _handleSearch,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF10713C),
                   padding: const EdgeInsets.symmetric(vertical: 12),

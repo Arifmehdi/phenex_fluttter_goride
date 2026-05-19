@@ -1,0 +1,215 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Http\Resources\UserResource;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use App\Models\User;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Str;
+use App\Http\Controllers\Api\CartController; // Add this import
+use App\Traits\NotificationTrait;
+
+class AuthController extends Controller
+{
+    use NotificationTrait;
+    public function login(Request $request, CartController $cartController) // Inject CartController
+    {
+        $request->validate([
+            'login'    => 'required|string',
+            'password' => 'required|string',
+        ]);
+
+        $login_type = filter_var($request->input('login'), FILTER_VALIDATE_EMAIL) ? 'email' : 'mobile';
+        
+        $credentials = [
+            $login_type => $request->input('login'),
+            'password' => $request->input('password'),
+        ];
+
+        if (!Auth::attempt($credentials)) {
+            return response()->json([
+                'message' => 'Invalid credentials'
+            ], 401);
+        }
+
+        $user = Auth::user();
+
+        // Check if user is active
+        if ($user->is_approve != '1') {
+            Auth::logout();
+            return response()->json([
+                'message' => 'Your account is ' . $user->status . '. Please contact support.'
+            ], 403);
+        }
+
+        // Merge guest cart items
+        $guestSessionId = $request->header('X-Session-ID') ?: $request->session_id;
+        if ($guestSessionId) {
+            $cartController->mergeGuestCart($user->id, $guestSessionId);
+        }
+
+        // delete old tokens
+        $user->tokens()->delete();
+
+        $token = $user->createToken('flutter')->plainTextToken;
+
+        return response()->json([
+            'token' => $token,
+            'user' => new UserResource($user)
+        ]);
+    }
+
+    public function register(Request $request)
+    {
+        $request->validate([
+            'name'     => 'required|string|max:255',
+            'email'    => 'required|email|unique:users,email',
+            'mobile'   => 'required|string|unique:users,mobile',
+            'password' => 'required|string|min:8',
+            'role'     => 'nullable|string|in:user,driver,owner,corporate,solo',
+        ]);
+
+        $role = $request->input('role', 'solo');
+
+        $user = User::create([
+            'name'       => $request->name,
+            'email'      => $request->email,
+            'mobile'     => $request->mobile,
+            'password'   => bcrypt($request->password),
+            'role'       => $role,
+            'status'     => ($role === 'solo' || $role === 'user') ? 'active' : 'pending',
+            'ip_address' => $request->ip(),
+            'is_approve' => ($role === 'solo' || $role === 'user') ? 1 : 0
+        ]);
+
+        // Notification for admin
+        $this->createNotification(
+            'New User Registration',
+            $user->name.' registered as '.$role.' from IP '.$request->ip(),
+            null,
+            $request->ip(),
+            'register'
+        );
+
+        $token = $user->createToken('flutter')->plainTextToken;
+
+        return response()->json([
+            'token' => $token,
+            'user' => new UserResource($user)
+        ], 201);
+    }
+
+    public function logout(Request $request)
+    {
+        $request->user()->currentAccessToken()->delete();
+
+        return response()->json([
+            'message' => 'Logged out successfully'
+        ]);
+    }
+
+    /**
+     * Send a reset link to the given user.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
+     */
+    public function forgotPassword(Request $request)
+    {
+        $request->validate(['email' => 'required|email']);
+
+        $response = Password::sendResetLink(
+            $request->only('email')
+        );
+
+        if ($response == Password::RESET_LINK_SENT) {
+            return response()->json(['message' => trans($response)], 200);
+        }
+
+        return response()->json(['message' => trans($response)], 400);
+    }
+
+    /**
+     * Reset the given user's password.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
+     */
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'token' => 'required',
+            'email' => 'required|email',
+            'password' => 'required|confirmed|min:8',
+        ]);
+
+        $response = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function ($user, $password) {
+                $user->forceFill([
+                    'password' => bcrypt($password),
+                    'remember_token' => Str::random(60),
+                ])->save();
+
+                event(new PasswordReset($user));
+            }
+        );
+
+        if ($response == Password::PASSWORD_RESET) {
+            return response()->json(['message' => trans($response)], 200);
+        }
+
+        return response()->json(['message' => trans($response)], 400);
+    }
+}
+
+
+Route::post('/login', [ApiAuthController::class, 'login']);
+Route::post('/register', [ApiAuthController::class, 'register']);
+
+
+user table 
+---------------
+#	Name	Type	Collation	Attributes	Null	Default	Comments	Extra	Action
+	1	id Primary	bigint(20)		UNSIGNED	No	None		AUTO_INCREMENT	Change Change	Drop Drop	
+	2	name	varchar(255)	utf8mb4_unicode_ci		No	None			Change Change	Drop Drop	
+	3	father_name	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	4	designation	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	5	address	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	6	reg_date	date			Yes	NULL			Change Change	Drop Drop	
+	7	bkash_number	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	8	dob	date			Yes	NULL			Change Change	Drop Drop	
+	9	blood_group	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	10	email Index	varchar(255)	utf8mb4_unicode_ci		No	None			Change Change	Drop Drop	
+	11	role	enum('admin', 'corporate', 'owner', 'driver', 'sol...	utf8mb4_unicode_ci		No	solo			Change Change	Drop Drop	
+	12	status	enum('pending', 'active', 'suspended', 'rejected')	utf8mb4_unicode_ci		No	active			Change Change	Drop Drop	
+	13	otp_verified_at	timestamp			Yes	NULL			Change Change	Drop Drop	
+	14	email_verified_at	timestamp			Yes	NULL			Change Change	Drop Drop	
+	15	image	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	16	short_bio	text	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	17	writer	tinyint(4)			Yes	NULL			Change Change	Drop Drop	
+	18	mobile	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	19	membership_type	tinyint(4)			Yes	0			Change Change	Drop Drop	
+	20	fb_url	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	21	twitter_url	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	22	insta_url	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	23	yt_url	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	24	local_url	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	25	password	varchar(255)	utf8mb4_unicode_ci		No	None			Change Change	Drop Drop	
+	26	password_temp	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	27	remember_token	varchar(100)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	28	created_at	timestamp			Yes	NULL			Change Change	Drop Drop	
+	29	updated_at	timestamp			Yes	NULL			Change Change	Drop Drop	
+	30	present_address	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	31	permanent_address	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	32	nid	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	33	tin_number	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	34	ssc_passing	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	35	ssc_registration	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	36	health_history	varchar(255)	utf8mb4_unicode_ci		Yes	NULL			Change Change	Drop Drop	
+	37	is_approve	tinyint(4)			No	0			Change Change	Drop Drop	

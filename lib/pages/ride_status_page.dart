@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'trip_details_page.dart';
@@ -24,15 +27,21 @@ class RideStatusScreen extends StatefulWidget {
 
 class _RideStatusScreenState extends State<RideStatusScreen> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
+  late final MapController _mapController;
   bool _isDriverFound = false;
+  Position? _currentPosition;
+  StreamSubscription<Position>? _positionStreamSubscription;
   
   @override
   void initState() {
     super.initState();
+    _mapController = MapController();
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat();
+
+    _startLiveTracking();
 
     // Simulate finding a driver after 4 seconds
     Timer(const Duration(seconds: 4), () {
@@ -43,8 +52,28 @@ class _RideStatusScreenState extends State<RideStatusScreen> with SingleTickerPr
     });
   }
 
+  void _startLiveTracking() {
+    const LocationSettings locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 10,
+    );
+
+    _positionStreamSubscription = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+      (Position position) {
+        if (mounted) {
+          setState(() {
+            _currentPosition = position;
+          });
+          _mapController.move(LatLng(position.latitude, position.longitude), 15.0);
+        }
+      },
+    );
+  }
+
   @override
   void dispose() {
+    _positionStreamSubscription?.cancel();
+    _mapController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -90,13 +119,8 @@ class _RideStatusScreenState extends State<RideStatusScreen> with SingleTickerPr
       backgroundColor: Colors.white,
       body: Stack(
         children: [
-          // Background Map Placeholder (or could be an actual map)
-          Container(
-            color: Colors.grey[200],
-            child: const Center(
-              child: Icon(Icons.map, size: 100, color: Colors.grey),
-            ),
-          ),
+          // Background Map (Leaflet)
+          _buildMap(),
           
           // Header with back button
           SafeArea(
@@ -127,6 +151,35 @@ class _RideStatusScreenState extends State<RideStatusScreen> with SingleTickerPr
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMap() {
+    return FlutterMap(
+      mapController: _mapController,
+      options: MapOptions(
+        initialCenter: _currentPosition != null 
+            ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude)
+            : const LatLng(23.8103, 90.4125),
+        initialZoom: 15,
+      ),
+      children: [
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.goride.app',
+        ),
+        MarkerLayer(
+          markers: [
+            if (_currentPosition != null)
+              Marker(
+                point: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+                width: 40,
+                height: 40,
+                child: const Icon(Icons.my_location, color: Colors.blue, size: 30),
+              ),
+          ],
+        ),
+      ],
     );
   }
 

@@ -195,6 +195,144 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _showRentCarTypeSelection(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Rent a Car',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF10713C),
+              ),
+            ),
+            const Text(
+              'Choose the trip type that fits your needs',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 32),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildRentalTypeCard(
+                    context,
+                    title: 'One Way',
+                    subtitle: 'Without Return',
+                    icon: Icons.trending_flat,
+                    color: const Color(0xFF10713C),
+                    isWithReturn: false,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _buildRentalTypeCard(
+                    context,
+                    title: 'Round Trip',
+                    subtitle: 'With Return',
+                    icon: Icons.sync,
+                    color: const Color(0xFFED1C24),
+                    isWithReturn: true,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRentalTypeCard(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required bool isWithReturn,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(context);
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => RentCarBookingScreen(initialWithReturn: isWithReturn),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.3), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 28),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildServicesTab(BuildContext context) {
     return SingleChildScrollView(
       child: Padding(
@@ -218,9 +356,7 @@ class _HomePageState extends State<HomePage> {
                 return GestureDetector(
                     onTap: () {
                       if (service.title == 'Rent Car') {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const RentCarBookingScreen()),
-                        );
+                        _showRentCarTypeSelection(context);
                       } else if (service.title == 'Corporate') {
                         Navigator.of(context).push(
                           MaterialPageRoute(builder: (_) => const RegisterScreen(selectedRole: 'corporate')),
@@ -533,9 +669,7 @@ class _HomePageState extends State<HomePage> {
     return GestureDetector(
       onTap: () {
         if (service.title == 'Rent Car') {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const RentCarBookingScreen()),
-          );
+          _showRentCarTypeSelection(context);
         } else if (service.title == 'Corporate') {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const RegisterScreen(selectedRole: 'corporate')),
