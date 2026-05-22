@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import '../services/api_service.dart';
 
 import 'quick_action_screens.dart';
-import 'dhaka_map_screen.dart';
-import 'rent_car_booking_screen.dart';
 import 'location_selection_screen.dart';
+import 'rent_car_booking_screen.dart';
+import 'dashboard_page.dart';
 import '../main.dart' show GoRideApp, LoginScreen, RegisterScreen, SplashScreen;
 
 class HomePage extends StatefulWidget {
@@ -20,6 +23,12 @@ class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
   late PageController _bannerPageController;
   int _currentBannerPage = 0;
+
+  // Current location detected on the home page
+  String _currentLocationText = 'Detecting location...';
+  double? _currentLat;
+  double? _currentLng;
+  bool _isRefreshingLocation = false;
 
   final List<ServiceItem> services = [
     ServiceItem(
@@ -49,6 +58,7 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _bannerPageController = PageController();
     _startAutoScroll();
+    _detectCurrentLocation();
   }
 
   @override
@@ -107,15 +117,9 @@ class _HomePageState extends State<HomePage> {
           onTap: (index) {
             if (index == 3) {
               final apiService = Get.find<ApiService>();
-              if (apiService.isLoggedIn()) {
-                final user = apiService.getUser();
-                final role = user?['role'] as String?;
-                Get.offAll(() => GoRideApp.getDashboardForRole(role));
-              } else {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                );
-              }
+              final user = apiService.getUser();
+              final role = user?['role'] as String?;
+              Get.offAll(() => GoRideApp.getDashboardForRole(role));
             } else {
               setState(() {
                 _selectedIndex = index;
@@ -186,12 +190,12 @@ class _HomePageState extends State<HomePage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      useSafeArea: true,
-      transitionAnimationController: AnimationController(
-        vsync: Navigator.of(context),
-        duration: const Duration(milliseconds: 600),
+      builder: (context) => LocationSelectionScreen(
+        initialRideType: rideType,
+        initialPickupAddress: _currentLocationText,
+        initialPickupLat: _currentLat,
+        initialPickupLng: _currentLng,
       ),
-      builder: (context) => LocationSelectionScreen(initialRideType: rideType),
     );
   }
 
@@ -358,9 +362,7 @@ class _HomePageState extends State<HomePage> {
                       if (service.title == 'Rent Car') {
                         _showRentCarTypeSelection(context);
                       } else if (service.title == 'Corporate') {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const RegisterScreen(selectedRole: 'corporate')),
-                        );
+                        _handleCorporateClick(context);
                       } else {
                         _showLocationPopup(context, rideType: service.title);
                       }
@@ -614,6 +616,71 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<void> _detectCurrentLocation() async {
+    setState(() => _isRefreshingLocation = true);
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) setState(() {
+          _currentLocationText = 'Location off';
+          _isRefreshingLocation = false;
+        });
+        return;
+      }
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        if (mounted) setState(() {
+          _currentLocationText = 'Location denied';
+          _isRefreshingLocation = false;
+        });
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 8),
+      );
+      if (!mounted) return;
+      _currentLat = pos.latitude;
+      _currentLng = pos.longitude;
+      // Try to reverse geocode for a readable address
+      try {
+        List<Placemark> placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+        if (placemarks.isNotEmpty) {
+          final p = placemarks[0];
+          String location = '';
+          if (p.subLocality != null && p.subLocality!.isNotEmpty) {
+            location = p.subLocality!;
+          } else if (p.locality != null && p.locality!.isNotEmpty) {
+            location = p.locality!;
+          }
+          if (p.street != null && p.street!.isNotEmpty) {
+            location = location.isEmpty ? p.street! : '$location, ${p.street}';
+          }
+          if (location.isEmpty) location = 'My Current Location';
+          if (mounted) setState(() {
+            _currentLocationText = location;
+            _isRefreshingLocation = false;
+          });
+          return;
+        }
+      } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _currentLocationText = 'My Current Location';
+          _isRefreshingLocation = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() {
+        _currentLocationText = 'My Current Location';
+        _isRefreshingLocation = false;
+      });
+    }
+  }
+
   Widget _buildSearchBar(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -622,22 +689,73 @@ class _HomePageState extends State<HomePage> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFF10713C), width: 1),
       ),
-      child: Row(
-        children: [
-          const Icon(Icons.location_on, color: Color(0xFF10713C)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Where you go?',
-                border: InputBorder.none,
-                hintStyle: const TextStyle(color: Colors.grey),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _showLocationPopup(context),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          child: Row(
+            children: [
+              const Icon(Icons.my_location, color: Color(0xFF10713C), size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'From',
+                      style: TextStyle(fontSize: 10, color: Colors.grey[500], fontWeight: FontWeight.w500),
+                    ),
+                    Text(
+                      _currentLocationText,
+                      style: const TextStyle(fontSize: 14, color: Colors.black87, fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
               ),
-              onTap: () => _showLocationPopup(context),
-            ),
+              // Refresh location button (spins while detecting)
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: _isRefreshingLocation ? null : () {
+                    setState(() => _currentLocationText = 'Detecting location...');
+                    _detectCurrentLocation();
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.all(6),
+                    margin: const EdgeInsets.only(right: 4),
+                    decoration: BoxDecoration(
+                      color: _isRefreshingLocation ? const Color(0xFF10713C).withValues(alpha: 0.1) : Colors.grey[200],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: _isRefreshingLocation
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: const Color(0xFF10713C).withValues(alpha: 0.7),
+                            ),
+                          )
+                        : const Icon(Icons.refresh, color: Color(0xFF10713C), size: 16),
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10713C).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.search, color: Color(0xFF10713C), size: 18),
+              ),
+            ],
           ),
-          Icon(Icons.search, color: Colors.grey[400]),
-        ],
+        ),
       ),
     );
   }
@@ -671,9 +789,7 @@ class _HomePageState extends State<HomePage> {
         if (service.title == 'Rent Car') {
           _showRentCarTypeSelection(context);
         } else if (service.title == 'Corporate') {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const RegisterScreen(selectedRole: 'corporate')),
-          );
+          _handleCorporateClick(context);
         } else {
           _showLocationPopup(context, rideType: service.title);
         }
@@ -955,6 +1071,84 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
       ],
+    );
+  }
+
+  void _handleCorporateClick(BuildContext context) {
+    final apiService = Get.find<ApiService>();
+    if (apiService.isLoggedIn()) {
+      final user = apiService.getUser();
+      final role = user?['role'] as String?;
+      if (role == 'corporate') {
+        Get.to(() => UnifiedDashboard(role: 'corporate'));
+        return;
+      }
+    }
+    _showCorporateInfoDialog(context);
+  }
+
+  void _showCorporateInfoDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.business, color: Color(0xFF10713C)),
+            const SizedBox(width: 10),
+            const Text('Corporate Services'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'To access our exclusive corporate features, you need to be logged in with a Corporate Account.',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            _buildBulletPoint('Manage employee trips & billing'),
+            _buildBulletPoint('Priority support & dedicated fleet'),
+            _buildBulletPoint('Detailed usage analytics & reports'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Maybe Later', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const RegisterScreen(selectedRole: 'corporate'),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10713C),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Login / Register', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBulletPoint(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.check_circle, color: Color(0xFF10713C), size: 16),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 13, color: Colors.black87))),
+        ],
+      ),
     );
   }
 }

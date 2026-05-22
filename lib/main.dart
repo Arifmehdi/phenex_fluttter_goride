@@ -9,13 +9,37 @@ import 'pages/dashboard_page.dart';
 import 'pages/location_selection_screen.dart';
 import 'pages/rent_car_booking_screen.dart';
 import 'services/api_service.dart';
+import 'services/firebase_service.dart';
+import 'services/location_service.dart';
+import 'services/ride_service.dart';
+import 'services/routing_service.dart';
 import 'widgets/sidebar_menu.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await GetStorage.init();
+
+  // Initialize core services
   Get.put(ApiService());
   Get.put(LocaleController());
+
+  // Initialize Firebase for real-time features
+  final firebaseService = Get.put(FirebaseService());
+  try {
+    await firebaseService.init();
+    debugPrint('Firebase initialized in main()');
+  } catch (e) {
+    debugPrint('Firebase initialization skipped (offline/not configured): $e');
+  }
+
+  // Initialize location & ride services (depends on Firebase)
+  final locationService = Get.put(LocationService());
+  if (firebaseService.isInitialized) {
+    locationService.initFirebase(firebaseService);
+  }
+  Get.put(RideService());
+  Get.put(RoutingService());
+
   runApp(const GoRideApp());
 }
 
@@ -24,18 +48,6 @@ class GoRideApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ApiService apiService = Get.find<ApiService>();
-    
-    // Determine initial route based on login status
-    Widget initialScreen;
-    if (apiService.isLoggedIn()) {
-      final user = apiService.getUser();
-      final role = user?['role'] as String?;
-      initialScreen = getDashboardForRole(role);
-    } else {
-      initialScreen = const SplashScreen();
-    }
-
     return GetMaterialApp(
       title: 'GoRide',
       debugShowCheckedModeBanner: false,
@@ -49,7 +61,7 @@ class GoRideApp extends StatelessWidget {
           foregroundColor: Colors.white,
         ),
       ),
-      home: initialScreen,
+      home: const SplashScreen(),
     );
   }
 
@@ -90,46 +102,20 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   void _checkSession() {
+    final ApiService apiService = Get.find<ApiService>();
     Future.delayed(const Duration(seconds: 2), () {
       if (!mounted) return;
 
-      if (_apiService.isLoggedIn()) {
-        final user = _apiService.getUser();
-        final role = user?['role'] as String?;
-        _navigateToDashboard(role);
+      if (apiService.isLoggedIn()) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomePage()),
+        );
       } else {
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => HomePage()),
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
         );
       }
     });
-  }
-
-  void _navigateToDashboard(String? role) {
-    Widget destination;
-    switch (role) {
-      case 'admin':
-        destination = const UnifiedDashboard(role: 'admin');
-        break;
-      case 'corporate':
-        destination = const UnifiedDashboard(role: 'corporate');
-        break;
-      case 'owner':
-        destination = const UnifiedDashboard(role: 'owner');
-        break;
-      case 'driver':
-        destination = const UnifiedDashboard(role: 'driver');
-        break;
-      case 'solo':
-        destination = const RiderHomeScreen();
-        break;
-      default:
-        destination = const RiderHomeScreen();
-    }
-
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => destination),
-    );
   }
 
   @override
@@ -407,29 +393,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _navigateToDashboard(String? role) {
-    Widget destination;
-
-    switch (role) {
-      case 'admin':
-        destination = const UnifiedDashboard(role: 'admin');
-        break;
-      case 'corporate':
-        destination = const UnifiedDashboard(role: 'corporate');
-        break;
-      case 'owner':
-        destination = const UnifiedDashboard(role: 'owner');
-        break;
-      case 'driver':
-        destination = const UnifiedDashboard(role: 'driver');
-        break;
-      case 'solo':
-        destination = const RiderHomeScreen();
-        break;
-      default:
-        destination = const RiderHomeScreen();
-    }
-
-    Get.offAll(() => destination);
+    Get.offAll(() => const HomePage());
   }
 
   void _loginWithGoogle() {
@@ -450,10 +414,7 @@ class _LoginScreenState extends State<LoginScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF10713C)),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        automaticallyImplyLeading: false,
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -879,7 +840,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (_) => GoRideApp.getDashboardForRole(role),
+            builder: (_) => const HomePage(),
           ),
         );
       } else {

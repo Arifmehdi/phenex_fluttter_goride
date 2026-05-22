@@ -5,7 +5,10 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:get/get.dart';
 import 'trip_details_page.dart';
+import 'live_tracking_screen.dart';
+import '../services/ride_service.dart';
 
 class RideStatusScreen extends StatefulWidget {
   final String rideType;
@@ -32,6 +35,8 @@ class _RideStatusScreenState extends State<RideStatusScreen> with SingleTickerPr
   Position? _currentPosition;
   StreamSubscription<Position>? _positionStreamSubscription;
   
+  final RideService _rideService = Get.find<RideService>();
+  
   @override
   void initState() {
     super.initState();
@@ -42,8 +47,21 @@ class _RideStatusScreenState extends State<RideStatusScreen> with SingleTickerPr
     )..repeat();
 
     _startLiveTracking();
+    _requestRide();
+  }
 
-    // Simulate finding a driver after 4 seconds
+  void _requestRide() {
+    _rideService.requestRide(
+      rideType: widget.rideType,
+      pickupLat: 23.8103,
+      pickupLng: 90.4125,
+      pickupAddress: widget.pickup,
+      destLat: 23.7925,
+      destLng: 90.4078,
+      destAddress: widget.destination,
+      fare: widget.price,
+    );
+    // Fallback: also use timer for demo
     Timer(const Duration(seconds: 4), () {
       if (mounted) {
         setState(() => _isDriverFound = true);
@@ -176,6 +194,13 @@ class _RideStatusScreenState extends State<RideStatusScreen> with SingleTickerPr
                 width: 40,
                 height: 40,
                 child: const Icon(Icons.my_location, color: Colors.blue, size: 30),
+              ),
+            if (_isDriverFound && _rideService.driverLatitude.value > 0)
+              Marker(
+                point: LatLng(_rideService.driverLatitude.value, _rideService.driverLongitude.value),
+                width: 50,
+                height: 50,
+                child: const Icon(Icons.directions_car, color: Color(0xFF10713C), size: 40),
               ),
           ],
         ),
@@ -317,11 +342,16 @@ class _RideStatusScreenState extends State<RideStatusScreen> with SingleTickerPr
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => TripDetailsPage(
+                    builder: (_) => LiveTrackingScreen(
                       rideType: widget.rideType,
-                      pickup: widget.pickup,
-                      destination: widget.destination,
+                      pickupAddress: widget.pickup,
+                      destinationAddress: widget.destination,
                       price: widget.price,
+                      pickupLat: 23.8103,
+                      pickupLng: 90.4125,
+                      destLat: 23.7925,
+                      destLng: 90.4078,
+                      tripId: _rideService.currentTripId.value.isNotEmpty ? _rideService.currentTripId.value : null,
                     ),
                   ),
                 );

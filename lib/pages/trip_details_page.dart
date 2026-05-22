@@ -5,6 +5,10 @@ import 'package:latlong2/latlong.dart' as latlong;
 import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:get/get.dart';
+import '../services/ride_service.dart';
+import '../services/location_service.dart';
+import '../services/routing_service.dart';
 
 class TripDetailsPage extends StatefulWidget {
   final String rideType;
@@ -29,11 +33,50 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
   Position? _currentPosition;
   StreamSubscription<Position>? _positionStreamSubscription;
 
+  final RideService _rideService = Get.find<RideService>();
+  final LocationService _locationService = Get.find<LocationService>();
+  final RoutingService _routingService = Get.find<RoutingService>();
+
+  List<latlong.LatLng> _routePoints = [];
+  bool _isLoadingRoute = false;
+  double _tripProgress = 0.0;
+  int _etaMinutes = 3;
+  double _driverLat = 23.8103;
+  double _driverLng = 90.4125;
+
   @override
   void initState() {
     super.initState();
     _mapController = fmap.MapController();
     _startLiveTracking();
+    _fetchRoute();
+  }
+
+  void _fetchRoute() {
+    // Simplified: use default coordinates for demo
+    final origin = latlong.LatLng(23.8103, 90.4125);
+    final dest = latlong.LatLng(23.7925, 90.4078);
+    _loadRoute(origin, dest);
+  }
+
+  Future<void> _loadRoute(latlong.LatLng origin, latlong.LatLng dest) async {
+    setState(() => _isLoadingRoute = true);
+    final route = await _routingService.getRoute(origin: origin, destination: dest);
+    if (route != null && mounted) {
+      setState(() {
+        _routePoints = route.points;
+        _etaMinutes = route.duration.toInt();
+        _isLoadingRoute = false;
+      });
+      if (_routePoints.isNotEmpty) {
+        _mapController.fitCamera(fmap.CameraFit.bounds(
+          bounds: fmap.LatLngBounds.fromPoints(_routePoints),
+          padding: const EdgeInsets.all(80),
+        ));
+      }
+    } else {
+      setState(() => _isLoadingRoute = false);
+    }
   }
 
   void _startLiveTracking() {
@@ -144,13 +187,13 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                           color: const Color(0xFF10713C).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.access_time, color: Color(0xFF10713C), size: 18),
                             SizedBox(width: 8),
                             Text(
-                              'Driver is arriving in 3 mins',
+                              _etaMinutes > 0 ? 'Driver is arriving in $_etaMinutes mins' : 'Driver is arriving...',
                               style: TextStyle(color: Color(0xFF10713C), fontWeight: FontWeight.bold),
                             ),
                           ],
@@ -196,8 +239,23 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                       ],
                     ),
                     
-                    const Divider(height: 48),
-                    
+                    const SizedBox(height: 16),
+                    if (_tripProgress > 0) ...[
+                      const Text('Trip Progress', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 12),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: LinearProgressIndicator(
+                          value: _tripProgress,
+                          minHeight: 8,
+                          backgroundColor: Colors.grey[200],
+                          valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF10713C)),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text('${(_tripProgress * 100).toInt()}% complete', style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                      const Divider(height: 48),
+                    ],
                     // Fare Details
                     const Text(
                       'Fare Details',
@@ -270,6 +328,16 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.goride.app',
         ),
+        fmap.PolylineLayer(
+          polylines: [
+            if (_routePoints.isNotEmpty)
+              fmap.Polyline(
+                points: _routePoints,
+                color: const Color(0xFF10713C),
+                strokeWidth: 4.0,
+              ),
+          ],
+        ),
         fmap.MarkerLayer(
           markers: [
             if (_currentPosition != null)
@@ -279,6 +347,12 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                 height: 40,
                 child: const Icon(Icons.my_location, color: Colors.blue, size: 30),
               ),
+            fmap.Marker(
+              point: latlong.LatLng(_driverLat, _driverLng),
+              width: 50,
+              height: 50,
+              child: const Icon(Icons.directions_car, color: Color(0xFF10713C), size: 40),
+            ),
           ],
         ),
       ],
