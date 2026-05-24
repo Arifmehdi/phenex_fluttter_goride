@@ -944,94 +944,10 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
             _selectedRide == 'bike',
             () => setState(() => _selectedRide = 'bike'),
           ),
-          const SizedBox(height: 16),
-          // Location summary compact
-          _buildRideLocationSummary(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _buildPaymentAndPromo(),
           const SizedBox(height: 16),
           _buildConfirmButton(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRideLocationSummary() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey[100]!),
-      ),
-      child: Row(
-        children: [
-          // Location dots column
-          SizedBox(
-            width: 28,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10713C).withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.my_location, color: Color(0xFF10713C), size: 10),
-                ),
-                Container(
-                  width: 1,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [const Color(0xFF10713C), const Color(0xFFED1C24)],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFED1C24).withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.location_on, color: Color(0xFFED1C24), size: 10),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          // Addresses
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(_pickupAddress, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87), maxLines: 1, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 2),
-                Text(_destinationAddress, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.grey[600]), maxLines: 1, overflow: TextOverflow.ellipsis),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Distance & price summary
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFF10713C).withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('${_distance.toStringAsFixed(1)} km', style: TextStyle(fontSize: 10, color: Colors.grey[600], fontWeight: FontWeight.w500)),
-                Text('৳${_price.toStringAsFixed(0)}', style: const TextStyle(fontSize: 14, color: Color(0xFF10713C), fontWeight: FontWeight.bold)),
-              ],
-            ),
-          ),
         ],
       ),
     );
