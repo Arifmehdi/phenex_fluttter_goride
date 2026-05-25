@@ -1,9 +1,9 @@
-import 'package:dio/dio.dart';
+﻿import 'package:dio/dio.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:get/get.dart' as g;
 
 class ApiService extends g.GetxController {
-  static const String baseUrl = 'https://goride.musafirinternational.com/public/api/';
+  static const String baseUrl = 'https://gorides.musafirinternational.com/api/';
   
   final Dio _dio = Dio(BaseOptions(
     baseUrl: baseUrl,

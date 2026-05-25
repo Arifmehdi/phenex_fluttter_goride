@@ -11,6 +11,9 @@ import 'live_tracking_screen.dart';
 import '../services/routing_service.dart';
 import '../services/recent_locations_service.dart';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/firebase_service.dart';
+
 class DhakaMapScreen extends StatefulWidget {
   final String? initialRideType;
   final String? pickupAddress;
@@ -53,9 +56,12 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
 
   Position? _currentPosition;
   StreamSubscription<Position>? _positionStreamSubscription;
+  StreamSubscription<QuerySnapshot>? _driversSubscription;
+  List<Marker> _driverMarkers = [];
 
   // OSRM route
   final RoutingService _routingService = Get.find<RoutingService>();
+  final FirebaseService _firebaseService = Get.find<FirebaseService>();
   List<LatLng> _routePoints = [];
   double _routeDistance = 0.0;
   int _routeDuration = 0;
@@ -106,6 +112,45 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
 
     _loadRecentLocations();
     _checkPermission();
+    _listenToNearbyDrivers();
+  }
+
+  void _listenToNearbyDrivers() {
+    if (!_firebaseService.isInitialized) return;
+
+    _driversSubscription = _firebaseService.driverLocations
+        .where('isOnline', isEqualTo: true)
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      
+      final markers = snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        final lat = data['latitude'] as double;
+        final lng = data['longitude'] as double;
+        final heading = (data['heading'] as num?)?.toDouble() ?? 0.0;
+        
+        return Marker(
+          point: LatLng(lat, lng),
+          width: 40,
+          height: 40,
+          child: Transform.rotate(
+            angle: heading * (pi / 180),
+            child: Image.asset(
+              'assets/car.png',
+              width: 30,
+              height: 30,
+              errorBuilder: (context, error, stackTrace) => 
+                  const Icon(Icons.directions_car, color: Colors.green, size: 25),
+            ),
+          ),
+        );
+      }).toList();
+
+      setState(() {
+        _driverMarkers = markers;
+      });
+    });
   }
 
   void _loadRecentLocations() {
@@ -130,6 +175,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   @override
   void dispose() {
     _positionStreamSubscription?.cancel();
+    _driversSubscription?.cancel();
     _mapController.dispose();
     super.dispose();
   }
@@ -521,6 +567,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
                     height: 40,
                     child: const Icon(Icons.location_on, color: Color(0xFFED1C24), size: 40),
                   ),
+                ..._driverMarkers,
               ],
             ),
             if (_routePoints.isNotEmpty)

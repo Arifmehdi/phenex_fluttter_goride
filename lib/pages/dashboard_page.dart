@@ -7,6 +7,7 @@ import '../locale_controller.dart';
 import '../registration_screens.dart' show OwnerProfileScreen;
 import 'dashboard_details_pages.dart';
 import '../services/api_service.dart';
+import '../services/location_service.dart';
 import '../widgets/sidebar_menu.dart';
 
 class UnifiedDashboard extends StatefulWidget {
@@ -19,9 +20,45 @@ class UnifiedDashboard extends StatefulWidget {
 
 class _UnifiedDashboardState extends State<UnifiedDashboard> {
   final LocaleController localeController = Get.find<LocaleController>();
+  final LocationService _locationService = Get.find<LocationService>();
+  final ApiService _apiService = Get.find<ApiService>();
+  
   bool _isOnline = false;
   int _selectedIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize online status based on location service if needed
+    _isOnline = _locationService.isTracking.value;
+  }
+
+  Future<void> _toggleOnlineStatus(bool online) async {
+    final user = _apiService.getUser();
+    final String? driverId = user?['id']?.toString();
+    
+    if (driverId == null) {
+      Get.snackbar('Error', 'User ID not found. Please re-login.');
+      return;
+    }
+
+    setState(() => _isOnline = online);
+
+    if (online) {
+      // Start tracking and sync to Firestore
+      await _locationService.startTracking(
+        syncToFirestore: true,
+        driverId: driverId,
+        isOnline: true,
+      );
+      Get.snackbar('Online', 'You are now online and can receive ride requests.');
+    } else {
+      // Stop tracking
+      await _locationService.stopTracking();
+      Get.snackbar('Offline', 'You are now offline.');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -128,7 +165,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
               ),
               Switch(
                 value: _isOnline,
-                onChanged: (v) => setState(() => _isOnline = v),
+                onChanged: (v) => _toggleOnlineStatus(v),
                 activeColor: Colors.white,
                 activeTrackColor: Colors.lightGreenAccent,
               ),
