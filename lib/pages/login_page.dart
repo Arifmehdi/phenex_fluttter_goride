@@ -24,10 +24,9 @@ class _LoginPageState extends State<LoginPage> {
   final ApiService _apiService = Get.find<ApiService>();
 
   final List<Map<String, String>> _roles = [
-    {'label': 'Customer Account', 'value': 'user'},
-    {'label': 'Driver Account', 'value': 'driver'},
-    {'label': 'Corporate Account', 'value': 'corporate'},
-    {'label': 'Administrator', 'value': 'admin'},
+    {'label': 'Customer', 'value': 'user'},
+    {'label': 'Driver', 'value': 'driver'},
+    {'label': 'Corporate', 'value': 'corporate'},
   ];
 
 

@@ -49,6 +49,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   double _distance = 0.0;
   double _price = 0.0;
   bool _selectingPickup = true;
+  bool _isConfirmingPickup = false;
 
   bool get _showRideOptions => _pickupLocation != null && _destinationLocation != null;
   String? _selectedRide;
@@ -351,8 +352,16 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
 
   /// Called when the map stops moving — geocodes the center pin location
   void _onMapCenterChanged() {
-    if (_showRideOptions) return;
+    if (_showRideOptions && !_isConfirmingPickup) return;
     final center = _mapController.camera.center;
+    if (_isConfirmingPickup) {
+      setState(() {
+        _pickupLocation = center;
+        _pickupAddress = 'Loading address...';
+      });
+      _getAddressFromLatLngCoords(center.latitude, center.longitude, isPickup: true);
+      return;
+    }
     if (_selectingPickup) {
       setState(() {
         _pickupLocation = center;
@@ -428,7 +437,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
               ),
             ),
           // Center map pin — stays fixed while user drags the map
-          if (!_showRideOptions)
+          if (!_showRideOptions || _isConfirmingPickup)
             Center(
               child: IgnorePointer(
                 child: AnimatedSlide(
@@ -437,13 +446,13 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 200),
                     child: Stack(
-                      key: ValueKey(_selectingPickup),
+                      key: ValueKey(_isConfirmingPickup ? 'confirm' : _selectingPickup),
                       clipBehavior: Clip.none,
                       children: [
                         // Pin icon (bottom layer)
                         Icon(
                           Icons.location_on,
-                          color: _selectingPickup
+                          color: _isConfirmingPickup || _selectingPickup
                               ? const Color(0xFF10713C)
                               : const Color(0xFFED1C24),
                           size: 48,
@@ -484,18 +493,24 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
           backgroundColor: Colors.white,
           child: IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.black, size: 20),
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              if (_isConfirmingPickup) {
+                setState(() => _isConfirmingPickup = false);
+              } else {
+                Navigator.pop(context);
+              }
+            },
           ),
         ),
       ),
       title: Text(
-        _showRideOptions ? 'Your Route' : 'Select Location',
+        _isConfirmingPickup ? 'Confirm Pickup' : (_showRideOptions ? 'Your Route' : 'Select Location'),
         style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
       ),
       backgroundColor: Colors.transparent,
       elevation: 0,
       actions: [
-        if (_pickupLocation != null || _destinationLocation != null)
+        if (!_isConfirmingPickup && (_pickupLocation != null || _destinationLocation != null))
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: CircleAvatar(
@@ -553,7 +568,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
                     height: 40,
                     child: const Icon(Icons.my_location, color: Colors.blue, size: 30),
                   ),
-                if (_pickupLocation != null)
+                if (_pickupLocation != null && !_isConfirmingPickup)
                   Marker(
                     point: _pickupLocation!,
                     width: 40,
@@ -740,9 +755,81 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(24),
-            child: _showRideOptions ? _buildRideOptions() : _buildLocationSelectionPanel(),
+            child: _isConfirmingPickup 
+                ? _buildConfirmPickupPanel() 
+                : (_showRideOptions ? _buildRideOptions() : _buildLocationSelectionPanel()),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildConfirmPickupPanel() {
+    final bool isCar = _selectedRide == 'car';
+    final double finalPrice = isCar ? _price : _price * 0.6;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+      color: Colors.white,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10713C).withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.my_location, color: Color(0xFF10713C), size: 20),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Confirm Pickup Spot', style: TextStyle(fontSize: 13, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 2),
+                    Text(_pickupAddress, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            height: 56,
+            child: ElevatedButton(
+              onPressed: () {
+                if (_pickupLocation != null && _destinationLocation != null) {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => LiveTrackingScreen(
+                    rideType: _selectedRide!,
+                    pickupAddress: _pickupAddress,
+                    destinationAddress: _destinationAddress,
+                    price: finalPrice,
+                    pickupLat: _pickupLocation!.latitude,
+                    pickupLng: _pickupLocation!.longitude,
+                    destLat: _destinationLocation!.latitude,
+                    destLng: _destinationLocation!.longitude,
+                  )));
+                } else {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => RideStatusScreen(rideType: _selectedRide!, pickup: _pickupAddress, destination: _destinationAddress, price: finalPrice)));
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF10713C),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 0,
+              ),
+              child: const Text(
+                'Confirm Pickup',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1074,19 +1161,12 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
       height: 54,
       child: ElevatedButton(
         onPressed: _selectedRide == null ? null : () {
-          if (_pickupLocation != null && _destinationLocation != null) {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => LiveTrackingScreen(
-              rideType: _selectedRide!,
-              pickupAddress: _pickupAddress,
-              destinationAddress: _destinationAddress,
-              price: finalPrice,
-              pickupLat: _pickupLocation!.latitude,
-              pickupLng: _pickupLocation!.longitude,
-              destLat: _destinationLocation!.latitude,
-              destLng: _destinationLocation!.longitude,
-            )));
-          } else {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => RideStatusScreen(rideType: _selectedRide!, pickup: _pickupAddress, destination: _destinationAddress, price: finalPrice)));
+          setState(() {
+            _isConfirmingPickup = true;
+          });
+          // Move map to pickup location for refinement
+          if (_pickupLocation != null) {
+            _mapController.move(_pickupLocation!, 16.0);
           }
         },
         style: ElevatedButton.styleFrom(
@@ -1216,7 +1296,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   }
 
   Widget _buildInstructionOverlay() {
-    if (_showRideOptions) return const SizedBox.shrink();
+    if (_showRideOptions && !_isConfirmingPickup) return const SizedBox.shrink();
     return Positioned(
       top: MediaQuery.of(context).padding.top + 56,
       left: 50,
@@ -1234,13 +1314,13 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                _selectingPickup ? Icons.my_location : Icons.location_on,
+                _isConfirmingPickup || _selectingPickup ? Icons.my_location : Icons.location_on,
                 color: Colors.white,
                 size: 14,
               ),
               const SizedBox(width: 8),
               Text(
-                _selectingPickup ? 'Move pin to set pickup' : 'Move pin to set destination',
+                _isConfirmingPickup ? 'Refine pickup spot' : (_selectingPickup ? 'Move pin to set pickup' : 'Move pin to set destination'),
                 style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
               ),
             ],
