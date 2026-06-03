@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../services/api_service.dart';
-import '../main.dart';
 import '../pages/home_page.dart';
 import '../pages/dashboard_details_pages.dart';
 
@@ -71,7 +70,7 @@ class SidebarMenu extends StatelessWidget {
             title: const Text('Logout'),
             onTap: () async {
               await apiService.logout();
-              Get.offAll(() => const SplashScreen());
+              Get.offAllNamed('/');
             },
           ),
         ],

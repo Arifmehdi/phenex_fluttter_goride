@@ -43,16 +43,25 @@ class ApiService extends g.GetxController {
     ));
   }
 
-  Future<Response> login(String login, String password) async {
+  Future<Response> login(String login, String password, {String? role}) async {
     try {
-      final response = await _dio.post('/login', data: {
+      final data = {
         'login': login,
         'password': password,
-      });
+      };
+      if (role != null) {
+        data['role'] = role;
+      }
+      
+      final response = await _dio.post('/login', data: data);
       
       if (response.statusCode == 200) {
         await _storage.write('token', response.data['token']);
         await _storage.write('user', response.data['user']);
+        // Store the role if returned by API
+        if (response.data['role'] != null) {
+          await _storage.write('role', response.data['role']);
+        }
         _isLoggedIn.value = true;
       }
       
@@ -67,35 +76,28 @@ class ApiService extends g.GetxController {
       final response = await _dio.post('/register', data: data);
 
       // Handle successful registration
-      // The API may return HTML redirect (302 followed) or JSON
       if (response.statusCode == 200 || response.statusCode == 201) {
-        // If response is JSON with token (API login after registration)
-        if (response.data is Map && response.data['token'] != null) {
-          await _storage.write('token', response.data['token']);
-          await _storage.write('user', response.data['user']);
-          _isLoggedIn.value = true;
-        }
-        // If API returns user data without token, save user info
-        else if (response.data is Map && response.data['user'] != null) {
-          await _storage.write('user', response.data['user']);
-        }
-        // If response is HTML (redirect), registration was successful
-        // The server redirects on success, so treat as success
-        else if (response.data is String) {
-          // Registration likely succeeded (server redirected)
-          // We can try to login with the provided credentials
-          _isLoggedIn.value = false;
+        if (response.data is Map) {
+          if (response.data['token'] != null) {
+            await _storage.write('token', response.data['token']);
+            _isLoggedIn.value = true;
+          }
+          if (response.data['user'] != null) {
+            await _storage.write('user', response.data['user']);
+            // If role is inside user object
+            if (response.data['user']['role'] != null) {
+              await _storage.write('role', response.data['user']['role']);
+            }
+          }
+          // If role is at top level (like in login.txt)
+          if (response.data['role'] != null) {
+            await _storage.write('role', response.data['role']);
+          }
         }
       }
 
       return response;
     } on DioException catch (e) {
-      // If registration actually succeeded but server returned non-JSON response
-      if (e.response != null &&
-          (e.response!.statusCode == 200 || e.response!.statusCode == 302)) {
-        // Treat as success - registration likely completed
-        return e.response!;
-      }
       return e.response ??
           Response(
               requestOptions: RequestOptions(path: ''),

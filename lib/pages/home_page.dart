@@ -10,7 +10,8 @@ import 'quick_action_screens.dart';
 import 'location_selection_screen.dart';
 import 'rent_car_booking_screen.dart';
 import 'dashboard_page.dart';
-import '../main.dart' show GoRideApp, LoginScreen, RegisterScreen, SplashScreen;
+import '../main.dart' show GoRideApp, RegisterScreen, SplashScreen;
+import 'login_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -116,10 +117,15 @@ class _HomePageState extends State<HomePage> {
           unselectedFontSize: 12,
           onTap: (index) {
             if (index == 3) {
-              final apiService = Get.find<ApiService>();
-              final user = apiService.getUser();
-              final role = user?['role'] as String?;
-              Get.offAll(() => GoRideApp.getDashboardForRole(role));
+              final role = GetStorage().read('role') as String?;
+              // Only redirect if it's NOT a regular customer role
+              if (role != null && role != 'user' && role != 'solo') {
+                Get.offAll(() => GoRideApp.getDashboardForRole(role));
+              } else {
+                setState(() {
+                  _selectedIndex = index;
+                });
+              }
             } else {
               setState(() {
                 _selectedIndex = index;
@@ -519,6 +525,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildAccountTab(BuildContext context) {
+    final apiService = Get.find<ApiService>();
+    final user = apiService.getUser();
+    final name = user?['name'] ?? 'Guest User';
+    final mobile = user?['mobile'] ?? user?['email'] ?? '';
+
     return SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -552,21 +563,27 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   const SizedBox(width: 16),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Ahmed Hassan',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      Text(
-                        '+201234567890',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
+                        Text(
+                          mobile,
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),

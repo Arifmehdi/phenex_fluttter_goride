@@ -1,0 +1,653 @@
+"<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Http\Resources\UserResource;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use App\Models\User;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Str;
+use App\Http\Controllers\Api\CartController; // Add this import
+use App\Traits\NotificationTrait;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
+
+
+class AuthController extends Controller
+{
+    use NotificationTrait;
+    public function login(Request $request, CartController $cartController) // Inject CartController
+    {
+        $request->validate([
+            'login'    => 'required|string',
+            'password' => 'required|string',
+            'role'     => 'nullable|string|in:user,admin,driver,corporate'
+        ]);
+
+        $login_type = filter_var($request->input('login'), FILTER_VALIDATE_EMAIL) ? 'email' : 'mobile';
+        $login_value = $request->input('login');
+        
+        $credentials = [
+            $login_type => $login_value,
+            'password' => $request->input('password'),
+        ];
+
+        $guards = ['web', 'admin', 'driver', 'corporate'];
+        if ($request->role) {
+            $requestedGuard = $request->role === 'user' ? 'web' : $request->role;
+            // Move requested guard to the front of the array to prioritize it
+            $guards = array_unique(array_merge([$requestedGuard], $guards));
+        }
+
+        $user = null;
+        $activeGuard = null;
+
+        // 1. Try attempting login with provided credentials across relevant guards
+        foreach ($guards as $guard) {
+            if (Auth::guard($guard)->attempt($credentials)) {
+                $user = Auth::guard($guard)->user();
+                $activeGuard = $guard;
+                break;
+            }
+        }
+
+        // 2. If it fails and it's a mobile login, try with formatted mobile
+        if (!$user && $login_type === 'mobile') {
+            $formattedMobile = bdMobile($login_value);
+            if ($formattedMobile !== $login_value) {
+                $credentials['mobile'] = $formattedMobile;
+                foreach ($guards as $guard) {
+                    if (Auth::guard($guard)->attempt($credentials)) {
+                        $user = Auth::guard($guard)->user();
+                        $activeGuard = $guard;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid credentials'
+            ], 401);
+        }
+
+        // Check if user is active/approved
+        $status = $user->status ?? null;
+        $isApprove = $user->is_approve ?? null;
+        $isActive = true;
+
+        if ($status !== null) {
+            // Handle both string ('active', 'approved') and integer (1) status
+            // Non-active: 'pending', 0, '0', 'suspended', 'rejected'
+            if (in_array($status, ['pending', 0, '0', 'suspended', 'rejected'])) {
+                $isActive = false;
+            }
+        }
+
+        // Also check is_approve if it exists (some models use this)
+        if ($isActive && $isApprove !== null) {
+            if ($isApprove == 0 || $isApprove === false) {
+                $isActive = false;
+            }
+        }
+
+        if (!$isActive) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Your account is pending approval or inactive. Please contact support.'
+            ], 403);
+        }
+
+        // Merge guest cart items only for web users
+        if ($activeGuard === 'web') {
+            $guestSessionId = $request->header('X-Session-ID') ?: $request->session_id;
+            if ($guestSessionId) {
+                $cartController->mergeGuestCart($user->id, $guestSessionId);
+            }
+        }
+
+        // Delete old tokens to ensure single session if desired, or just create new one
+        $user->tokens()->delete();
+
+        $token = $user->createToken('flutter')->plainTextToken;
+
+        // Determine the role for the response
+        $role = $activeGuard === 'web' ? 'user' : $activeGuard;
+
+        return response()->json([
+            'success' => true,
+            'token'   => $token,
+            'user'    => $user,
+            'role'    => $role,
+            'guard'   => $activeGuard
+        ]);
+    }
+
+
+
+    public function register(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'name'         => 'required|string|max:255',
+            'email'        => 'required|email',
+            'mobile'       => 'required|string',
+            'password'     => 'required|string|min:8|confirmed',
+            'role'         => 'nullable|string|in:user,driver,owner,corporate,solo',
+            'company_name' => 'nullable|string|max:255',
+            'vehicle_type' => 'nullable|string|max:255',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors'  => $validator->errors()
+            ], 422);
+        }
+
+        $role = $request->input('role', 'solo');
+        
+        // Customers (solo/user) are active by default, others are pending
+        $isCustomer = ($role === 'solo' || $role === 'user');
+        $status = $isCustomer ? 'active' : 'pending';
+
+        $userData = [
+            'name'         => $request->name,
+            'email'        => $request->email,
+            'mobile'       => $request->mobile,
+            'password'     => Hash::make($request->password),
+            'status'       => $status,
+        ];
+
+        if ($role === 'driver') {
+            if (\App\Models\Driver::where('email', $request->email)->exists()) {
+                return response()->json(['success' => false, 'message' => 'Driver with this email already exists'], 400);
+            }
+            $userData['status'] = 0; // Drivers use tinyInteger status
+            $user = \App\Models\Driver::create($userData);
+        } elseif ($role === 'corporate') {
+            if (\App\Models\Corporate::where('email', $request->email)->exists()) {
+                return response()->json(['success' => false, 'message' => 'Corporate user with this email already exists'], 400);
+            }
+            $userData['company_name'] = $request->company_name;
+            $user = \App\Models\Corporate::create($userData);
+        } else {
+            if (\App\Models\User::where('email', $request->email)->exists()) {
+                return response()->json(['success' => false, 'message' => 'User with this email already exists'], 400);
+            }
+            $userData['role'] = $role;
+            $userData['company_name'] = $request->company_name;
+            $userData['vehicle_type'] = $request->vehicle_type;
+            $user = User::create($userData);
+        }
+
+        $isPending = false;
+        if ($user->status === 'pending' || $user->status === 0 || $user->status === '0') {
+            $isPending = true;
+        }
+
+        if ($isPending) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Registration successful! Your account is pending approval. You will be able to login once approved.',
+                'user'    => $user,
+                'pending' => true
+            ], 201);
+        }
+
+        // Create API token (Sanctum) for active users
+        $token = $user->createToken('flutter')->plainTextToken;
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Registration successful',
+            'token'   => $token,
+            'user'    => $user,
+            'role'    => $role
+        ], 201);
+    }
+
+    // public function register(Request $request)
+    // {
+    //     $request->validate([
+    //         'name'     => 'required|string|max:255',
+    //         'email'    => 'required|email|unique:users,email',
+    //         'mobile'   => 'required|string|unique:users,mobile',
+    //         'password' => 'required|string|min:8',
+    //         'role'     => 'nullable|string|in:user,driver,owner,corporate,solo',
+    //     ]);
+
+    //     $role = $request->input('role', 'solo');
+
+    //     $user = User::create([
+    //         'name'       => $request->name,
+    //         'email'      => $request->email,
+    //         'mobile'     => $request->mobile,
+    //         'password'   => bcrypt($request->password),
+    //         'role'       => $role,
+    //         'status'     => ($role === 'solo' || $role === 'user') ? 'active' : 'pending',
+    //         'ip_address' => $request->ip(),
+    //         'is_approve' => ($role === 'solo' || $role === 'user') ? 1 : 0
+    //     ]);
+
+    //     // Notification for admin
+    //     $this->createNotification(
+    //         'New User Registration',
+    //         $user->name.' registered as '.$role.' from IP '.$request->ip(),
+    //         null,
+    //         $request->ip(),
+    //         'register'
+    //     );
+
+    //     $token = $user->createToken('flutter')->plainTextToken;
+
+    //     return response()->json([
+    //         'token' => $token,
+    //         'user' => new UserResource($user)
+    //     ], 201);
+    // }
+
+    public function me(Request $request)
+    {
+        $user = $request->user();
+        
+        // Determine role based on the model class or role attribute
+        $role = 'user';
+        if ($user instanceof \App\Models\Admin) {
+            $role = 'admin';
+        } elseif ($user instanceof \App\Models\Driver) {
+            $role = 'driver';
+        } elseif ($user instanceof \App\Models\Corporate) {
+            $role = 'corporate';
+        } elseif (isset($user->role)) {
+            $role = $user->role;
+        }
+
+        return response()->json([
+            'success' => true,
+            'user'    => $user,
+            'role'    => $role
+        ]);
+    }
+
+    public function logout(Request $request)
+    {
+        $request->user()->currentAccessToken()->delete();
+
+        return response()->json([
+            'message' => 'Logged out successfully'
+        ]);
+    }
+
+    /**
+     * Send a reset link to the given user.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
+     */
+    public function forgotPassword(Request $request)
+    {
+        $request->validate(['email' => 'required|email']);
+
+        $response = Password::sendResetLink(
+            $request->only('email')
+        );
+
+        if ($response == Password::RESET_LINK_SENT) {
+            return response()->json(['message' => trans($response)], 200);
+        }
+
+        return response()->json(['message' => trans($response)], 400);
+    }
+
+    /**
+     * Reset the given user's password.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
+     */
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'token' => 'required',
+            'email' => 'required|email',
+            'password' => 'required|confirmed|min:8',
+        ]);
+
+        $response = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function ($user, $password) {
+                $user->forceFill([
+                    'password' => bcrypt($password),
+                    'remember_token' => Str::random(60),
+                ])->save();
+
+                event(new PasswordReset($user));
+            }
+        );
+
+        if ($response == Password::PASSWORD_RESET) {
+            return response()->json(['message' => trans($response)], 200);
+        }
+
+        return response()->json(['message' => trans($response)], 400);
+    }
+}
+
+
+"
+
+this is my authcontroller Logic
+
+"@extends('goride.layouts.master')
+
+@section('title', 'Sign In | GoRide Bangladesh')
+
+@push('css')
+<style>
+    :root {
+        --auth-bg: #fdfdfd;
+        --auth-card: #ffffff;
+        --auth-text: #1e293b;
+        --auth-muted: #64748b;
+        --auth-primary: #1A7A3C;
+        --auth-border: #f1f5f9;
+        --auth-input-bg: #f8fafc;
+    }
+
+    .auth-page {
+        min-height: 85vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: var(--auth-bg);
+        padding: 40px 20px;
+    }
+
+    .auth-card {
+        width: 100%;
+        max-width: 400px;
+        background: var(--auth-card);
+        padding: 0;
+        /* Deep, soft shadow for modern look */
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.035);
+        border-radius: 32px;
+        border: 1px solid var(--auth-border);
+        overflow: hidden;
+    }
+
+    .auth-body {
+        padding: 48px 40px;
+    }
+
+    .auth-header {
+        text-align: center;
+        margin-bottom: 40px;
+    }
+
+    .auth-header img {
+        height: 48px;
+        margin-bottom: 24px;
+        /* filter: grayscale(1) opacity(0.8); subtle touch */
+    }
+
+    .auth-header h1 {
+        font-family: 'Sora', sans-serif;
+        font-size: 22px;
+        font-weight: 800;
+        color: var(--auth-text);
+        letter-spacing: -0.02em;
+    }
+
+    .auth-header p {
+        font-size: 14px;
+        color: var(--auth-muted);
+        margin-top: 6px;
+    }
+
+    .form-group {
+        margin-bottom: 24px;
+    }
+
+    .form-label {
+        display: block;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--auth-text);
+        margin-bottom: 8px;
+        padding-left: 4px;
+    }
+
+    .input-control {
+        width: 100%;
+        height: 54px;
+        padding: 0 20px;
+        background: var(--auth-input-bg);
+        border: 1.5px solid transparent;
+        border-radius: 16px;
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--auth-text);
+        transition: all 0.2s ease;
+        outline: none;
+    }
+
+    .input-control:focus {
+        background: #fff;
+        border-color: var(--auth-primary);
+        box-shadow: 0 0 0 4px rgba(26, 122, 60, 0.08);
+    }
+
+    /* Modern Dropdown Styling */
+    select.input-control {
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19.5 8.25l-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 20px center;
+        background-size: 16px;
+        cursor: pointer;
+    }
+
+    .btn-submit {
+        width: 100%;
+        height: 56px;
+        background: var(--auth-primary);
+        color: #fff;
+        border: none;
+        border-radius: 18px;
+        font-family: 'Sora', sans-serif;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        margin-top: 8px;
+        box-shadow: 0 10px 15px -3px rgba(26, 122, 60, 0.2);
+    }
+
+    .btn-submit:hover {
+        background: #145e2e;
+        transform: translateY(-2px);
+        box-shadow: 0 20px 25px -5px rgba(26, 122, 60, 0.25);
+    }
+
+    .btn-submit:active {
+        transform: translateY(0);
+    }
+
+    .auth-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: -8px;
+        margin-bottom: 32px;
+        padding: 0 4px;
+    }
+
+    .remember-me {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        font-size: 13px;
+        color: var(--auth-muted);
+        user-select: none;
+    }
+
+    .remember-me input {
+        width: 18px;
+        height: 18px;
+        border-radius: 6px;
+        accent-color: var(--auth-primary);
+        cursor: pointer;
+    }
+
+    .forgot-link {
+        font-size: 13px;
+        color: var(--auth-primary);
+        font-weight: 700;
+        text-decoration: none;
+    }
+
+    .auth-footer {
+        text-align: center;
+        margin-top: 40px;
+        padding-top: 32px;
+        border-top: 1px solid var(--auth-border);
+    }
+
+    .auth-footer p {
+        font-size: 14px;
+        color: var(--auth-muted);
+    }
+
+    .auth-footer a {
+        color: var(--auth-text);
+        font-weight: 700;
+        text-decoration: none;
+        margin-left: 4px;
+        transition: color 0.2s;
+    }
+
+    .auth-footer a:hover {
+        color: var(--auth-primary);
+    }
+
+    .alert {
+        padding: 14px 20px;
+        border-radius: 16px;
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 32px;
+        text-align: center;
+    }
+
+    .alert-danger {
+        background: #fff1f2;
+        color: #e11d48;
+        border: 1px solid #ffe4e6;
+    }
+
+    @media (max-width: 480px) {
+        .auth-card {
+            border-radius: 24px;
+        }
+        .auth-body {
+            padding: 40px 24px;
+        }
+    }
+</style>
+@endpush
+
+@section('content')
+<div class="auth-page">
+    <div class="auth-card">
+        <div class="auth-body">
+            <div class="auth-header">
+                <img src="{{ asset('goride/assets/go_ride_logo.jpg') }}" alt="GoRide">
+                <h1>Sign In</h1>
+                <p>Welcome back to GoRide Bangladesh</p>
+            </div>
+
+            @if(session('error'))
+                <div class="alert alert-danger">
+                    {{ session('error') }}
+                </div>
+            @endif
+
+            <form action="{{ route('login.user') }}" method="POST">
+                @csrf
+                
+                <div class="form-group">
+                    <label class="form-label">Account Type</label>
+                    <select name="guard" class="input-control">
+                        <option value="web" {{ ($guard ?? 'web') === 'web' ? 'selected' : '' }}>Customer Account</option>
+                        <option value="driver" {{ ($guard ?? '') === 'driver' ? 'selected' : '' }}>Driver Account</option>
+                        <option value="corporate" {{ ($guard ?? '') === 'corporate' ? 'selected' : '' }}>Corporate Account</option>
+                        <option value="admin" {{ ($guard ?? '') === 'admin' ? 'selected' : '' }}>Administrator</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Email or Mobile</label>
+                    <input type="text" name="login" class="input-control" placeholder="e.g. 017XXXXXXXX" value="{{ old('login') }}" required autofocus>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <input type="password" name="password" class="input-control" placeholder="••••••••" required>
+                </div>
+
+                <div class="auth-meta">
+                    <label class="remember-me">
+                        <input type="checkbox" name="remember" {{ old('remember') ? 'checked' : '' }}>
+                        Keep me signed in
+                    </label>
+                    <a href="{{ route('password.request') }}" class="forgot-link">Forgot?</a>
+                </div>
+
+                <button type="submit" class="btn-submit">
+                    Sign In
+                </button>
+            </form>
+
+            <div class="auth-footer">
+                <p>Don't have an account? <a href="{{ route('registration') }}">Create one</a></p>
+            </div>
+        </div>
+    </div>
+</div>
+@endsection
+"
+
+
+login blade here
+
+
+"{
+	"success": true,
+	"token": "6|OBsjy24nvmCxDvBfMxjG37OBSG9uNGAEW5P5U18v60a2b29c",
+	"user": {
+		"id": 2,
+		"name": "Mr. Driver",
+		"email": "driver12@gmail.com",
+		"mobile": "01303182771",
+		"license_no": null,
+		"nid": null,
+		"address": null,
+		"status": "1",
+		"created_at": "2026-05-21T03:34:33.000000Z",
+		"updated_at": "2026-05-26T05:47:38.000000Z"
+	},
+	"role": "driver",
+	"guard": "driver"
+}"
+
+
+api rsult here 
+

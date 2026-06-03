@@ -2,18 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:dio/dio.dart';
-import 'locale_controller.dart';
-import 'registration_screens.dart';
-import 'pages/home_page.dart';
-import 'pages/dashboard_page.dart';
-import 'pages/location_selection_screen.dart';
-import 'pages/rent_car_booking_screen.dart';
-import 'services/api_service.dart';
-import 'services/firebase_service.dart';
-import 'services/location_service.dart';
-import 'services/ride_service.dart';
-import 'services/routing_service.dart';
-import 'widgets/sidebar_menu.dart';
+import 'package:goride/locale_controller.dart';
+import 'package:goride/registration_screens.dart';
+import 'package:goride/pages/home_page.dart';
+import 'package:goride/pages/dashboard_page.dart';
+import 'package:goride/pages/location_selection_screen.dart';
+import 'package:goride/pages/rent_car_booking_screen.dart';
+import 'package:goride/services/api_service.dart';
+import 'package:goride/services/firebase_service.dart';
+import 'package:goride/services/location_service.dart';
+import 'package:goride/services/ride_service.dart';
+import 'package:goride/services/routing_service.dart';
+import 'package:goride/pages/login_page.dart';
+import 'package:goride/widgets/sidebar_menu.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,6 +47,8 @@ void main() async {
 class GoRideApp extends StatelessWidget {
   const GoRideApp({Key? key}) : super(key: key);
 
+  static const String splashRoute = '/';
+
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
@@ -61,7 +64,13 @@ class GoRideApp extends StatelessWidget {
           foregroundColor: Colors.white,
         ),
       ),
-      home: const SplashScreen(),
+      initialRoute: splashRoute,
+      getPages: [
+        GetPage(name: splashRoute, page: () => const SplashScreen()),
+        GetPage(name: '/home', page: () => const HomePage()),
+        GetPage(name: '/login', page: () => const LoginPage()),
+        GetPage(name: '/registration', page: () => const RegisterScreen()),
+      ],
     );
   }
 
@@ -75,11 +84,12 @@ class GoRideApp extends StatelessWidget {
         return const UnifiedDashboard(role: 'owner');
       case 'driver':
         return const UnifiedDashboard(role: 'driver');
+      case 'user':
       case 'solo':
-        return const RiderHomeScreen();
+        return const HomePage();
       default:
-        // If role is unknown but logged in, show rider home as default or splash to re-verify
-        return const RiderHomeScreen();
+        // If role is unknown but logged in, show home as default
+        return const HomePage();
     }
   }
 }
@@ -107,13 +117,16 @@ class _SplashScreenState extends State<SplashScreen> {
       if (!mounted) return;
 
       if (apiService.isLoggedIn()) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const HomePage()),
-        );
+        final user = apiService.getUser();
+        final role = apiService.getToken() != null ? (GetStorage().read('role') as String?) : null;
+        
+        if (role != null && role != 'user' && role != 'solo') {
+          Get.offAll(() => GoRideApp.getDashboardForRole(role));
+        } else {
+          Get.offAll(() => const HomePage());
+        }
       } else {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-        );
+        Get.offAll(() => const LoginPage());
       }
     });
   }
@@ -312,337 +325,6 @@ class RoleSelectionScreen extends StatelessWidget {
   }
 }
 
-// ============== LOGIN SCREEN ==============
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({Key? key}) : super(key: key);
-
-  @override
-  State<LoginScreen> createState() => _LoginScreenState();
-}
-
-class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  final FocusNode _passwordFocusNode = FocusNode();
-  bool _isLoading = false;
-  bool _obscurePassword = true;
-  String? _errorMessage;
-  final ApiService _apiService = Get.find<ApiService>();
-
-  @override
-  void dispose() {
-    _phoneController.dispose();
-    _passwordController.dispose();
-    _passwordFocusNode.dispose();
-    super.dispose();
-  }
-
-  Future<void> _login() async {
-    if (_phoneController.text.isEmpty || _passwordController.text.isEmpty) {
-      setState(() {
-        _errorMessage = 'Please enter email/phone and password';
-      });
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final response = await _apiService.login(
-        _phoneController.text,
-        _passwordController.text,
-      );
-
-      if (response.statusCode == 200 && response.data != null) {
-        final userData = response.data['user'];
-        
-        if (userData != null && userData is Map<String, dynamic>) {
-          final role = userData['role'] as String?;
-          
-          if (!mounted) return;
-          _navigateToDashboard(role);
-        } else {
-          setState(() {
-            _errorMessage = 'Invalid response from server';
-          });
-        }
-      } else {
-        final message = response.data?['message'] ?? 'Login failed';
-        setState(() {
-          _errorMessage = message;
-        });
-      }
-    } on DioException catch (e) {
-      setState(() {
-        _errorMessage = e.response?.data?['message'] ?? 'Connection error. Please try again.';
-      });
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Connection error. Please try again.';
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  void _navigateToDashboard(String? role) {
-    Get.offAll(() => const HomePage());
-  }
-
-  void _loginWithGoogle() {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
-    );
-  }
-
-  void _loginWithFacebook() {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        automaticallyImplyLeading: false,
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Column(
-                    children: [
-                      Image.asset(
-                        'assets/go_ride_logo.png',
-                        height: 60,
-                        width: 60,
-                        errorBuilder: (context, error, stackTrace) {
-                          return const Icon(
-                            Icons.directions_car,
-                            size: 60,
-                            color: Color(0xFF10713C),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'GoRide',
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF10713C),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 40),
-                const Text(
-                  'Welcome Back',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Login with your account',
-                  style: TextStyle(color: Colors.grey, fontSize: 16),
-                ),
-                const SizedBox(height: 32),
-                _buildTextField(
-                  _phoneController,
-                  'Email / Phone',
-                  Icons.person,
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                const SizedBox(height: 16),
-                _buildPasswordField(
-                  _passwordController,
-                  'Password',
-                  _obscurePassword,
-                  _passwordFocusNode,
-                  (v) {
-                    setState(() {
-                      _obscurePassword = v;
-                    });
-                    // Maintain focus after toggle
-                    _passwordFocusNode.requestFocus();
-                  },
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _login,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF10713C),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Text(
-                            'Login',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                if (_errorMessage != null)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFED1C24).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFED1C24)),
-                    ),
-                    child: Text(
-                      _errorMessage!,
-                      style: const TextStyle(color: Color(0xFFED1C24)),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                const SizedBox(height: 24),
-                const Row(
-                  children: [
-                    Expanded(child: Divider()),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: Text('or', style: TextStyle(color: Colors.grey)),
-                    ),
-                    Expanded(child: Divider()),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _loginWithGoogle,
-                    icon: const Icon(Icons.all_inbox),
-                    label: const Text('Continue with Google'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _loginWithFacebook,
-                    icon: const Icon(Icons.facebook),
-                    label: const Text('Continue with Facebook'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Center(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text("Don't have an account?"),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const RegisterScreen(),
-                            ),
-                          );
-                        },
-                        child: const Text(
-                          'Register',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF10713C),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField(
-    TextEditingController controller,
-    String label,
-    IconData icon, {
-    TextInputType? keyboardType,
-  }) {
-    return TextField(
-      controller: controller,
-      keyboardType: keyboardType,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-
-  Widget _buildPasswordField(
-    TextEditingController controller,
-    String label,
-    bool obscure,
-    FocusNode focusNode,
-    Function(bool) onToggle,
-  ) {
-    return TextField(
-      controller: controller,
-      obscureText: obscure,
-      focusNode: focusNode,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: const Icon(Icons.lock),
-        suffixIcon: IconButton(
-          icon: Icon(obscure ? Icons.visibility_off : Icons.visibility),
-          onPressed: () => onToggle(!obscure),
-        ),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-}
-
 // ============== REGISTER SCREEN ==============
 class RegisterScreen extends StatefulWidget {
   final String? selectedRole;
@@ -687,8 +369,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       case 'corporate':
         _selectedTabIndex = 2;
         break;
-      case 'solo':
       case 'user':
+      case 'solo':
       default:
         _selectedTabIndex = 0;
         break;
@@ -765,87 +447,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
       bool isSuccess = false;
 
       // Check if the response indicates success
-      if (response.statusCode == 200 || response.statusCode == 201 || response.statusCode == 302) {
-        // If JSON response with no errors, it's success
-        if (response.data is Map && response.data['error'] == null && response.data['errors'] == null) {
-          isSuccess = true;
-        }
-        // If HTML response (redirect), treat as success
-        else if (response.data is! Map) {
-          isSuccess = true;
-        }
-        // If JSON with errors, extract error message
-        else if (response.data is Map) {
-          String message = 'Registration failed';
-          if (response.data['errors'] != null) {
-            final errors = response.data['errors'] as Map;
-            if (errors.isNotEmpty) {
-              final firstError = errors.values.first;
-              if (firstError is List && firstError.isNotEmpty) {
-                message = firstError.first.toString();
-              } else {
-                message = firstError.toString();
-              }
-            }
-          } else if (response.data['message'] != null) {
-            message = response.data['message'].toString();
-          }
-          setState(() => _errorMessage = message);
-          setState(() => _isLoading = false);
-          return;
-        }
-      } else if (response.statusCode == 422) {
-        // Validation error
-        String message = 'Validation failed';
-        if (response.data is Map && response.data['errors'] != null) {
-          final errors = response.data['errors'] as Map;
-          if (errors.isNotEmpty) {
-            final firstError = errors.values.first;
-            if (firstError is List && firstError.isNotEmpty) {
-              message = firstError.first.toString();
-            } else {
-              message = firstError.toString();
-            }
-          }
-        }
-        setState(() => _errorMessage = message);
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      // If not success by response, try to login to verify registration
-      if (!isSuccess) {
-        try {
-          final loginResponse = await _apiService.login(
-            _emailController.text,
-            _passwordController.text,
-          );
-          if (loginResponse.statusCode == 200) {
-            isSuccess = true;
-          }
-        } catch (_) {
-          // Login failed, show error below
-        }
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        isSuccess = true;
       }
 
       if (isSuccess) {
         if (!mounted) return;
         
-        // After successful registration, the user might be logged in automatically
-        // or we need to navigate based on the role we just registered with.
-        final user = _apiService.getUser();
-        final role = user?['role'] as String? ?? _selectedRole;
+        // Retrieve role from storage (set by ApiService.register) or use selected role
+        final storedRole = GetStorage().read('role') as String?;
+        final role = storedRole ?? _selectedRole;
         
         print('Registration success! Navigating to dashboard for role: $role');
         
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => const HomePage(),
-          ),
-        );
+        if (role == 'admin' || role == 'driver' || role == 'corporate' || role == 'owner') {
+          Get.offAll(() => UnifiedDashboard(role: role));
+        } else {
+          Get.offAll(() => const HomePage());
+        }
       } else {
         setState(() {
-          _errorMessage = 'Registration failed. Please try again.';
+          _errorMessage = response.data?['message'] ?? 'Registration failed. Please try again.';
         });
       }
     } on DioException catch (e) {
@@ -1090,7 +712,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       TextButton(
                         onPressed: () => Navigator.of(context).pushReplacement(
                           MaterialPageRoute(
-                            builder: (_) => const LoginScreen(),
+                            builder: (_) => const LoginPage(),
                           ),
                         ),
                         child: const Text(
@@ -1138,7 +760,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             // Update role based on tab selection
             switch (index) {
               case 0:
-                _selectedRole = 'solo';
+                _selectedRole = 'user';
                 break;
               case 1:
                 _selectedRole = 'driver'; // Default to driver for tab 1
