@@ -43,6 +43,11 @@ class _HomePageState extends State<HomePage> {
       icon: Icons.two_wheeler,
     ),
     ServiceItem(
+      title: 'Ambulance',
+      imagePath: 'assets/ambulance.png', // Assuming assets/ambulance.png might be added or used icon
+      icon: Icons.medical_services,
+    ),
+    ServiceItem(
       title: 'Corporate',
       imagePath: 'assets/corporate.png',
       icon: Icons.business,
@@ -178,12 +183,12 @@ class _HomePageState extends State<HomePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildSearchBar(context),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             _buildForYouSection(context),
+            const SizedBox(height: 20),
+            _buildBannerSlider(),
             const SizedBox(height: 24),
             _buildQuickActionsSection(),
-            const SizedBox(height: 24),
-            _buildBannerSlider(),
             const SizedBox(height: 20),
           ],
         ),
@@ -785,16 +790,21 @@ class _HomePageState extends State<HomePage> {
           'For You',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
-        const SizedBox(height: 16),
-        SizedBox(
-          height: 110,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: services.length,
-            itemBuilder: (context, index) {
-              return _buildServiceCard(services[index], context);
-            },
+        const SizedBox(height: 12),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 4,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            childAspectRatio: 0.82,
           ),
+          itemCount: services.length,
+          itemBuilder: (context, index) {
+            return _buildServiceCard(services[index], context);
+          },
         ),
       ],
     );
@@ -810,47 +820,55 @@ class _HomePageState extends State<HomePage> {
         } else {
           _showLocationPopup(context, rideType: service.title);
         }
-      },      child: Container(
-        width: 80,
-        margin: const EdgeInsets.only(right: 12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFF10713C), width: 1),
-          color: Colors.white,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Expanded(
-              child: Image.asset(
-                service.imagePath,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
-                  return Center(
-                    child: Icon(
-                      service.icon,
-                      size: 35,
-                      color: const Color(0xFF10713C),
-                    ),
-                  );
-                },
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(top: 4, bottom: 4),
-              child: Text(
-                service.title,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF10713C),
+      },      child: Column(
+        children: [
+          Container(
+            width: 62,
+            height: 62,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+              border: Border.all(color: const Color(0xFF10713C).withValues(alpha: 0.15), width: 1.2),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
                 ),
-                textAlign: TextAlign.center,
+              ],
+            ),
+            child: ClipOval(
+              child: Padding(
+                padding: const EdgeInsets.all(10.0),
+                child: Image.asset(
+                  service.imagePath,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Center(
+                      child: Icon(
+                        service.icon,
+                        size: 28,
+                        color: const Color(0xFF10713C),
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            service.title,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF10713C),
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
     );
   }
@@ -999,93 +1017,83 @@ class _HomePageState extends State<HomePage> {
       'assets/banner/banner_03.jpg',
     ];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Stack(
       children: [
-        const Text(
-          'Exclusive Offers',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        Stack(
-          children: [
-            SizedBox(
-              height: 150,
-              child: PageView.builder(
-                controller: _bannerPageController,
-                onPageChanged: (index) {
-                  setState(() => _currentBannerPage = index % banners.length);
-                },
-                itemCount: banners.length,
-                pageSnapping: true,
-                itemBuilder: (context, index) {
-                  return Container(
-                    margin: const EdgeInsets.only(right: 12),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey[300]!, width: 1),
-                      color: Colors.grey[100],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.asset(
-                        banners[index % banners.length],
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.local_offer,
-                                  size: 50,
-                                  color: const Color(
-                                    0xFF10713C,
-                                  ).withOpacity(0.5),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Exclusive Offer',
-                                  style: TextStyle(
-                                    color: const Color(
-                                      0xFF10713C,
-                                    ).withOpacity(0.7),
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
+        SizedBox(
+          height: 150,
+          child: PageView.builder(
+            controller: _bannerPageController,
+            onPageChanged: (index) {
+              setState(() => _currentBannerPage = index % banners.length);
+            },
+            itemCount: banners.length,
+            pageSnapping: true,
+            itemBuilder: (context, index) {
+              return Container(
+                margin: const EdgeInsets.only(right: 12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[300]!, width: 1),
+                  color: Colors.grey[100],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.asset(
+                    banners[index % banners.length],
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.local_offer,
+                              size: 50,
+                              color: const Color(
+                                0xFF10713C,
+                              ).withOpacity(0.5),
                             ),
-                          );
-                        },
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            Positioned(
-              bottom: 8,
-              left: 0,
-              right: 0,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  banners.length,
-                  (index) => Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _currentBannerPage == index
-                          ? const Color(0xFF10713C)
-                          : Colors.grey[300],
-                    ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Exclusive Offer',
+                              style: TextStyle(
+                                color: const Color(
+                                  0xFF10713C,
+                                ).withOpacity(0.7),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
+                ),
+              );
+            },
+          ),
+        ),
+        Positioned(
+          bottom: 8,
+          left: 0,
+          right: 0,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(
+              banners.length,
+              (index) => Container(
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _currentBannerPage == index
+                      ? const Color(0xFF10713C)
+                      : Colors.grey[300],
                 ),
               ),
             ),
-          ],
+          ),
         ),
       ],
     );

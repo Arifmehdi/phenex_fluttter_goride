@@ -13,6 +13,7 @@ import 'package:goride/services/firebase_service.dart';
 import 'package:goride/services/location_service.dart';
 import 'package:goride/services/ride_service.dart';
 import 'package:goride/services/routing_service.dart';
+import 'package:goride/services/sslcommerz_service.dart';
 import 'package:goride/pages/login_page.dart';
 import 'package:goride/widgets/sidebar_menu.dart';
 
@@ -23,6 +24,7 @@ void main() async {
   // Initialize core services
   Get.put(ApiService());
   Get.put(LocaleController());
+  Get.put(SslCommerzService());
 
   // Initialize Firebase for real-time features
   final firebaseService = Get.put(FirebaseService());

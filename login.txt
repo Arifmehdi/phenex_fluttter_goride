@@ -589,7 +589,6 @@ this is my authcontroller Logic
                         <option value="web" {{ ($guard ?? 'web') === 'web' ? 'selected' : '' }}>Customer Account</option>
                         <option value="driver" {{ ($guard ?? '') === 'driver' ? 'selected' : '' }}>Driver Account</option>
                         <option value="corporate" {{ ($guard ?? '') === 'corporate' ? 'selected' : '' }}>Corporate Account</option>
-                        <option value="admin" {{ ($guard ?? '') === 'admin' ? 'selected' : '' }}>Administrator</option>
                     </select>
                 </div>
 

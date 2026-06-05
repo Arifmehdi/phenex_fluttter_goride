@@ -10,7 +10,9 @@ import 'ride_status_page.dart';
 import 'live_tracking_screen.dart';
 import '../services/routing_service.dart';
 import '../services/recent_locations_service.dart';
+import '../services/sslcommerz_service.dart';
 
+import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firebase_service.dart';
 
@@ -70,6 +72,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
 
   // Recent locations
   final RecentLocationsService _recentLocationsService = RecentLocationsService();
+  final SslCommerzService _sslCommerzService = Get.find<SslCommerzService>();
   List<RecentLocation> _recentLocations = [];
 
   @override
@@ -1087,6 +1090,232 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
     );
   }
 
+  void _showPaymentSelection() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+            ),
+            const Text('Select Payment Method', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            _buildPaymentOption('Cash', Icons.money, _selectedPayment == 'Cash'),
+            _buildPaymentOption('Card', Icons.credit_card, _selectedPayment == 'Card'),
+            _buildPaymentOption('Online Pay', Icons.account_balance_wallet, _selectedPayment == 'Online Pay'),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaymentOption(String title, IconData icon, bool isSelected) {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF10713C).withValues(alpha: 0.1) : Colors.grey[100],
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: isSelected ? const Color(0xFF10713C) : Colors.grey[600], size: 20),
+      ),
+      title: Text(title, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, color: isSelected ? const Color(0xFF10713C) : Colors.black87)),
+      trailing: isSelected ? const Icon(Icons.check_circle, color: Color(0xFF10713C)) : null,
+      onTap: () {
+        Navigator.pop(context);
+        if (title == 'Online Pay') {
+          _handleRealSslCommerzPayment();
+        } else {
+          setState(() => _selectedPayment = title);
+        }
+      },
+    );
+  }
+
+  void _showDigitalPaymentDemo() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // SSLCommerz style header
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: const Color(0xFF10713C),
+                child: Row(
+                  children: [
+                    const Icon(Icons.security, color: Colors.white, size: 20),
+                    const SizedBox(width: 10),
+                    const Text('Secure Payment Gateway', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close, color: Colors.white, size: 20)),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    const Text('Select Payment Option', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildGatewayItem('bKash', 'assets/bkash_logo.png', Colors.pink),
+                        _buildGatewayItem('Nagad', 'assets/nagad_logo.png', Colors.orange),
+                        _buildGatewayItem('Rocket', 'assets/rocket_logo.png', Colors.purple),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildGatewayItem('Visa', 'assets/visa_logo.png', Colors.blue),
+                        _buildGatewayItem('MasterCard', 'assets/mastercard_logo.png', Colors.red),
+                        _buildGatewayItem('Upay', 'assets/upay_logo.png', Colors.teal),
+                      ],
+                    ),
+                    const SizedBox(height: 30),
+                    const Divider(),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Total Amount', style: TextStyle(color: Colors.grey)),
+                        Text('৳${_price.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF10713C))),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    Column(
+                      children: [
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              setState(() => _selectedPayment = 'Online Pay');
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Demo Payment Successful!'),
+                                  backgroundColor: Color(0xFF10713C),
+                                ),
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10713C).withValues(alpha: 0.8), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                            child: const Text('Simulate Success', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton(
+                            onPressed: _handleRealSslCommerzPayment,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF10713C),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              elevation: 2,
+                            ),
+                            child: const Text('Pay with SSLCommerz', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleRealSslCommerzPayment() async {
+    Navigator.pop(context); // Close demo dialog
+    
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator(color: Color(0xFF10713C))),
+    );
+
+    final String tranId = 'GR_${DateTime.now().millisecondsSinceEpoch}';
+    final double amount = _selectedRide == 'car' ? _price : _price * 0.6;
+
+    final String? gatewayUrl = await _sslCommerzService.initiatePayment(
+      amount: amount,
+      transactionId: tranId,
+      customerName: 'Customer Name', // In real app, get from ApiService
+      customerEmail: 'customer@email.com',
+      customerPhone: '01711111111',
+    );
+
+    if (mounted) Navigator.pop(context); // Close loading
+
+    if (gatewayUrl != null) {
+      // Launch the payment gateway in external browser
+      final Uri uri = Uri.parse(gatewayUrl);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        
+        // After launching, since we can't get callback easily here,
+        // we'll assume the user will finish payment and we might need a way to check status.
+        // For this implementation, we'll set the payment method to Online Pay.
+        setState(() => _selectedPayment = 'Online Pay');
+      } else {
+        _showError('Could not launch payment gateway');
+      }
+    } else {
+      _showError('Failed to initiate SSLCommerz payment');
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
+  }
+
+  Widget _buildGatewayItem(String name, String asset, Color color) {
+    return Column(
+      children: [
+        Container(
+          width: 60,
+          height: 60,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
+          ),
+          child: Center(child: Text(name[0], style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 24))), // Simplified demo icons
+        ),
+        const SizedBox(height: 6),
+        Text(name, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500)),
+      ],
+    );
+  }
+
   Widget _buildPaymentAndPromo() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1098,7 +1327,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
       child: Row(
         children: [
           GestureDetector(
-            onTap: () => setState(() => _selectedPayment = _selectedPayment == 'Cash' ? 'Card' : 'Cash'),
+            onTap: _showPaymentSelection,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
@@ -1109,7 +1338,13 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(_selectedPayment == 'Cash' ? Icons.money : Icons.credit_card, size: 16, color: const Color(0xFF10713C)),
+                  Icon(
+                    _selectedPayment == 'Cash' 
+                        ? Icons.money 
+                        : (_selectedPayment == 'Card' ? Icons.credit_card : Icons.account_balance_wallet), 
+                    size: 16, 
+                    color: const Color(0xFF10713C)
+                  ),
                   const SizedBox(width: 6),
                   Text(_selectedPayment, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: Colors.black87)),
                   const SizedBox(width: 4),
