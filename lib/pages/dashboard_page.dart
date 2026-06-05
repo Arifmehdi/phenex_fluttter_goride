@@ -10,6 +10,11 @@ import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../widgets/sidebar_menu.dart';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/firebase_service.dart';
+import '../services/ride_service.dart';
+import 'live_tracking_screen.dart';
+
 class UnifiedDashboard extends StatefulWidget {
   final String role; // 'driver', 'owner', 'corporate', 'admin'
   const UnifiedDashboard({super.key, required this.role});
@@ -22,6 +27,8 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
   final LocaleController localeController = Get.find<LocaleController>();
   final LocationService _locationService = Get.find<LocationService>();
   final ApiService _apiService = Get.find<ApiService>();
+  final FirebaseService _firebaseService = Get.find<FirebaseService>();
+  final RideService _rideService = Get.find<RideService>();
   
   bool _isOnline = false;
   int _selectedIndex = 0;
@@ -459,34 +466,130 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
-        _buildRequestCard('Airport to Uttara', '12 km', '৳ 600'),
-        _buildRequestCard('Gulshan to Banani', '4 km', '৳ 250'),
+        StreamBuilder<QuerySnapshot>(
+          stream: _firebaseService.streamPendingRequests(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: Padding(
+                padding: EdgeInsets.all(20.0),
+                child: CircularProgressIndicator(),
+              ));
+            }
+            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 30),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.request_page_outlined, size: 48, color: Colors.grey[300]),
+                      const SizedBox(height: 12),
+                      Text(
+                        localeController.get('No requests available', 'কোন অনুরোধ নেই'),
+                        style: TextStyle(color: Colors.grey[400]),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            return Column(
+              children: snapshot.data!.docs.map((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                final String pickup = data['pickupAddress'] ?? 'Unknown';
+                final String destination = data['destAddress'] ?? 'Unknown';
+                final String riderName = data['riderName'] ?? 'Customer';
+                
+                return _buildRequestCard(
+                  '$pickup to $destination',
+                  riderName,
+                  '৳ ${data['fare'] ?? '0'}',
+                  doc.id,
+                  data,
+                );
+              }).toList(),
+            );
+          },
+        ),
       ],
     );
   }
 
-  Widget _buildRequestCard(String route, String dist, String fare) {
+  Widget _buildRequestCard(String route, String riderName, String fare, String requestId, Map<String, dynamic> data) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: Colors.grey.shade200),
       ),
       child: ListTile(
-        title: Text(route, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text('$dist • $fare'),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        title: Text(
+          route, 
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4.0),
+          child: Text('$riderName • $fare', style: TextStyle(color: Colors.grey[600])),
+        ),
         trailing: ElevatedButton(
-          onPressed: () {},
+          onPressed: () => _acceptRide(requestId, data),
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF10713C),
-            minimumSize: const Size(60, 30),
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            minimumSize: const Size(80, 36),
           ),
-          child: const Text(
-            'Bid',
-            style: TextStyle(color: Colors.white, fontSize: 12),
+          child: Text(
+            localeController.get('Accept', 'গ্রহণ'),
+            style: const TextStyle(fontWeight: FontWeight.bold),
           ),
         ),
+      ),
+    );
+  }
+
+  void _acceptRide(String requestId, Map<String, dynamic> data) async {
+    Get.dialog(
+      AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(localeController.get('Accept Ride?', 'রাইড গ্রহণ করবেন?')),
+        content: Text(localeController.get('Are you sure you want to accept this ride?', 'আপনি কি নিশ্চিত যে আপনি এই রাইডটি গ্রহণ করতে চান?')),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: Text(localeController.get('Cancel', 'বাতিল'), style: const TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Get.back();
+              // In a real app, we might want to get the Laravel ID too
+              final success = await _rideService.acceptRideRequest(requestId);
+              if (success) {
+                Get.to(() => LiveTrackingScreen(
+                  rideType: data['rideType'] ?? 'car',
+                  pickupAddress: data['pickupAddress'] ?? 'Pickup',
+                  destinationAddress: data['destAddress'] ?? 'Destination',
+                  price: (data['fare'] as num?)?.toDouble() ?? 0.0,
+                  pickupLat: (data['pickupLatitude'] as num?)?.toDouble() ?? 0.0,
+                  pickupLng: (data['pickupLongitude'] as num?)?.toDouble() ?? 0.0,
+                  destLat: (data['destLatitude'] as num?)?.toDouble() ?? 0.0,
+                  destLng: (data['destLongitude'] as num?)?.toDouble() ?? 0.0,
+                  tripId: requestId,
+                ));
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10713C),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: Text(localeController.get('Accept', 'গ্রহণ'), style: const TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
   }
@@ -792,4 +895,3 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
     );
   }
 }
-

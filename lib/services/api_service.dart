@@ -1,9 +1,41 @@
-﻿import 'package:dio/dio.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:get/get.dart' as g;
 
+enum EnvType {
+  production,
+  localEmulator,
+  localWifi,
+  customNgrok,
+}
+
 class ApiService extends g.GetxController {
-  static const String baseUrl = 'https://gorides.musafirinternational.com/api/';
+  // --- ENVIRONMENT CONFIGURATION ---
+  // Change currentEnv to switch between local development and production.
+  static const EnvType currentEnv = EnvType.production; 
+  
+  // Your computer's local network IP address (for testing on physical devices via Wi-Fi)
+  static const String _localMachineIp = '192.168.68.102'; 
+  
+  // If sharing the API publicly with others via ngrok (e.g. 'https://xxx.ngrok-free.app')
+  static const String _ngrokUrl = 'https://YOUR_NGROK_SUBDOMAIN.ngrok-free.app';
+
+  static String get baseUrl {
+    switch (currentEnv) {
+      case EnvType.production:
+        return 'https://gorides.musafirinternational.com/api/';
+      case EnvType.localEmulator:
+        // 10.0.2.2 maps to the computer's localhost inside Android Emulators.
+        // Change path if running with php artisan serve (e.g. 'http://10.0.2.2:8000/api/')
+        return 'http://10.0.2.2/goride/public/api/';
+      case EnvType.localWifi:
+        // Points to the computer's local IP on the network (for physical devices)
+        return 'http://$_localMachineIp/goride/public/api/';
+      case EnvType.customNgrok:
+        return '$_ngrokUrl/api/';
+    }
+  }
   
   final Dio _dio = Dio(BaseOptions(
     baseUrl: baseUrl,
@@ -130,5 +162,41 @@ class ApiService extends g.GetxController {
 
   String? getToken() {
     return _storage.read('token');
+  }
+
+  // Ride Related Methods
+  Future<Response> createRideRequest(Map<String, dynamic> data) async {
+    return await _dio.post('/ride-requests', data: data);
+  }
+
+  Future<Response> updateRideStatus(int id, String status) async {
+    return await _dio.patch('/ride-requests/$id/status', data: {'status': status});
+  }
+
+  Future<Response> updateLocation(double lat, double lng) async {
+    try {
+      debugPrint('Syncing location to Laravel: $lat, $lng');
+      final response = await _dio.post('/update-location', data: {
+        'latitude': lat,
+        'longitude': lng,
+      });
+      debugPrint('Laravel sync response: ${response.statusCode} ${response.data}');
+      return response;
+    } catch (e) {
+      debugPrint('Laravel sync error: $e');
+      rethrow;
+    }
+  }
+
+  Future<Response> getNearbyDrivers(double lat, double lng, {double radius = 5}) async {
+    return await _dio.get('/nearby-drivers', queryParameters: {
+      'latitude': lat,
+      'longitude': lng,
+      'radius': radius,
+    });
+  }
+
+  Future<Response> getActiveRide() async {
+    return await _dio.get('/active-ride');
   }
 }

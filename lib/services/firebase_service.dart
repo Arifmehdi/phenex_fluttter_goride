@@ -7,9 +7,10 @@ class FirebaseService extends GetxService {
   FirebaseFirestore? _firestore;
   bool _initialized = false;
 
-  FirebaseFirestore get firestore {
-    if (_firestore == null) {
-      throw Exception('Firebase not initialized. Call FirebaseService.init() first.');
+  FirebaseFirestore? get firestore {
+    if (!_initialized || _firestore == null) {
+      debugPrint('WARNING: Firebase not initialized. Firestore access ignored.');
+      return null;
     }
     return _firestore!;
   }
@@ -20,6 +21,11 @@ class FirebaseService extends GetxService {
     if (_initialized) return;
 
     try {
+      // Basic check for Firebase configuration if on mobile
+      if (!kIsWeb) {
+        // This is a soft check, actual init will throw if missing
+      }
+
       await Firebase.initializeApp();
       _firestore = FirebaseFirestore.instance;
       
@@ -32,22 +38,24 @@ class FirebaseService extends GetxService {
       _initialized = true;
       debugPrint('Firebase initialized successfully');
     } catch (e) {
+      _initialized = false;
+      _firestore = null;
       debugPrint('Firebase initialization error: $e');
-      rethrow;
+      // Don't rethrow here to allow app to run in "offline/limited" mode
     }
   }
 
   // Driver locations collection
-  CollectionReference get driverLocations =>
-      firestore.collection('driver_locations');
+  CollectionReference? get driverLocations =>
+      firestore?.collection('driver_locations');
 
   // Active trips collection
-  CollectionReference get activeTrips =>
-      firestore.collection('active_trips');
+  CollectionReference? get activeTrips =>
+      firestore?.collection('active_trips');
 
   // Ride requests collection
-  CollectionReference get rideRequests =>
-      firestore.collection('ride_requests');
+  CollectionReference? get rideRequests =>
+      firestore?.collection('ride_requests');
 
   /// Update driver's current location in Firestore
   Future<void> updateDriverLocation({
@@ -59,7 +67,10 @@ class FirebaseService extends GetxService {
     required bool isOnline,
     String? currentTripId,
   }) async {
-    await driverLocations.doc(driverId).set({
+    final coll = driverLocations;
+    if (coll == null) return;
+    
+    await coll.doc(driverId).set({
       'latitude': latitude,
       'longitude': longitude,
       'heading': heading,
@@ -72,11 +83,13 @@ class FirebaseService extends GetxService {
 
   /// Stream driver location updates
   Stream<DocumentSnapshot> streamDriverLocation(String driverId) {
-    return driverLocations.doc(driverId).snapshots();
+    final coll = driverLocations;
+    if (coll == null) return const Stream.empty();
+    return coll.doc(driverId).snapshots();
   }
 
   /// Create a new trip in Firestore
-  Future<String> createTrip({
+  Future<String?> createTrip({
     required String riderId,
     required String riderName,
     required String rideType,
@@ -88,7 +101,10 @@ class FirebaseService extends GetxService {
     required String destAddress,
     required double fare,
   }) async {
-    final docRef = await activeTrips.add({
+    final coll = activeTrips;
+    if (coll == null) return null;
+
+    final docRef = await coll.add({
       'riderId': riderId,
       'driverId': '',
       'riderName': riderName,
@@ -109,12 +125,17 @@ class FirebaseService extends GetxService {
 
   /// Stream trip status
   Stream<DocumentSnapshot> streamTrip(String tripId) {
-    return activeTrips.doc(tripId).snapshots();
+    final coll = activeTrips;
+    if (coll == null) return const Stream.empty();
+    return coll.doc(tripId).snapshots();
   }
 
   /// Update trip status
   Future<void> updateTripStatus(String tripId, String status) async {
-    await activeTrips.doc(tripId).update({
+    final coll = activeTrips;
+    if (coll == null) return;
+
+    await coll.doc(tripId).update({
       'status': status,
       if (status == 'accepted') 'acceptedAt': FieldValue.serverTimestamp(),
       if (status == 'in_progress') 'startedAt': FieldValue.serverTimestamp(),
@@ -124,7 +145,10 @@ class FirebaseService extends GetxService {
 
   /// Assign driver to trip
   Future<void> assignDriverToTrip(String tripId, String driverId) async {
-    await activeTrips.doc(tripId).update({
+    final coll = activeTrips;
+    if (coll == null) return;
+
+    await coll.doc(tripId).update({
       'driverId': driverId,
       'status': 'accepted',
       'acceptedAt': FieldValue.serverTimestamp(),
@@ -132,7 +156,7 @@ class FirebaseService extends GetxService {
   }
 
   /// Create a ride request (for drivers to find)
-  Future<String> createRideRequest({
+  Future<String?> createRideRequest({
     required String riderId,
     required String riderName,
     required double pickupLat,
@@ -142,7 +166,10 @@ class FirebaseService extends GetxService {
     required double destLng,
     required String destAddress,
   }) async {
-    final docRef = await rideRequests.add({
+    final coll = rideRequests;
+    if (coll == null) return null;
+
+    final docRef = await coll.add({
       'riderId': riderId,
       'riderName': riderName,
       'pickupLatitude': pickupLat,
@@ -159,7 +186,10 @@ class FirebaseService extends GetxService {
 
   /// Stream nearby ride requests (for drivers)
   Stream<QuerySnapshot> streamPendingRequests() {
-    return rideRequests
+    final coll = rideRequests;
+    if (coll == null) return const Stream.empty();
+
+    return coll
         .where('status', isEqualTo: 'pending')
         .orderBy('createdAt', descending: true)
         .snapshots();
@@ -167,7 +197,10 @@ class FirebaseService extends GetxService {
 
   /// Accept a ride request (driver)
   Future<void> acceptRideRequest(String requestId, String driverId) async {
-    await rideRequests.doc(requestId).update({
+    final coll = rideRequests;
+    if (coll == null) return;
+
+    await coll.doc(requestId).update({
       'status': 'accepted',
       'driverId': driverId,
       'acceptedAt': FieldValue.serverTimestamp(),

@@ -11,6 +11,7 @@ import 'live_tracking_screen.dart';
 import '../services/routing_service.dart';
 import '../services/recent_locations_service.dart';
 import '../services/sslcommerz_service.dart';
+import '../services/api_service.dart';
 
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -73,6 +74,8 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   // Recent locations
   final RecentLocationsService _recentLocationsService = RecentLocationsService();
   final SslCommerzService _sslCommerzService = Get.find<SslCommerzService>();
+  final ApiService _apiService = Get.find<ApiService>();
+  Timer? _apiDriversTimer;
   List<RecentLocation> _recentLocations = [];
 
   @override
@@ -120,41 +123,101 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   }
 
   void _listenToNearbyDrivers() {
-    if (!_firebaseService.isInitialized) return;
-
-    _driversSubscription = _firebaseService.driverLocations
-        .where('isOnline', isEqualTo: true)
-        .snapshots()
-        .listen((snapshot) {
-      if (!mounted) return;
-      
-      final markers = snapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        final lat = data['latitude'] as double;
-        final lng = data['longitude'] as double;
-        final heading = (data['heading'] as num?)?.toDouble() ?? 0.0;
+    if (_firebaseService.isInitialized) {
+      _driversSubscription = _firebaseService.driverLocations
+          ?.where('isOnline', isEqualTo: true)
+          .snapshots()
+          .listen((snapshot) {
+        if (!mounted) return;
         
-        return Marker(
-          point: LatLng(lat, lng),
-          width: 40,
-          height: 40,
-          child: Transform.rotate(
-            angle: heading * (pi / 180),
-            child: Image.asset(
-              'assets/car.png',
-              width: 30,
-              height: 30,
-              errorBuilder: (context, error, stackTrace) => 
-                  const Icon(Icons.directions_car, color: Colors.green, size: 25),
+        final center = _pickupLocation ?? (_currentPosition != null ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude) : null);
+        
+        final markers = snapshot.docs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final lat = data['latitude'] as double?;
+          final lng = data['longitude'] as double?;
+          if (lat == null || lng == null) return false;
+          
+          if (center != null) {
+            final distanceInMeters = Geolocator.distanceBetween(
+              center.latitude,
+              center.longitude,
+              lat,
+              lng,
+            );
+            return distanceInMeters <= 5000; // Only show drivers within 5km radius
+          }
+          return true;
+        }).map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final lat = data['latitude'] as double;
+          final lng = data['longitude'] as double;
+          final heading = (data['heading'] as num?)?.toDouble() ?? 0.0;
+          
+          return Marker(
+            point: LatLng(lat, lng),
+            width: 40,
+            height: 40,
+            child: Transform.rotate(
+              angle: heading * (pi / 180),
+              child: Image.asset(
+                'assets/car.png',
+                width: 30,
+                height: 30,
+                errorBuilder: (context, error, stackTrace) => 
+                    const Icon(Icons.directions_car, color: Colors.green, size: 25),
+              ),
             ),
-          ),
-        );
-      }).toList();
+          );
+        }).toList();
 
-      setState(() {
-        _driverMarkers = markers;
+        setState(() {
+          _driverMarkers = markers;
+        });
       });
-    });
+    } else {
+      // Fallback: Poll Laravel API for nearby drivers
+      _apiDriversTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+        if (!mounted) return;
+        final center = _pickupLocation ?? (_currentPosition != null ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude) : null);
+        if (center == null) return;
+
+        try {
+          final response = await _apiService.getNearbyDrivers(
+            center.latitude,
+            center.longitude,
+            radius: 5.0, // 5km radius
+          );
+
+          if (response.statusCode == 200 && response.data != null) {
+            final List<dynamic> driversList = response.data['data'] ?? [];
+            final markers = driversList.map((driverData) {
+              final double lat = (driverData['latitude'] as num).toDouble();
+              final double lng = (driverData['longitude'] as num).toDouble();
+              
+              return Marker(
+                point: LatLng(lat, lng),
+                width: 40,
+                height: 40,
+                child: Image.asset(
+                  'assets/car.png',
+                  width: 30,
+                  height: 30,
+                  errorBuilder: (context, error, stackTrace) => 
+                      const Icon(Icons.directions_car, color: Colors.green, size: 25),
+                ),
+              );
+            }).toList();
+
+            setState(() {
+              _driverMarkers = markers;
+            });
+          }
+        } catch (e) {
+          debugPrint('Error fetching nearby drivers from API: $e');
+        }
+      });
+    }
   }
 
   void _loadRecentLocations() {

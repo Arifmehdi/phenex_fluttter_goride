@@ -102,7 +102,15 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
       locationSettings: settings,
     ).listen((position) {
       if (mounted) {
-        setState(() => _currentPosition = position);
+        setState(() {
+          _currentPosition = position;
+        });
+        
+        // Dynamically move map to follow the user
+        _mapController.move(
+          LatLng(position.latitude, position.longitude),
+          _mapController.camera.zoom,
+        );
       }
     });
   }

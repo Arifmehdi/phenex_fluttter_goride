@@ -16,6 +16,8 @@ class SslCommerzService extends g.GetxController {
     required String customerEmail,
     required String customerPhone,
   }) async {
+    final String baseWebUrl = ApiService.baseUrl.replaceAll('/api/', '/');
+
     try {
       final formData = FormData.fromMap({
         'store_id': storeId,
@@ -23,9 +25,9 @@ class SslCommerzService extends g.GetxController {
         'total_amount': amount.toStringAsFixed(2),
         'currency': 'BDT',
         'tran_id': transactionId,
-        'success_url': 'https://goride.app/payment-success',
-        'fail_url': 'https://goride.app/payment-fail',
-        'cancel_url': 'https://goride.app/payment-cancel',
+        'success_url': '${baseWebUrl}success',
+        'fail_url': '${baseWebUrl}fail',
+        'cancel_url': '${baseWebUrl}cancel',
         'cus_name': customerName,
         'cus_email': customerEmail,
         'cus_add1': 'Dhaka',

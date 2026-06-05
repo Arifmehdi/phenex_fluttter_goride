@@ -6,9 +6,11 @@ import 'package:geocoding/geocoding.dart';
 import 'package:get/get.dart';
 import 'package:latlong2/latlong.dart';
 import 'firebase_service.dart';
+import 'api_service.dart';
 
 class LocationService extends GetxService {
   FirebaseService? _firebaseService;
+  final ApiService _apiService = Get.find<ApiService>();
 
   StreamSubscription<Position>? _positionStream;
   Position? _currentPosition;
@@ -21,6 +23,7 @@ class LocationService extends GetxService {
   final RxDouble heading = 0.0.obs;
 
   bool _isUpdatingFirestore = false;
+  bool _isUpdatingApi = false;
   String? _driverId;
   String? _currentTripId;
   bool _isOnline = false;
@@ -98,19 +101,23 @@ class LocationService extends GetxService {
       distanceFilter: 10, // Update every 10 meters
     );
 
+    // Get initial position immediately
+    await getCurrentPosition();
+
     _positionStream = Geolocator.getPositionStream(
       locationSettings: locationSettings,
     ).listen((Position position) {
+      debugPrint('Location Update: ${position.latitude}, ${position.longitude}');
       _currentPosition = position;
       currentPosition.value = position;
       speed.value = position.speed;
       heading.value = position.heading;
 
       // Update heading based on movement direction if heading is not available
-      if (position.heading < 0 && _lastSyncedLocation != null) {
-        final dx = position.longitude - _lastSyncedLocation!.longitude;
-        final dy = position.latitude - _lastSyncedLocation!.latitude;
-        if (dx.abs() > 0.00001 || dy.abs() > 0.00001) {
+      if (position.heading <= 0 && _lastSyncedLocation != null) {
+        final double dx = position.longitude - _lastSyncedLocation!.longitude;
+        final double dy = position.latitude - _lastSyncedLocation!.latitude;
+        if (dx.abs() > 0.000001 || dy.abs() > 0.000001) {
           heading.value = atan2(dx, dy) * 180 / pi;
         }
       }
@@ -120,11 +127,15 @@ class LocationService extends GetxService {
 
     isTracking.value = true;
 
-    // Sync to Firestore periodically (every 3 seconds)
-    if (syncToFirestore && _firebaseService != null && driverId != null) {
+    // Sync to Firestore and API periodically (every 3 seconds)
+    if (syncToFirestore && driverId != null) {
+      debugPrint('Starting location sync timer for driver: $driverId');
       _locationSyncTimer = Timer.periodic(
         const Duration(seconds: 3),
-        (_) => _syncLocationToFirestore(),
+        (_) {
+          _syncLocationToFirestore();
+          _syncLocationToApi();
+        },
       );
     }
   }
@@ -174,6 +185,24 @@ class LocationService extends GetxService {
       debugPrint('Firestore sync error: $e');
     } finally {
       _isUpdatingFirestore = false;
+    }
+  }
+
+  /// Sync current location to Laravel API
+  Future<void> _syncLocationToApi() async {
+    if (_currentPosition == null || !_apiService.isLoggedIn()) return;
+    if (_isUpdatingApi) return;
+
+    _isUpdatingApi = true;
+    try {
+      await _apiService.updateLocation(
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+      );
+    } catch (e) {
+      debugPrint('API location sync error: $e');
+    } finally {
+      _isUpdatingApi = false;
     }
   }
 

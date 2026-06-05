@@ -28,18 +28,15 @@ void main() async {
 
   // Initialize Firebase for real-time features
   final firebaseService = Get.put(FirebaseService());
-  try {
-    await firebaseService.init();
-    debugPrint('Firebase initialized in main()');
-  } catch (e) {
-    debugPrint('Firebase initialization skipped (offline/not configured): $e');
-  }
+  // Start initialization in background, but await it briefly for critical startup
+  await firebaseService.init().timeout(const Duration(seconds: 10), onTimeout: () {
+    debugPrint('Firebase initialization timed out, continuing...');
+  });
 
-  // Initialize location & ride services (depends on Firebase)
+  // Initialize location & ride services
   final locationService = Get.put(LocationService());
-  if (firebaseService.isInitialized) {
-    locationService.initFirebase(firebaseService);
-  }
+  locationService.initFirebase(firebaseService);
+  
   Get.put(RideService());
   Get.put(RoutingService());
 
