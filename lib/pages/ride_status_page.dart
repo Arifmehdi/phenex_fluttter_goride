@@ -186,24 +186,41 @@ class _RideStatusScreenState extends State<RideStatusScreen> with SingleTickerPr
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.goride.app',
         ),
-        MarkerLayer(
-          markers: [
-            if (_currentPosition != null)
-              Marker(
-                point: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
-                width: 40,
-                height: 40,
-                child: const Icon(Icons.my_location, color: Colors.blue, size: 30),
-              ),
-            if (_isDriverFound && _rideService.driverLatitude.value > 0)
-              Marker(
-                point: LatLng(_rideService.driverLatitude.value, _rideService.driverLongitude.value),
-                width: 50,
-                height: 50,
-                child: const Icon(Icons.directions_car, color: Color(0xFF10713C), size: 40),
-              ),
-          ],
-        ),
+        Obx(() {
+          // Explicitly access observables to ensure GetX registers them
+          final dLat = _rideService.driverLatitude.value;
+          final dLng = _rideService.driverLongitude.value;
+          final dHeading = _rideService.driverHeading.value;
+
+          return MarkerLayer(
+            markers: [
+              if (_currentPosition != null)
+                Marker(
+                  point: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+                  width: 40,
+                  height: 40,
+                  child: const Icon(Icons.my_location, color: Colors.blue, size: 30),
+                ),
+              if (_isDriverFound && dLat > 0)
+                Marker(
+                  point: LatLng(dLat, dLng),
+                  width: 45,
+                  height: 45,
+                  child: Transform.rotate(
+                    angle: dHeading * (pi / 180),
+                    child: Image.asset(
+                      'assets/car.png',
+                      errorBuilder: (_, __, ___) => const Icon(
+                        Icons.directions_car,
+                        color: Color(0xFF10713C),
+                        size: 40,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        }),
       ],
     );
   }

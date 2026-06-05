@@ -308,54 +308,68 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
             ],
           ),
         // Markers
-        MarkerLayer(
-          markers: [
-            // Rider position
-            if (_currentPosition != null)
+        Obx(() {
+          // Explicitly access observables to ensure GetX registers them
+          final dLat = _rideService.driverLatitude.value;
+          final dLng = _rideService.driverLongitude.value;
+          final dHeading = _rideService.driverHeading.value;
+
+          return MarkerLayer(
+            markers: [
+              // Rider position
+              if (_currentPosition != null)
+                Marker(
+                  point: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+                  width: 40,
+                  height: 40,
+                  child: const Icon(Icons.my_location, color: Colors.blue, size: 30),
+                ),
+              // Pickup marker
               Marker(
-                point: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+                point: _pickupPoint,
                 width: 40,
                 height: 40,
-                child: const Icon(Icons.my_location, color: Colors.blue, size: 30),
+                child: const Icon(Icons.location_on, color: Color(0xFF10713C), size: 40),
               ),
-            // Pickup marker
-            Marker(
-              point: _pickupPoint,
-              width: 40,
-              height: 40,
-              child: const Icon(Icons.location_on, color: Color(0xFF10713C), size: 40),
-            ),
-            // Destination marker
-            Marker(
-              point: _destPoint,
-              width: 40,
-              height: 40,
-              child: const Icon(Icons.flag, color: Color(0xFFED1C24), size: 35),
-            ),
-            // Driver's car (animated)
-            if (_isDriverFound && _rideService.driverLatitude.value > 0)
+              // Destination marker
               Marker(
-                point: LatLng(
-                  _rideService.driverLatitude.value,
-                  _rideService.driverLongitude.value,
-                ),
-                width: 60,
-                height: 60,
-                child: AnimatedBuilder(
-                  animation: _pulseController,
-                  builder: (context, child) {
-                    return Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFF10713C).withOpacity(0.2 + _pulseController.value * 0.3),
-                      ),
-                      child: const Icon(Icons.directions_car, color: Color(0xFF10713C), size: 35),
-                    );
-                  },
-                ),
+                point: _destPoint,
+                width: 40,
+                height: 40,
+                child: const Icon(Icons.flag, color: Color(0xFFED1C24), size: 35),
               ),
-          ],
-        ),
+              // Driver's car (animated & rotating)
+              if (_isDriverFound && dLat > 0)
+                Marker(
+                  point: LatLng(dLat, dLng),
+                  width: 55,
+                  height: 55,
+                  child: AnimatedBuilder(
+                    animation: _pulseController,
+                    builder: (context, child) {
+                      return Transform.rotate(
+                        angle: dHeading * (pi / 180),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(0xFF10713C).withOpacity(0.15 + _pulseController.value * 0.2),
+                          ),
+                          child: Image.asset(
+                            'assets/car.png',
+                            errorBuilder: (_, __, ___) => const Icon(
+                              Icons.directions_car,
+                              color: Color(0xFF10713C),
+                              size: 35,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          );
+        }),
         // Loading overlay
         if (_isLoadingRoute)
           const Center(
