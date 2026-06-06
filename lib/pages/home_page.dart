@@ -5,6 +5,7 @@ import 'package:get_storage/get_storage.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import '../services/api_service.dart';
+import '../services/places_service.dart';
 
 import 'quick_action_screens.dart';
 import 'location_selection_screen.dart';
@@ -640,6 +641,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _detectCurrentLocation() async {
     setState(() => _isRefreshingLocation = true);
+    final PlacesService placesService = PlacesService();
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
@@ -667,7 +669,20 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       _currentLat = pos.latitude;
       _currentLng = pos.longitude;
-      // Try to reverse geocode for a readable address
+      
+      // Try to reverse geocode for a readable address using Google Maps API
+      try {
+        final address = await placesService.getAddressFromLatLng(pos.latitude, pos.longitude);
+        if (address != null && mounted) {
+          setState(() {
+            _currentLocationText = address;
+            _isRefreshingLocation = false;
+          });
+          return;
+        }
+      } catch (_) {}
+
+      // Fallback to geocoding package
       try {
         List<Placemark> placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
         if (placemarks.isNotEmpty) {
@@ -689,6 +704,7 @@ class _HomePageState extends State<HomePage> {
           return;
         }
       } catch (_) {}
+      
       if (mounted) {
         setState(() {
           _currentLocationText = 'My Current Location';

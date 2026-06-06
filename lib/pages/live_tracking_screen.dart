@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
@@ -42,7 +40,7 @@ class LiveTrackingScreen extends StatefulWidget {
 
 class _LiveTrackingScreenState extends State<LiveTrackingScreen>
     with SingleTickerProviderStateMixin {
-  late final MapController _mapController;
+  GoogleMapController? _mapController;
   late AnimationController _pulseController;
 
   // Tracking services
@@ -58,8 +56,9 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
   bool _isDriverFound = false;
   bool _showDriverInfo = true;
 
-  // Driver marker animation offset
-  double _driverAnimOffset = 0.0;
+  // Icons
+  BitmapDescriptor? _carIcon;
+  BitmapDescriptor? _userIcon;
 
   LatLng get _pickupPoint => LatLng(widget.pickupLat, widget.pickupLng);
   LatLng get _destPoint => LatLng(widget.destLat, widget.destLng);
@@ -67,13 +66,21 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
   @override
   void initState() {
     super.initState();
-    _mapController = MapController();
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
 
+    _loadIcons();
     _initialize();
+  }
+
+  Future<void> _loadIcons() async {
+    _carIcon = await BitmapDescriptor.fromAssetImage(
+      const ImageConfiguration(size: Size(30, 30)),
+      'assets/car.png',
+    );
+    // You could also load a user icon here if available
   }
 
   Future<void> _initialize() async {
@@ -105,11 +112,10 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
         setState(() {
           _currentPosition = position;
         });
-        
+
         // Dynamically move map to follow the user
-        _mapController.move(
-          LatLng(position.latitude, position.longitude),
-          _mapController.camera.zoom,
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
         );
       }
     });
@@ -134,16 +140,37 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
       });
 
       if (_routePoints.isNotEmpty) {
-        _mapController.fitCamera(
-          CameraFit.bounds(
-            bounds: LatLngBounds.fromPoints(_routePoints),
-            padding: const EdgeInsets.all(60),
-          ),
-        );
+        _fitRoute();
       }
     } else {
       setState(() => _isLoadingRoute = false);
     }
+  }
+
+  void _fitRoute() {
+    if (_routePoints.isEmpty || _mapController == null) return;
+
+    double minLat = _routePoints.first.latitude;
+    double maxLat = _routePoints.first.latitude;
+    double minLng = _routePoints.first.longitude;
+    double maxLng = _routePoints.first.longitude;
+
+    for (final point in _routePoints) {
+      if (point.latitude < minLat) minLat = point.latitude;
+      if (point.latitude > maxLat) maxLat = point.latitude;
+      if (point.longitude < minLng) minLng = point.longitude;
+      if (point.longitude > maxLng) maxLng = point.longitude;
+    }
+
+    _mapController!.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        ),
+        80.0,
+      ),
+    );
   }
 
   void _requestRide() {
@@ -170,7 +197,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
   @override
   void dispose() {
     _positionStream?.cancel();
-    _mapController.dispose();
+    _mapController?.dispose();
     _pulseController.dispose();
     super.dispose();
   }
@@ -221,10 +248,10 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
           // Main Map
           _buildMap(),
 
-          // Back button
+          // Back button and Status Card
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
               child: Row(
                 children: [
                   CircleAvatar(
@@ -278,238 +305,152 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
   }
 
   Widget _buildMap() {
-    return FlutterMap(
-      mapController: _mapController,
-      options: MapOptions(
-        initialCenter: _currentPosition != null
-            ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude)
-            : _pickupPoint,
-        initialZoom: 14,
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.goride.app',
-        ),
-        // Route polyline
-        PolylineLayer(
-          polylines: [
-            if (_routePoints.isNotEmpty)
-              Polyline(
-                points: _routePoints,
-                color: const Color(0xFF10713C),
-                strokeWidth: 5.0,
-                borderColor: Colors.green.shade800,
-                borderStrokeWidth: 1.0,
-              ),
-          ],
-        ),
-        // Route points outline
-        if (_routePoints.isNotEmpty)
-          PolylineLayer(
-            polylines: [
-              Polyline(
-                points: _routePoints,
-                color: const Color(0xFF10713C).withOpacity(0.3),
-                strokeWidth: 9.0,
-              ),
-            ],
-          ),
-        // Markers
-        Obx(() {
-          // Explicitly access observables to ensure GetX registers them
-          final dLat = _rideService.driverLatitude.value;
-          final dLng = _rideService.driverLongitude.value;
-          final dHeading = _rideService.driverHeading.value;
+    return Obx(() {
+      final dLat = _rideService.driverLatitude.value;
+      final dLng = _rideService.driverLongitude.value;
+      final dHeading = _rideService.driverHeading.value;
 
-          return MarkerLayer(
-            markers: [
-              // Rider position
-              if (_currentPosition != null)
-                Marker(
-                  point: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
-                  width: 40,
-                  height: 40,
-                  child: const Icon(Icons.my_location, color: Colors.blue, size: 30),
-                ),
-              // Pickup marker
-              Marker(
-                point: _pickupPoint,
-                width: 40,
-                height: 40,
-                child: const Icon(Icons.location_on, color: Color(0xFF10713C), size: 40),
-              ),
-              // Destination marker
-              Marker(
-                point: _destPoint,
-                width: 40,
-                height: 40,
-                child: const Icon(Icons.flag, color: Color(0xFFED1C24), size: 35),
-              ),
-              // Driver's car (animated & rotating)
-              if (_isDriverFound && dLat > 0)
-                Marker(
-                  point: LatLng(dLat, dLng),
-                  width: 55,
-                  height: 55,
-                  child: AnimatedBuilder(
-                    animation: _pulseController,
-                    builder: (context, child) {
-                      return Transform.rotate(
-                        angle: dHeading * (pi / 180),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: const Color(0xFF10713C).withOpacity(0.15 + _pulseController.value * 0.2),
-                          ),
-                          child: Image.asset(
-                            'assets/car.png',
-                            errorBuilder: (_, __, ___) => const Icon(
-                              Icons.directions_car,
-                              color: Color(0xFF10713C),
-                              size: 35,
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-            ],
-          );
-        }),
-        // Loading overlay
-        if (_isLoadingRoute)
-          const Center(
-            child: Card(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-                    SizedBox(width: 12),
-                    Text('Calculating route...'),
-                  ],
-                ),
-              ),
+      return GoogleMap(
+        initialCameraPosition: CameraPosition(
+          target: _currentPosition != null
+              ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude)
+              : _pickupPoint,
+          zoom: 14,
+        ),
+        onMapCreated: (controller) {
+          _mapController = controller;
+          if (_routePoints.isNotEmpty) _fitRoute();
+        },
+        myLocationEnabled: true,
+        myLocationButtonEnabled: false,
+        zoomControlsEnabled: false,
+        mapToolbarEnabled: false,
+        markers: {
+          // Rider position handled by myLocationEnabled: true usually, 
+          // but we can add a custom one if preferred.
+          
+          // Driver position
+          if (dLat != 0 && dLng != 0)
+            Marker(
+              markerId: const MarkerId('driver'),
+              position: LatLng(dLat, dLng),
+              icon: _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+              rotation: dHeading,
+              anchor: const Offset(0.5, 0.5),
+              infoWindow: const InfoWindow(title: 'Your Driver'),
             ),
+
+          // Destination
+          Marker(
+            markerId: const MarkerId('destination'),
+            position: _destPoint,
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+            infoWindow: const InfoWindow(title: 'Destination'),
           ),
-      ],
-    );
+        },
+        polylines: {
+          if (_routePoints.isNotEmpty)
+            Polyline(
+              polylineId: const PolylineId('route'),
+              points: _routePoints,
+              color: const Color(0xFF10713C),
+              width: 5,
+            ),
+        },
+      );
+    });
   }
 
   Widget _buildBottomPanel() {
     return Align(
       alignment: Alignment.bottomCenter,
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.15),
-                  blurRadius: 20,
-                  offset: const Offset(0, 5),
-                ),
-              ],
-            ),
-            child: _isDriverFound ? _buildDriverTrackingPanel() : _buildSearchingPanel(),
-          ),
-        ),
-      ),
+      child: _isDriverFound ? _buildDriverFoundPanel() : _buildSearchingPanel(),
     );
   }
 
   Widget _buildSearchingPanel() {
-    return Padding(
-      padding: const EdgeInsets.all(24),
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(24, 32, 24, 32 + MediaQuery.of(context).padding.bottom),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(24),
+          topRight: Radius.circular(24),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 15,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          Obx(() {
-            if (_rideService.tripStatus.value == 'requesting') {
-              return const Column(
-                children: [
-                  Text(
-                    'Finding your driver...',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Searching for nearby drivers',
-                    style: TextStyle(color: Colors.grey, fontSize: 14),
-                  ),
-                ],
-              );
-            }
-            return const Column(
-              children: [
-                Text(
-                  'Requesting ride...',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Please wait while we process your request',
-                  style: TextStyle(color: Colors.grey, fontSize: 14),
-                ),
-              ],
-            );
-          }),
-          const SizedBox(height: 24),
           AnimatedBuilder(
             animation: _pulseController,
             builder: (context, child) {
               return Container(
-                width: 80 + _pulseController.value * 30,
-                height: 80 + _pulseController.value * 30,
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: const Color(0xFF10713C).withOpacity(0.1 + _pulseController.value * 0.1),
+                  color: const Color(0xFF10713C).withOpacity(0.1 + (0.1 * _pulseController.value)),
                 ),
-                child: const Center(
-                  child: Icon(Icons.directions_car, color: Color(0xFF10713C), size: 40),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFF10713C).withOpacity(0.2 + (0.2 * _pulseController.value)),
+                  ),
+                  child: const Icon(
+                    Icons.local_taxi,
+                    color: Color(0xFF10713C),
+                    size: 40,
+                  ),
                 ),
               );
             },
           ),
           const SizedBox(height: 24),
-          // Trip summary
-          _buildTripSummary(),
-          const SizedBox(height: 20),
-          // Cancel button
+          const Text(
+            'Finding your ride...',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Sending request to nearby drivers for your ${widget.rideType}',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 15,
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 32),
           SizedBox(
             width: double.infinity,
+            height: 56,
             child: OutlinedButton(
-              onPressed: () {
-                _rideService.cancelTrip();
-                Navigator.pop(context);
-              },
+              onPressed: () => Navigator.pop(context),
               style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.red,
-                side: const BorderSide(color: Colors.red),
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                side: const BorderSide(color: Colors.redAccent, width: 1.5),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
-              child: const Text('Cancel Ride', style: TextStyle(fontWeight: FontWeight.bold)),
+              child: const Text(
+                'Cancel Request',
+                style: TextStyle(
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
             ),
           ),
         ],
@@ -517,31 +458,86 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
     );
   }
 
-  Widget _buildDriverTrackingPanel() {
-    return Padding(
-      padding: const EdgeInsets.all(20),
+  Widget _buildDriverFoundPanel() {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(24, 12, 24, 32 + MediaQuery.of(context).padding.bottom),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(30),
+          topRight: Radius.circular(30),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 20,
+            spreadRadius: 5,
+          ),
+        ],
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Drag indicator
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
+          // Handle
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(2),
             ),
           ),
+          const SizedBox(height: 24),
+          
+          // Status Header
+          Obx(() => Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _rideService.tripStatus.value == 'accepted' 
+                        ? 'Driver is coming' 
+                        : _rideService.tripStatus.value == 'arriving' 
+                            ? 'Driver arrived'
+                            : 'On the way',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF10713C),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Your trip is in progress',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '৳${widget.price.toStringAsFixed(0)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ],
+          )),
+          const SizedBox(height: 24),
+          
           // Driver info
           Row(
             children: [
-              CircleAvatar(
+              const CircleAvatar(
                 radius: 28,
-                backgroundColor: Colors.grey[200],
-                child: const Icon(Icons.person, color: Color(0xFF10713C), size: 30),
+                backgroundColor: Color(0xFF10713C),
+                child: Icon(Icons.person, color: Colors.white, size: 30),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -549,144 +545,111 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Your driver is arriving',
-                      style: TextStyle(color: Color(0xFF10713C), fontWeight: FontWeight.bold, fontSize: 13),
+                      'Rashed Ahmed',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
                     ),
-                    const Text(
-                      'Driver assigned',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                    Obx(() => Row(
+                    const SizedBox(height: 4),
+                    Row(
                       children: [
-                        const Icon(Icons.near_me, color: Color(0xFF10713C), size: 14),
+                        const Icon(Icons.star, color: Colors.amber, size: 16),
                         const SizedBox(width: 4),
-                        Text(
-                          '${_rideService.driverDistance.value.toStringAsFixed(1)} km away',
-                          style: TextStyle(color: Colors.grey[600], fontSize: 13),
-                        ),
+                        Text('4.8', style: TextStyle(color: Colors.grey[700], fontSize: 13)),
+                        const SizedBox(width: 12),
+                        const Icon(Icons.verified, color: Colors.blue, size: 16),
+                        const SizedBox(width: 4),
+                        Text('Verified', style: TextStyle(color: Colors.grey[700], fontSize: 13)),
                       ],
-                    )),
+                    ),
                   ],
                 ),
               ),
-              // ETA badge
-              Obx(() => Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10713C).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(16),
+              IconButton(
+                onPressed: _handleCallDriver,
+                icon: const CircleAvatar(
+                  backgroundColor: Color(0xFF10713C),
+                  child: Icon(Icons.call, color: Colors.white, size: 20),
                 ),
-                child: Column(
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          
+          // Car details
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Row(
+              children: [
+                Image.asset('assets/${widget.rideType}.png', width: 50, height: 40, errorBuilder: (_,__,___) => const Icon(Icons.directions_car)),
+                const SizedBox(width: 16),
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '${_rideService.driverETA.value}',
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF10713C),
-                      ),
-                    ),
-                    const Text(
-                      'min',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF10713C)),
-                    ),
+                    Text('Dhaka-Metro-Ga-12-3456', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    SizedBox(height: 2),
+                    Text('White Toyota Premio', style: TextStyle(color: Colors.grey, fontSize: 12)),
                   ],
                 ),
-              )),
-            ],
-          ),
-          const Divider(height: 24),
-          // Actions
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildActionButton(Icons.phone, 'Call', _handleCallDriver),
-              _buildActionButton(Icons.share, 'Share', _handleShareTrip),
-              _buildActionButton(Icons.info_outline, 'Details', _navigateToDetails),
-              _buildActionButton(Icons.warning_amber, 'Emergency', _handleEmergency),
-            ],
-          ),
-          const Divider(height: 20),
-          // Trip summary
-          _buildTripSummary(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionButton(IconData icon, String label, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        child: Column(
-          children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: const Color(0xFF10713C).withOpacity(0.1),
-              child: Icon(icon, color: const Color(0xFF10713C), size: 20),
-            ),
-            const SizedBox(height: 4),
-            Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTripSummary() {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          _buildLocationRow(Icons.my_location, widget.pickupAddress, const Color(0xFF10713C)),
-          const Padding(
-            padding: EdgeInsets.only(left: 11),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: SizedBox(height: 16, child: VerticalDivider(width: 1)),
+              ],
             ),
           ),
-          _buildLocationRow(Icons.flag, widget.destinationAddress, const Color(0xFFED1C24)),
-          const Divider(height: 16),
+          const SizedBox(height: 24),
+          
+          // Action buttons
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Total Fare', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              Text(
-                '৳${widget.price.toStringAsFixed(0)}',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF10713C),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _handleShareTrip,
+                  icon: const Icon(Icons.share, size: 18),
+                  label: const Text('Share'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey[100],
+                    foregroundColor: Colors.black87,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _handleEmergency,
+                  icon: const Icon(Icons.security, size: 18),
+                  label: const Text('Safety'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red[50],
+                    foregroundColor: Colors.red[700],
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _navigateToDetails,
+                  icon: const Icon(Icons.info_outline, size: 18),
+                  label: const Text('Details'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue[50],
+                    foregroundColor: Colors.blue[700],
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                 ),
               ),
             ],
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildLocationRow(IconData icon, String address, Color color) {
-    return Row(
-      children: [
-        Icon(icon, color: color, size: 18),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            address,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
     );
   }
 }

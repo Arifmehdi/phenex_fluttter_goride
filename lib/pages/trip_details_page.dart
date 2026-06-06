@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'package:flutter_map/flutter_map.dart' as fmap;
-import 'package:latlong2/latlong.dart' as latlong;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -29,7 +28,7 @@ class TripDetailsPage extends StatefulWidget {
 }
 
 class _TripDetailsPageState extends State<TripDetailsPage> {
-  late final fmap.MapController _mapController;
+  GoogleMapController? _mapController;
   Position? _currentPosition;
   StreamSubscription<Position>? _positionStreamSubscription;
 
@@ -37,7 +36,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
   final LocationService _locationService = Get.find<LocationService>();
   final RoutingService _routingService = Get.find<RoutingService>();
 
-  List<latlong.LatLng> _routePoints = [];
+  List<LatLng> _routePoints = [];
   bool _isLoadingRoute = false;
   double _tripProgress = 0.0;
   int _etaMinutes = 3;
@@ -47,19 +46,18 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
   @override
   void initState() {
     super.initState();
-    _mapController = fmap.MapController();
     _startLiveTracking();
     _fetchRoute();
   }
 
   void _fetchRoute() {
     // Simplified: use default coordinates for demo
-    final origin = latlong.LatLng(23.8103, 90.4125);
-    final dest = latlong.LatLng(23.7925, 90.4078);
+    const origin = LatLng(23.8103, 90.4125);
+    const dest = LatLng(23.7925, 90.4078);
     _loadRoute(origin, dest);
   }
 
-  Future<void> _loadRoute(latlong.LatLng origin, latlong.LatLng dest) async {
+  Future<void> _loadRoute(LatLng origin, LatLng dest) async {
     setState(() => _isLoadingRoute = true);
     final route = await _routingService.getRoute(origin: origin, destination: dest);
     if (route != null && mounted) {
@@ -69,14 +67,37 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
         _isLoadingRoute = false;
       });
       if (_routePoints.isNotEmpty) {
-        _mapController.fitCamera(fmap.CameraFit.bounds(
-          bounds: fmap.LatLngBounds.fromPoints(_routePoints),
-          padding: const EdgeInsets.all(80),
-        ));
+        _fitRoute();
       }
     } else {
       setState(() => _isLoadingRoute = false);
     }
+  }
+
+  void _fitRoute() {
+    if (_routePoints.isEmpty || _mapController == null) return;
+
+    double minLat = _routePoints.first.latitude;
+    double maxLat = _routePoints.first.latitude;
+    double minLng = _routePoints.first.longitude;
+    double maxLng = _routePoints.first.longitude;
+
+    for (final point in _routePoints) {
+      if (point.latitude < minLat) minLat = point.latitude;
+      if (point.latitude > maxLat) maxLat = point.latitude;
+      if (point.longitude < minLng) minLng = point.longitude;
+      if (point.longitude > maxLng) maxLng = point.longitude;
+    }
+
+    _mapController!.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        ),
+        80.0,
+      ),
+    );
   }
 
   void _startLiveTracking() {
@@ -91,7 +112,9 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
           setState(() {
             _currentPosition = position;
           });
-          _mapController.move(latlong.LatLng(position.latitude, position.longitude), 15.0);
+          _mapController?.animateCamera(
+            CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
+          );
         }
       },
     );
@@ -100,214 +123,101 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
   @override
   void dispose() {
     _positionStreamSubscription?.cancel();
-    _mapController.dispose();
+    _mapController?.dispose();
     super.dispose();
-  }
-
-  Future<void> _handleEmergency() async {
-    final Uri launchUri = Uri(scheme: 'tel', path: '999');
-    if (await canLaunchUrl(launchUri)) {
-      await launchUrl(launchUri);
-    }
-  }
-
-  Future<void> _handleSupport() async {
-    final Uri launchUri = Uri(scheme: 'tel', path: '+8801999999999');
-    if (await canLaunchUrl(launchUri)) {
-      await launchUrl(launchUri);
-    }
   }
 
   void _handleShareTrip() {
     Share.share(
-      'I am currently on a GoRide trip!\n'
-      '🚕 Ride: ${widget.rideType.toUpperCase()}\n'
-      '📍 From: ${widget.pickup}\n'
-      '🏁 To: ${widget.destination}\n'
-      '💳 Total: ৳${widget.price.toStringAsFixed(0)}\n'
-      'Keep track of my journey for safety.',
+      'My trip details from GoRide:\n'
+      '🚕 ${widget.rideType.toUpperCase()}\n'
+      '📍 Pickup: ${widget.pickup}\n'
+      '🏁 Destination: ${widget.destination}\n'
+      '💳 Total: ৳${widget.price.toStringAsFixed(0)}',
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       body: Stack(
         children: [
-          // Background Map
-          _buildMap(),
-
-          // Back Button
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: CircleAvatar(
-                backgroundColor: Colors.white,
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.black),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ),
+          // Header Background
+          Container(
+            height: 300,
+            width: double.infinity,
+            decoration: const BoxDecoration(
+              color: Color(0xFF10713C),
             ),
           ),
 
-          // Draggable Bottom Sheet for details
-          DraggableScrollableSheet(
-            initialChildSize: 0.45,
-            minChildSize: 0.45,
-            maxChildSize: 0.9,
-            builder: (context, scrollController) {
-              return Container(
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-                  boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20)],
+          CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              SliverAppBar(
+                expandedHeight: 250,
+                backgroundColor: const Color(0xFF10713C),
+                elevation: 0,
+                leading: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: CircleAvatar(
+                    backgroundColor: Colors.white.withOpacity(0.9),
+                    child: IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.black),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ),
                 ),
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.all(24),
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 40,
-                        height: 4,
+                actions: [
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: CircleAvatar(
+                      backgroundColor: Colors.white.withOpacity(0.9),
+                      child: IconButton(
+                        icon: const Icon(Icons.share, color: Colors.black),
+                        onPressed: _handleShareTrip,
+                      ),
+                    ),
+                  ),
+                ],
+                flexibleSpace: FlexibleSpaceBar(
+                  background: Stack(
+                    children: [
+                      _buildMap(),
+                      Container(
                         decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
+                          gradient: Alignment.bottomCenter.gradient([
+                            Colors.black.withOpacity(0.4),
+                            Colors.transparent,
+                          ]),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 24),
-                    
-                    // Status Badge
-                    Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF10713C).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.access_time, color: Color(0xFF10713C), size: 18),
-                            SizedBox(width: 8),
-                            Text(
-                              _etaMinutes > 0 ? 'Driver is arriving in $_etaMinutes mins' : 'Driver is arriving...',
-                              style: TextStyle(color: Color(0xFF10713C), fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 32),
-                    
-                    // Route Info
-                    _buildRouteInfo(),
-                    
-                    const Divider(height: 48),
-
-                    // Safety & Support
-                    const Text(
-                      'Safety & Support',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        _buildSafetyOption(
-                          icon: Icons.share_location_rounded,
-                          label: 'Share Trip',
-                          color: Colors.blue,
-                          onTap: _handleShareTrip,
-                        ),
-                        const SizedBox(width: 12),
-                        _buildSafetyOption(
-                          icon: Icons.emergency_share_rounded,
-                          label: 'Emergency',
-                          color: Colors.red,
-                          onTap: _handleEmergency,
-                        ),
-                        const SizedBox(width: 12),
-                        _buildSafetyOption(
-                          icon: Icons.headset_mic_rounded,
-                          label: 'Support',
-                          color: Colors.orange,
-                          onTap: _handleSupport,
-                        ),
-                      ],
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    if (_tripProgress > 0) ...[
-                      const Text('Trip Progress', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 12),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: LinearProgressIndicator(
-                          value: _tripProgress,
-                          minHeight: 8,
-                          backgroundColor: Colors.grey[200],
-                          valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF10713C)),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text('${(_tripProgress * 100).toInt()}% complete', style: TextStyle(color: Colors.grey[600], fontSize: 13)),
-                      const Divider(height: 48),
                     ],
-                    // Fare Details
-                    const Text(
-                      'Fare Details',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildFareRow('Base Fare', '৳50.00'),
-                    _buildFareRow('Distance Fare', '৳${(widget.price - 50 - 10).toStringAsFixed(2)}'),
-                    _buildFareRow('Service Fee', '৳10.00'),
-                    const Divider(height: 24),
-                    _buildFareRow('Total (Incl. Tax)', '৳${widget.price.toStringAsFixed(2)}', isTotal: true),
-                    
-                    const SizedBox(height: 32),
-                    
-                    // Driver Summary (Mini)
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.grey[200]!),
-                      ),
-                      child: const Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 20,
-                            backgroundImage: AssetImage('assets/user-avatar.png'),
-                          ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Md. Abdur Rahman', style: TextStyle(fontWeight: FontWeight.bold)),
-                                Text('Toyota Corolla • DHK-1234', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                              ],
-                            ),
-                          ),
-                          Row(
-                            children: [
-                              Icon(Icons.star, color: Colors.amber, size: 16),
-                              Text(' 4.9', style: TextStyle(fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
+                  ),
                 ),
-              );
-            },
+              ),
+
+              SliverToBoxAdapter(
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 24),
+                      _buildStatusHeader(),
+                      const Divider(height: 40),
+                      _buildRouteInfo(),
+                      const Divider(height: 40),
+                      _buildFareDetails(),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -315,164 +225,152 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
   }
 
   Widget _buildMap() {
-    return fmap.FlutterMap(
-      mapController: _mapController,
-      options: fmap.MapOptions(
-        initialCenter: _currentPosition != null 
-            ? latlong.LatLng(_currentPosition!.latitude, _currentPosition!.longitude)
-            : const latlong.LatLng(23.8103, 90.4125),
-        initialZoom: 15,
+    return GoogleMap(
+      initialCameraPosition: CameraPosition(
+        target: _currentPosition != null
+            ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude)
+            : const LatLng(23.8103, 90.4125),
+        zoom: 15,
       ),
-      children: [
-        fmap.TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.goride.app',
+      onMapCreated: (controller) {
+        _mapController = controller;
+        if (_routePoints.isNotEmpty) _fitRoute();
+      },
+      myLocationEnabled: true,
+      myLocationButtonEnabled: false,
+      zoomControlsEnabled: false,
+      mapToolbarEnabled: false,
+      markers: {
+        Marker(
+          markerId: const MarkerId('driver'),
+          position: LatLng(_driverLat, _driverLng),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
         ),
-        fmap.PolylineLayer(
-          polylines: [
-            if (_routePoints.isNotEmpty)
-              fmap.Polyline(
-                points: _routePoints,
-                color: const Color(0xFF10713C),
-                strokeWidth: 4.0,
-              ),
-          ],
+        Marker(
+          markerId: const MarkerId('destination'),
+          position: const LatLng(23.7925, 90.4078),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
         ),
-        fmap.MarkerLayer(
-          markers: [
-            if (_currentPosition != null)
-              fmap.Marker(
-                point: latlong.LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
-                width: 40,
-                height: 40,
-                child: const Icon(Icons.my_location, color: Colors.blue, size: 30),
-              ),
-            fmap.Marker(
-              point: latlong.LatLng(_driverLat, _driverLng),
-              width: 50,
-              height: 50,
-              child: const Icon(Icons.directions_car, color: Color(0xFF10713C), size: 40),
-            ),
-          ],
-        ),
-      ],
+      },
+      polylines: {
+        if (_routePoints.isNotEmpty)
+          Polyline(
+            polylineId: const PolylineId('route'),
+            points: _routePoints,
+            color: const Color(0xFF10713C),
+            width: 4,
+          ),
+      },
     );
   }
 
   Widget _buildRouteInfo() {
-    return Column(
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.my_location, color: Color(0xFF10713C), size: 20),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Pickup', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  Text(widget.pickup, style: const TextStyle(fontWeight: FontWeight.w500)),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const Padding(
-          padding: EdgeInsets.only(left: 9),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: SizedBox(height: 24, child: VerticalDivider(width: 1, thickness: 1)),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        children: [
+          _buildLocationRow(Icons.my_location, 'Pickup', widget.pickup, const Color(0xFF10713C)),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.only(left: 10),
+            child: Container(width: 2, height: 30, color: Colors.grey[200]),
           ),
-        ),
-        Row(
-          children: [
-            const Icon(Icons.location_on, color: Colors.red, size: 20),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Destination', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  Text(widget.destination, style: const TextStyle(fontWeight: FontWeight.w500)),
-                ],
-              ),
-            ),
-          ],
+          const SizedBox(height: 8),
+          _buildLocationRow(Icons.location_on, 'Destination', widget.destination, const Color(0xFFED1C24)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocationRow(IconData icon, String label, String address, Color color) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[500], fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(address, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            ],
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildFareRow(String label, String amount, {bool isTotal = false}) {
+  Widget _buildStatusHeader() {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: isTotal ? 16 : 14,
-              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
-              color: isTotal ? Colors.black : Colors.grey[600],
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Arriving in $_etaMinutes mins',
+                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Your ${widget.rideType} is on the way',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+            ],
           ),
-          Text(
-            amount,
-            style: TextStyle(
-              fontSize: isTotal ? 20 : 14,
-              fontWeight: isTotal ? FontWeight.bold : FontWeight.w500,
-              color: isTotal ? const Color(0xFF10713C) : Colors.black,
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF10713C).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(15),
             ),
+            child: Image.asset('assets/${widget.rideType}.png', height: 40, errorBuilder: (_,__,___) => const Icon(Icons.directions_car)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSafetyOption({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return Expanded(
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: color.withOpacity(0.15), width: 1.5),
-            ),
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(icon, color: color, size: 28),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: color.withOpacity(0.8),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+  Widget _buildFareDetails() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Fare Breakdown', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 20),
+          _buildFareRow('Base Fare', '৳${(widget.price - 10).toStringAsFixed(2)}'),
+          const SizedBox(height: 12),
+          _buildFareRow('Service Fee', '৳10.00'),
+          const Divider(height: 40),
+          _buildFareRow('Total Fare', '৳${widget.price.toStringAsFixed(2)}', isTotal: true),
+          const SizedBox(height: 40),
+        ],
       ),
+    );
+  }
+
+  Widget _buildFareRow(String label, String value, {bool isTotal = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: TextStyle(fontSize: isTotal ? 18 : 15, fontWeight: isTotal ? FontWeight.bold : FontWeight.normal)),
+        Text(value, style: TextStyle(fontSize: isTotal ? 18 : 15, fontWeight: FontWeight.bold, color: isTotal ? const Color(0xFF10713C) : Colors.black)),
+      ],
+    );
+  }
+}
+
+extension on Alignment {
+  Gradient gradient(List<Color> colors) {
+    return LinearGradient(
+      begin: this,
+      end: Alignment.topCenter,
+      colors: colors,
     );
   }
 }

@@ -1,0 +1,156 @@
+Step-by-Step Guide to Add Google Maps in Flutter (Based on the Video)
+1. Configure Google Cloud Project and Enable APIs
+a. Access Google Cloud Console
+Go to console.cloud.google.com.
+Select your existing project or create a new one (e.g., "crypto").
+Ensure billing is enabled by adding a valid credit or Visa card.
+b. Enable Required APIs
+Navigate to Library in the console.
+Search and enable the following APIs:
+Maps SDK for Android
+Maps SDK for iOS (important for Flutter which supports Android and iOS)
+Places API
+Directions API
+Optionally add Geocoding API, Roads API, Location API.
+c. Create API Key
+After enabling APIs, go to Credentials.
+Copy your generated Google Maps API key.
+2. Add API Key and Permissions in the Flutter Project
+a. Store the API Key in Flutter
+Create a new Dart file, for example, map_key.dart or within a global configuration file.
+Define it as a string constant:
+dart
+Copy
+const String googleMapKey = "YOUR_API_KEY_HERE";
+b. Add Dependencies in pubspec.yaml
+Add the necessary dependencies to your pubspec.yaml file:
+yaml
+Copy
+dependencies:
+  google_maps_flutter: ^2.2.5
+  geolocator: any
+  flutter_polyline_points: any
+  # Other dependencies mentioned: location, geocoder, firebase, etc.
+Run flutter pub get to install the packages.
+c. Android Manifest Configuration
+Navigate to android/app/src/main/AndroidManifest.xml.
+Add your API key inside the <application> tag:
+xml
+Copy
+<meta-data
+   android:name="com.google.android.geo.API_KEY"
+   android:value="YOUR_API_KEY_HERE"/>
+Also, add necessary permissions such as:
+xml
+Copy
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+d. iOS Configuration
+Go to ios/Runner/AppDelegate.swift.
+Add the initialization for Google Maps with your API key:
+swift
+Copy
+import UIKit
+import Flutter
+import GoogleMaps
+
+@UIApplicationMain
+@objc class AppDelegate: FlutterAppDelegate {
+  override func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+  ) -> Bool {
+    GMSServices.provideAPIKey("YOUR_API_KEY_HERE")
+    GeneratedPluginRegistrant.register(with: self)
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+}
+3. Implement Google Maps in Flutter Code
+a. Import Packages and Declare Variables
+dart
+Copy
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
+// Additional imports such as async, location, and polyline points
+Declare variables:
+dart
+Copy
+GoogleMapController? mapController;
+Position? userPosition;
+LatLng? pickLocation;
+Set<Marker> markers = {};
+Set<Polyline> polylines = {};
+b. Set Initial Camera Position and Build Map Widget
+dart
+Copy
+GoogleMap(
+  initialCameraPosition: CameraPosition(
+    target: LatLng(37.42796133580664, -122.085749655962), // Default location (Googleplex)
+    zoom: 14.4746,
+  ),
+  mapType: MapType.normal,
+  myLocationEnabled: true,
+  myLocationButtonEnabled: true,
+  markers: markers,
+  polylines: polylines,
+  onMapCreated: (GoogleMapController controller) {
+    mapController = controller;
+  },
+  onCameraMove: (CameraPosition position) {
+    setState(() {
+      pickLocation = position.target;
+    });
+  },
+  onCameraIdle: () async {
+    // Use reverse geocoding here to update address from pickLocation
+  },
+)
+c. Fetch and Update User Location Asynchronously
+Use Geolocator to get current position:
+dart
+Copy
+Future<void> locateUserPosition() async {
+  Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+  userPosition = position;
+  LatLng latLngPosition = LatLng(position.latitude, position.longitude);
+
+  // Move camera to user location
+  mapController?.animateCamera(CameraUpdate.newCameraPosition(
+    CameraPosition(target: latLngPosition, zoom: 14),
+  ));
+
+  setState(() {
+    pickLocation = latLngPosition;
+  });
+}
+d. Reverse Geocode Pick Location to Human-Readable Address
+Implement a method to convert coordinates to human addresses using Google’s Geocoding API or package like geocoder.
+dart
+Copy
+Future<String> getAddressFromLatLng(LatLng position) async {
+  // Call your helper method/class to send request to Google reverse geocode endpoint
+  // Parse response and extract formatted address
+}
+4. Additional Features Mentioned
+Manage permissions with Geolocator:
+dart
+Copy
+Future<void> checkLocationPermission() async {
+  LocationPermission permission = await Geolocator.requestPermission();
+  if (permission == LocationPermission.denied) {
+    // Request permission again or handle denial
+  }
+}
+Use GestureDetector to dismiss keyboard/input focus when tapping outside the text fields.
+
+Display selected address in UI using Text widget at the bottom or top of the screen, updating it dynamically.
+
+Add custom UI elements like a pickup location icon (Image.asset('images/big_dot.png')) and containers with padding for aesthetic UI.
+
+
+
+
+
+Google map demo key 
+
+AIzaSyATDACvMWY6Xhnc8D4I3hrud4_Rsc9fE3s

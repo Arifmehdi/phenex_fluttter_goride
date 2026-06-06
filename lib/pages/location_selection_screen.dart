@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'dhaka_map_screen.dart';
 import '../services/recent_locations_service.dart';
+import '../services/places_service.dart';
 
 class LocationSelectionScreen extends StatefulWidget {
   final String? initialRideType;
@@ -51,6 +52,7 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
   // Recent locations service
   final RecentLocationsService _recentLocationsService =
       RecentLocationsService();
+  final PlacesService _placesService = PlacesService();
   List<RecentLocation> _recentLocations = [];
 
   // Hardcoded Dhaka areas — shown when search is empty or geocode fails
@@ -106,6 +108,9 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
   // Was pickup changed by user (not auto-set)?
   bool _pickupEditedByUser = false;
 
+  // Flag to ignore listener when we update text programmatically (e.g. from suggestion)
+  bool _ignoreControllerListener = false;
+
   @override
   void initState() {
     super.initState();
@@ -142,7 +147,9 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
     // Set initial pickup from home page (if any)
     if (widget.initialPickupAddress != null &&
         widget.initialPickupAddress!.isNotEmpty) {
+      _ignoreControllerListener = true;
       _pickupController.text = widget.initialPickupAddress!;
+      _ignoreControllerListener = false;
       _pickupLat = widget.initialPickupLat;
       _pickupLng = widget.initialPickupLng;
       _pickupEditedByUser = true;
@@ -239,6 +246,7 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
   }
 
   void _onPickupChanged() {
+    if (_ignoreControllerListener) return;
     _searchDebounce?.cancel();
     if (_pickupController.text !=
         (widget.initialPickupAddress ?? _gpsAddress)) {
@@ -253,14 +261,17 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
       });
       return;
     }
-    setState(() => _isSearching = true);
+    setState(() {
+      _isSearching = true;
+      _showSuggestions = true;
+    });
     _searchDebounce = Timer(
       const Duration(milliseconds: 400),
       () => _searchForwardGeocode(text, isPickup: true),
     );
   }
 
-  /// Search locations: filter area names + optionally forward geocode for coordinates
+  /// Search locations using Google Places Autocomplete
   Future<void> _searchForwardGeocode(String query,
       {required bool isPickup}) async {
     if ((isPickup && !_pickupFocus.hasFocus) ||
@@ -269,7 +280,7 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
       return;
     }
 
-    // 1. Filter area name suggestions (always shows, readable names)
+    // 1. Filter local area suggestions
     final List<_GeocodeResult> areaSuggestions = _suggestedAreas
         .where((area) => area.toLowerCase().contains(query.toLowerCase()))
         .map((area) => _GeocodeResult(
@@ -280,63 +291,57 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
             ))
         .toList();
 
-    // 2. Try forward geocoding for precise coordinates
-    List<_GeocodeResult> geocodedResults = [];
+    // 2. Use Google Places Autocomplete for precise locations
+    List<_GeocodeResult> googleResults = [];
     try {
-      final results = await locationFromAddress('$query, Bangladesh');
-      if (mounted && results.isNotEmpty) {
-        // Reverse geocode the top result to get a better name
-        String resolvedName = query;
-        try {
-          final placemarks = await placemarkFromCoordinates(
-            results[0].latitude,
-            results[0].longitude,
-          );
-          if (placemarks.isNotEmpty) {
-            final p = placemarks[0];
-            String name = '';
-            if (p.name != null && p.name!.isNotEmpty) name = p.name!;
-            if (p.subLocality != null && p.subLocality!.isNotEmpty) {
-              name = name.isNotEmpty ? '$name, ${p.subLocality}' : p.subLocality!;
-            }
-            if (name.isNotEmpty) resolvedName = name;
-          }
-        } catch (_) {}
-
-        geocodedResults = results.take(5).map((loc) => _GeocodeResult(
-              displayName: resolvedName,
-              subtitle: '${loc.latitude.toStringAsFixed(4)}, ${loc.longitude.toStringAsFixed(4)}',
-              latitude: loc.latitude,
-              longitude: loc.longitude,
-            )).toList();
-      }
+      final suggestions = await _placesService.getSuggestions(query);
+      googleResults = suggestions.map((s) => _GeocodeResult(
+        displayName: s.mainText,
+        subtitle: s.secondaryText,
+        latitude: null, // Will fetch on tap
+        longitude: null,
+        placeId: s.placeId,
+      )).toList();
     } catch (e) {
-      debugPrint('Geocoding search error: $e');
+      debugPrint('Places search error: $e');
     }
 
     if (mounted) {
-      // Merge: area suggestions first, then geocoded results (with coords) after
+      // Merge: area suggestions first, then google results after
       final merged = <_GeocodeResult>[
         ...areaSuggestions,
-        if (geocodedResults.isNotEmpty) ...[
-          _GeocodeResult(
-            displayName: 'Precise locations',
+        if (googleResults.isNotEmpty) ...[
+          const _GeocodeResult(
+            displayName: 'Search results',
             subtitle: '',
             latitude: null,
             longitude: null,
           ),
-          ...geocodedResults,
+          ...googleResults,
         ],
       ];
+
+      // If no results at all, add a fallback "Search for [query]" option
+      if (merged.isEmpty && query.length > 2) {
+        merged.add(_GeocodeResult(
+          displayName: 'Search for "$query"',
+          subtitle: 'Go to map with this location',
+          latitude: null,
+          longitude: null,
+        ));
+      }
+
       setState(() {
         _isSearching = false;
-        _showSuggestions = merged.isNotEmpty;
+        // Keep showing suggestions if there's text, even if merged is empty
+        _showSuggestions = true;
         _geocodeResults = merged;
       });
     }
   }
 
   void _onDestinationChanged() {
+    if (_ignoreControllerListener) return;
     _searchDebounce?.cancel();
     final text = _destinationController.text;
     if (text.isEmpty) {
@@ -347,7 +352,10 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
       });
       return;
     }
-    setState(() => _isSearching = true);
+    setState(() {
+      _isSearching = true;
+      _showSuggestions = true;
+    });
     _searchDebounce = Timer(
       const Duration(milliseconds: 400),
       () => _searchForwardGeocode(text, isPickup: false),
@@ -369,8 +377,10 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
   void _useCurrentLocation() {
     if (_gpsLat != null && _gpsLng != null) {
       setState(() {
+        _ignoreControllerListener = true;
         _pickupController.text =
             _gpsAddress.isNotEmpty ? _gpsAddress : 'My Current Location';
+        _ignoreControllerListener = false;
         _pickupLat = _gpsLat;
         _pickupLng = _gpsLng;
         _pickupEditedByUser = true;
@@ -573,22 +583,41 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
               ? const Icon(Icons.near_me,
                   size: 16, color: Color(0xFF10713C))
               : null,
-          onTap: () {
+          onTap: () async {
+            double? lat = result.latitude;
+            double? lng = result.longitude;
+            String name = result.displayName;
+
+            // If coordinates are missing, fetch them using placeId
+            if (lat == null && result.placeId != null) {
+              setState(() => _isSearching = true);
+              final details = await _placesService.getPlaceDetails(result.placeId!);
+              if (details != null) {
+                lat = details.latitude;
+                lng = details.longitude;
+              }
+              if (mounted) setState(() => _isSearching = false);
+            }
+
             if (_isPickupFocused) {
-              _pickupController.text = result.displayName;
-              _pickupLat = result.latitude;
-              _pickupLng = result.longitude;
-              _pickupEditedByUser = true;
-              _destinationFocus.requestFocus();
               setState(() {
+                _ignoreControllerListener = true;
+                _pickupController.text = name;
+                _ignoreControllerListener = false;
+                _pickupLat = lat;
+                _pickupLng = lng;
+                _pickupEditedByUser = true;
                 _showSuggestions = false;
                 _geocodeResults = [];
               });
+              _destinationFocus.requestFocus();
             } else {
-              _destinationController.text = result.displayName;
-              _destLat = result.latitude;
-              _destLng = result.longitude;
               setState(() {
+                _ignoreControllerListener = true;
+                _destinationController.text = name;
+                _ignoreControllerListener = false;
+                _destLat = lat;
+                _destLng = lng;
                 _showSuggestions = false;
                 _geocodeResults = [];
               });
@@ -1393,11 +1422,13 @@ class _GeocodeResult {
   final String subtitle;
   final double? latitude;
   final double? longitude;
+  final String? placeId;
 
   const _GeocodeResult({
     required this.displayName,
     required this.subtitle,
     this.latitude,
     this.longitude,
+    this.placeId,
   });
 }
