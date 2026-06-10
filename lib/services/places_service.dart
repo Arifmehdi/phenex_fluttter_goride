@@ -42,13 +42,14 @@ class PlacesService {
       final url = Uri.parse(
         '$_autocompleteUrl?input=${Uri.encodeComponent(input)}'
         '&key=$googleMapKey'
-        '&components=country:bd' // Limit to Bangladesh for better results in Dhaka
+        '&components=country:bd' // Limit to Bangladesh
+        '&location=23.8103,90.4125&radius=50000' // Bias towards Dhaka (50km radius)
         '&language=en',
       );
 
       final response = await http.get(url);
-      debugPrint('Places API request: $url');
-      debugPrint('Places API response status: ${response.statusCode}');
+      debugPrint('Places API Request: $url');
+      debugPrint('Places API Response: ${response.statusCode} - ${response.body}');
 
       if (response.statusCode != 200) {
         debugPrint('Google Places Autocomplete error: ${response.statusCode}');

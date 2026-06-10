@@ -57,16 +57,31 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
 
   // Hardcoded Dhaka areas — shown when search is empty or geocode fails
   final List<String> _suggestedAreas = [
-    'Uttara, Dhaka',
-    'Mirpur, Dhaka',
-    'Gulshan, Dhaka',
+    'Uttara Sector 1, Dhaka',
+    'Uttara Sector 3, Dhaka',
+    'Uttara Sector 7, Dhaka',
+    'Uttara Sector 11, Dhaka',
+    'Uttara Sector 13, Dhaka',
+    'Mirpur 1, Dhaka',
+    'Mirpur 2, Dhaka',
+    'Mirpur 10, Dhaka',
+    'Mirpur 11, Dhaka',
+    'Mirpur 12, Dhaka',
+    'Mirpur DOHS, Dhaka',
+    'Gulshan 1, Dhaka',
+    'Gulshan 2, Dhaka',
+    'Gulshan Sector 11, Dhaka',
     'Banani, Dhaka',
-    'Dhanmondi, Dhaka',
+    'Banani DOHS, Dhaka',
+    'Dhanmondi 32, Dhaka',
+    'Dhanmondi 27, Dhaka',
+    'Dhanmondi 15, Dhaka',
     'Mohammadpur, Dhaka',
     'Badda, Dhaka',
     'Bashundhara R/A, Dhaka',
     'Baridhara, Dhaka',
-    'Nikunja, Dhaka',
+    'Nikunja 1, Dhaka',
+    'Nikunja 2, Dhaka',
     'Khilgaon, Dhaka',
     'Malibagh, Dhaka',
     'Moghbazar, Dhaka',
@@ -280,7 +295,7 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
       return;
     }
 
-    // 1. Filter local area suggestions
+    // 1. Filter local area suggestions (Static fallback)
     final List<_GeocodeResult> areaSuggestions = _suggestedAreas
         .where((area) => area.toLowerCase().contains(query.toLowerCase()))
         .map((area) => _GeocodeResult(
@@ -307,17 +322,25 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
     }
 
     if (mounted) {
-      // Merge: area suggestions first, then google results after
+      // Merge: priority to google results, but show suggested areas too
       final merged = <_GeocodeResult>[
-        ...areaSuggestions,
         if (googleResults.isNotEmpty) ...[
           const _GeocodeResult(
-            displayName: 'Search results',
+            displayName: 'PRECISE LOCATIONS',
             subtitle: '',
             latitude: null,
             longitude: null,
           ),
           ...googleResults,
+        ],
+        if (areaSuggestions.isNotEmpty) ...[
+          const _GeocodeResult(
+            displayName: 'SUGGESTED AREAS',
+            subtitle: '',
+            latitude: null,
+            longitude: null,
+          ),
+          ...areaSuggestions,
         ],
       ];
 
@@ -533,7 +556,7 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
         final result = _geocodeResults[index];
         final hasCoords =
             result.latitude != null && result.longitude != null;
-        final bool isHeader = result.displayName == 'Precise locations';
+        final bool isHeader = result.displayName == 'PRECISE LOCATIONS' || result.displayName == 'SUGGESTED AREAS';
 
         // Render separator header as non-tappable section label
         if (isHeader) {
@@ -544,7 +567,7 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
                 Icon(Icons.location_on, size: 14, color: Colors.grey[400]),
                 const SizedBox(width: 6),
                 Text(
-                  'PRECISE LOCATIONS',
+                  result.displayName,
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
@@ -556,7 +579,7 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
                 Container(width: 1, height: 12, color: Colors.grey[200]),
                 const SizedBox(width: 8),
                 Text(
-                  'Coordinates',
+                  'Source',
                   style: TextStyle(
                     fontSize: 10,
                     color: Colors.grey[400],

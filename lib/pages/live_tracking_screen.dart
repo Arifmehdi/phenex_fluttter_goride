@@ -128,12 +128,15 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
         ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude)
         : _pickupPoint;
 
-    final route = await _routingService.getRoute(
+    debugPrint('Fetching tracking route...');
+    final response = await _routingService.getRoute(
       origin: origin,
       destination: _destPoint,
     );
 
-    if (route != null && mounted) {
+    if (response.status == 'OK' && response.route != null && mounted) {
+      final route = response.route!;
+      debugPrint('Tracking route fetched: ${route.points.length} points');
       setState(() {
         _routePoints = route.points;
         _isLoadingRoute = false;
@@ -143,7 +146,11 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
         _fitRoute();
       }
     } else {
-      setState(() => _isLoadingRoute = false);
+      debugPrint('Tracking route fetch failed: ${response.status}');
+      setState(() {
+        _routePoints = [origin, _destPoint];
+        _isLoadingRoute = false;
+      });
     }
   }
 
@@ -355,6 +362,10 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
               points: _routePoints,
               color: const Color(0xFF10713C),
               width: 5,
+              jointType: JointType.round,
+              startCap: Cap.roundCap,
+              endCap: Cap.roundCap,
+              geodesic: true,
             ),
         },
       );

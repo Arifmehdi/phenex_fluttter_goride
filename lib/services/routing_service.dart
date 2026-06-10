@@ -17,11 +17,19 @@ class GoogleRoute {
   });
 }
 
+class GoogleRouteResponse {
+  final GoogleRoute? route;
+  final String? errorMessage;
+  final String status;
+
+  GoogleRouteResponse({this.route, this.errorMessage, required this.status});
+}
+
 class RoutingService {
   static const String _baseUrl = 'https://maps.googleapis.com/maps/api/directions/json';
 
   /// Fetch a driving route between two points using Google Directions API
-  Future<GoogleRoute?> getRoute({
+  Future<GoogleRouteResponse> getRoute({
     required LatLng origin,
     required LatLng destination,
   }) async {
@@ -34,25 +42,31 @@ class RoutingService {
       );
 
       final response = await http.get(url);
+      debugPrint('Directions API Request: $url');
+      debugPrint('Directions API Response: ${response.statusCode} - ${response.body}');
 
       if (response.statusCode != 200) {
-        debugPrint('Google Directions API error: ${response.statusCode}');
-        return null;
+        return GoogleRouteResponse(
+          status: 'HTTP_${response.statusCode}',
+          errorMessage: 'Server returned ${response.statusCode}',
+        );
       }
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final String status = data['status'] ?? 'UNKNOWN';
       
-      if (data['status'] != 'OK') {
-        debugPrint('Google Directions API error status: ${data['status']}');
-        if (data['error_message'] != null) {
-          debugPrint('Error Message: ${data['error_message']}');
-        }
-        return null;
+      if (status != 'OK') {
+        final String? msg = data['error_message'];
+        debugPrint('Google Directions API error status: $status - $msg');
+        return GoogleRouteResponse(
+          status: status,
+          errorMessage: msg,
+        );
       }
 
       final routes = data['routes'] as List?;
       if (routes == null || routes.isEmpty) {
-        return null;
+        return GoogleRouteResponse(status: 'ZERO_RESULTS', errorMessage: 'No route found');
       }
 
       final route = routes[0] as Map<String, dynamic>;
@@ -65,14 +79,17 @@ class RoutingService {
       final overviewPolyline = route['overview_polyline']['points'] as String;
       final points = _decodePolyline(overviewPolyline);
 
-      return GoogleRoute(
-        points: points,
-        distance: distance,
-        duration: duration,
+      return GoogleRouteResponse(
+        status: 'OK',
+        route: GoogleRoute(
+          points: points,
+          distance: distance,
+          duration: duration,
+        ),
       );
     } catch (e) {
       debugPrint('Google routing error: $e');
-      return null;
+      return GoogleRouteResponse(status: 'EXCEPTION', errorMessage: e.toString());
     }
   }
 

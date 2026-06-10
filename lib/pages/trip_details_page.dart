@@ -59,8 +59,9 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
   Future<void> _loadRoute(LatLng origin, LatLng dest) async {
     setState(() => _isLoadingRoute = true);
-    final route = await _routingService.getRoute(origin: origin, destination: dest);
-    if (route != null && mounted) {
+    final response = await _routingService.getRoute(origin: origin, destination: dest);
+    if (response.status == 'OK' && response.route != null && mounted) {
+      final route = response.route!;
       setState(() {
         _routePoints = route.points;
         _etaMinutes = route.duration.toInt();

@@ -135,9 +135,11 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   }
 
   Future<void> _resolveAddressToLatLng(String address, {required bool isPickup}) async {
+    debugPrint('Resolving address: $address');
     try {
       final locations = await locationFromAddress('$address, Bangladesh');
       if (locations.isNotEmpty && mounted) {
+        debugPrint('Address resolved to: ${locations[0].latitude}, ${locations[0].longitude}');
         setState(() {
           if (isPickup) {
             _pickupLocation = LatLng(locations[0].latitude, locations[0].longitude);
@@ -149,9 +151,15 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
           _isConfirmingPickup = true;
           _calculateRideDetails();
         }
+      } else {
+        debugPrint('No locations found for address: $address');
       }
     } catch (e) {
-      debugPrint('Error resolving address: $e');
+      debugPrint('Error resolving address "$address": $e');
+      // If resolution fails, we might still have current position to use as pickup
+      if (isPickup && _currentPosition != null) {
+        setState(() => _pickupLocation = LatLng(_currentPosition!.latitude, _currentPosition!.longitude));
+      }
     }
   }
 
@@ -304,11 +312,16 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   Future<void> _fetchRoute() async {
     if (_pickupLocation == null || _destinationLocation == null) return;
     setState(() => _isLoadingRoute = true);
-    final route = await _routingService.getRoute(
+    debugPrint('Fetching route from $_pickupLocation to $_destinationLocation');
+    
+    final response = await _routingService.getRoute(
       origin: _pickupLocation!,
       destination: _destinationLocation!,
     );
-    if (route != null && mounted) {
+    
+    if (response.status == 'OK' && response.route != null && mounted) {
+      final route = response.route!;
+      debugPrint('Route fetched successfully with ${route.points.length} points');
       setState(() {
         _routePoints = route.points;
         _routeDistance = route.distance;
@@ -321,6 +334,28 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
         _fitRoute();
       }
     } else {
+      debugPrint('Route fetch failed with status: ${response.status}');
+      
+      // Inform the user about the specific Google API error
+      if (response.status == 'REQUEST_DENIED') {
+        Get.snackbar(
+          'Google API Error',
+          'Directions API is restricted or not enabled. Check Google Cloud Console.',
+          backgroundColor: Colors.redAccent,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+          duration: const Duration(seconds: 5),
+        );
+      } else if (response.status != 'ZERO_RESULTS') {
+        Get.snackbar(
+          'Routing Error',
+          'Status: ${response.status}. ${response.errorMessage ?? ""}',
+          backgroundColor: Colors.orangeAccent,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+        );
+      }
+
       final double distanceInMeters = Geolocator.distanceBetween(
         _pickupLocation!.latitude,
         _pickupLocation!.longitude,
@@ -328,6 +363,8 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
         _destinationLocation!.longitude,
       );
       setState(() {
+        // Fallback to straight line so map isn't empty
+        _routePoints = [_pickupLocation!, _destinationLocation!];
         _distance = distanceInMeters / 1000;
         _price = 50 + (_distance * 20);
         _isLoadingRoute = false;
@@ -708,14 +745,36 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
             markerId: const MarkerId('pickup'),
             position: _pickupLocation!,
             icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+            infoWindow: InfoWindow(title: 'Pickup', snippet: _pickupAddress),
           ),
         if (_destinationLocation != null)
           Marker(
             markerId: const MarkerId('destination'),
             position: _destinationLocation!,
             icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+            infoWindow: InfoWindow(title: 'Destination', snippet: _destinationAddress),
           ),
         ..._driverMarkers,
+      },
+      circles: {
+        if (_pickupLocation != null)
+          Circle(
+            circleId: const CircleId('pickup_circle'),
+            center: _pickupLocation!,
+            radius: 12,
+            fillColor: Colors.green.withOpacity(0.3),
+            strokeColor: Colors.white,
+            strokeWidth: 3,
+          ),
+        if (_destinationLocation != null)
+          Circle(
+            circleId: const CircleId('dest_circle'),
+            center: _destinationLocation!,
+            radius: 12,
+            fillColor: Colors.red.withOpacity(0.3),
+            strokeColor: Colors.white,
+            strokeWidth: 3,
+          ),
       },
       polylines: {
         if (_routePoints.isNotEmpty)
@@ -724,6 +783,10 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
             points: _routePoints,
             color: const Color(0xFF10713C),
             width: 5,
+            jointType: JointType.round,
+            startCap: Cap.roundCap,
+            endCap: Cap.roundCap,
+            geodesic: true,
           ),
       },
     );
