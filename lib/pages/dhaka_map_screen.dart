@@ -165,21 +165,33 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   }
 
   void _listenToNearbyDrivers() {
+    debugPrint('Listening to nearby drivers...');
     if (_firebaseService.isInitialized) {
+      debugPrint('Firebase is initialized, subscribing to driver_locations...');
       _driversSubscription = _firebaseService.driverLocations
           ?.where('isOnline', isEqualTo: true)
           .snapshots()
           .listen((snapshot) {
         if (!mounted) return;
+        debugPrint('Received driver locations update: ${snapshot.docs.length} drivers online');
+        
         final center = _pickupLocation ?? (_currentPosition != null ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude) : null);
+        
         final Set<Marker> markers = snapshot.docs.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
           final lat = data['latitude'] as double?;
           final lng = data['longitude'] as double?;
-          if (lat == null || lng == null) return false;
+          
+          if (lat == null || lng == null) {
+            debugPrint('Driver ${doc.id} has null coordinates');
+            return false;
+          }
+          
           if (center != null) {
             final distanceInMeters = Geolocator.distanceBetween(center.latitude, center.longitude, lat, lng);
-            return distanceInMeters <= 5000;
+            debugPrint('Driver ${doc.id} distance: ${distanceInMeters.toStringAsFixed(0)}m');
+            // Relaxed to 10km for debugging, or keep 5km but log it
+            return distanceInMeters <= 10000; 
           }
           return true;
         }).map((doc) {
@@ -187,41 +199,27 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
           final lat = data['latitude'] as double;
           final lng = data['longitude'] as double;
           final heading = (data['heading'] as num?)?.toDouble() ?? 0.0;
+          
           return Marker(
             markerId: MarkerId(doc.id),
             position: LatLng(lat, lng),
             icon: _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
             rotation: heading,
             anchor: const Offset(0.5, 0.5),
+            infoWindow: InfoWindow(title: 'Driver ${doc.id.substring(0, 4)}'),
           );
         }).toSet();
-        setState(() => _driverMarkers = markers);
+        
+        setState(() {
+          _driverMarkers = markers;
+          debugPrint('Set ${_driverMarkers.length} driver markers on map');
+        });
+      }, onError: (e) {
+        debugPrint('Error listening to drivers: $e');
       });
     } else {
-      _apiDriversTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
-        if (!mounted) return;
-        final center = _pickupLocation ?? (_currentPosition != null ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude) : null);
-        if (center == null) return;
-        try {
-          final response = await _apiService.getNearbyDrivers(center.latitude, center.longitude, radius: 5.0);
-          if (response.statusCode == 200 && response.data != null) {
-            final List<dynamic> driversList = response.data['data'] ?? [];
-            final Set<Marker> markers = driversList.map((driverData) {
-              final double lat = (driverData['latitude'] as num).toDouble();
-              final double lng = (driverData['longitude'] as num).toDouble();
-              return Marker(
-                markerId: MarkerId('driver_${driverData['id']}'),
-                position: LatLng(lat, lng),
-                icon: _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-                anchor: const Offset(0.5, 0.5),
-              );
-            }).toSet();
-            setState(() => _driverMarkers = markers);
-          }
-        } catch (e) {
-          debugPrint('API Drivers error: $e');
-        }
-      });
+      debugPrint('Firebase NOT initialized in _listenToNearbyDrivers, waiting 2s...');
+      Timer(const Duration(seconds: 2), _listenToNearbyDrivers);
     }
   }
 

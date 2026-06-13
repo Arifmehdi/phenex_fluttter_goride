@@ -193,7 +193,6 @@ class FirebaseService extends GetxService {
 
     return coll
         .where('status', isEqualTo: 'pending')
-        .orderBy('createdAt', descending: true)
         .snapshots();
   }
 
