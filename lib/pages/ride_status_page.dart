@@ -242,7 +242,7 @@ class _RideStatusScreenState extends State<RideStatusScreen> with SingleTickerPr
           ),
           const SizedBox(height: 20),
           const Text(
-            'Finding your driver...',
+            'Finding your rider...',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),

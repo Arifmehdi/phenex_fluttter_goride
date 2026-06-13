@@ -11,7 +11,8 @@ import 'quick_action_screens.dart';
 import 'location_selection_screen.dart';
 import 'rent_car_booking_screen.dart';
 import 'dashboard_page.dart';
-import '../main.dart' show GoRideApp, RegisterScreen, SplashScreen;
+import '../main.dart' show GoRideApp, SplashScreen;
+import 'register_screen.dart';
 import 'login_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -124,7 +125,7 @@ class _HomePageState extends State<HomePage> {
           onTap: (index) {
             if (index == 3) {
               final role = GetStorage().read('role') as String?;
-              // Only redirect if it's NOT a regular customer role
+              // Only redirect if it's NOT a regular passenger role
               if (role != null && role != 'user' && role != 'solo') {
                 Get.offAll(() => GoRideApp.getDashboardForRole(role));
               } else {
@@ -662,60 +663,118 @@ class _HomePageState extends State<HomePage> {
         });
         return;
       }
-      final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 8),
-      );
+      // Phase 1: Get last known position (instant, from device cache)
+      // This shows something immediately while GPS warms up
+      Position pos;
+      try {
+        final lastPos = await Geolocator.getLastKnownPosition();
+        if (lastPos != null) {
+          pos = lastPos;
+        } else {
+          // No cached position — get a quick network/cell position
+          pos = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.low,
+            timeLimit: const Duration(seconds: 3),
+          );
+        }
+      } catch (_) {
+        // If all quick methods fail, wait for GPS with no timeout
+        pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        );
+      }
+      
       if (!mounted) return;
       _currentLat = pos.latitude;
       _currentLng = pos.longitude;
-      
-      // Try to reverse geocode for a readable address using Google Maps API
-      try {
-        final address = await placesService.getAddressFromLatLng(pos.latitude, pos.longitude);
-        if (address != null && mounted) {
-          setState(() {
-            _currentLocationText = address;
-            _isRefreshingLocation = false;
-          });
-          return;
-        }
-      } catch (_) {}
 
-      // Fallback to geocoding package
-      try {
-        List<Placemark> placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
-        if (placemarks.isNotEmpty) {
-          final p = placemarks[0];
-          String location = '';
-          if (p.subLocality != null && p.subLocality!.isNotEmpty) {
-            location = p.subLocality!;
-          } else if (p.locality != null && p.locality!.isNotEmpty) {
-            location = p.locality!;
-          }
-          if (p.street != null && p.street!.isNotEmpty) {
-            location = location.isEmpty ? p.street! : '$location, ${p.street}';
-          }
-          if (location.isEmpty) location = 'My Current Location';
-          if (mounted) setState(() {
-            _currentLocationText = location;
-            _isRefreshingLocation = false;
-          });
-          return;
-        }
-      } catch (_) {}
-      
-      if (mounted) {
-        setState(() {
-          _currentLocationText = 'My Current Location';
-          _isRefreshingLocation = false;
-        });
-      }
+      // Resolve address from initial position for immediate display
+      await _resolveAddress(pos.latitude, pos.longitude, placesService);
+
+      // Phase 2: Asynchronously try to get a more accurate GPS position
+      // GPS may need more time for first lock (cold start can take 30-60s)
+      _refinePosition(placesService);
     } catch (e) {
       if (mounted) setState(() {
         _currentLocationText = 'My Current Location';
         _isRefreshingLocation = false;
       });
+      // Phase 1 failed entirely, but GPS may still get a fix later
+      _refinePosition(placesService);
+    }
+  }
+
+  /// Resolve a human-readable address from coordinates and update the UI.
+  Future<void> _resolveAddress(double lat, double lng, PlacesService placesService) async {
+    // Try Google Maps reverse geocoding first (more accurate names)
+    try {
+      final address = await placesService.getAddressFromLatLng(lat, lng);
+      if (address != null && mounted) {
+        setState(() {
+          _currentLocationText = address;
+          _isRefreshingLocation = false;
+        });
+        return;
+      }
+    } catch (_) {}
+
+    // Fallback to local geocoding package
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
+      if (placemarks.isNotEmpty) {
+        final p = placemarks[0];
+        String location = '';
+        if (p.subLocality != null && p.subLocality!.isNotEmpty) {
+          location = p.subLocality!;
+        } else if (p.locality != null && p.locality!.isNotEmpty) {
+          location = p.locality!;
+        }
+        if (p.street != null && p.street!.isNotEmpty) {
+          location = location.isEmpty ? p.street! : '$location, ${p.street}';
+        }
+        if (location.isEmpty) location = 'My Current Location';
+        if (mounted) setState(() {
+          _currentLocationText = location;
+          _isRefreshingLocation = false;
+        });
+        return;
+      }
+    } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _currentLocationText = 'My Current Location';
+        _isRefreshingLocation = false;
+      });
+    }
+  }
+
+  /// Try to refine the position with a more accurate GPS fix.
+  /// GPS cold start can take 30-60 seconds, so this runs asynchronously
+  /// after showing the initial (possibly less accurate) position.
+  Future<void> _refinePosition(PlacesService placesService) async {
+    try {
+      // Attempt a high-accuracy position without a time limit
+      // so GPS has enough time to lock on properly
+      final betterPos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.best,
+      );
+
+      if (!mounted) return;
+
+      // Only update if the new position is meaningfully different (>50m)
+      final distance = Geolocator.distanceBetween(
+        _currentLat ?? 0, _currentLng ?? 0,
+        betterPos.latitude, betterPos.longitude,
+      );
+
+      if (distance > 50) {
+        _currentLat = betterPos.latitude;
+        _currentLng = betterPos.longitude;
+        await _resolveAddress(betterPos.latitude, betterPos.longitude, placesService);
+      }
+    } catch (_) {
+      // Phase 2 refinement failed — the Phase 1 result is already showing
     }
   }
 

@@ -1,0 +1,67 @@
+so we are going to add few things here on our locate user position for example I can comment out this and now we are going to fetch username from our database we already have created our model we can fetch it user email and name and we are going to write two function
+01:04
+which we will implement later initialize geofire listener assistant methods dot did trips is for online user context we can comment out this for now and now let's add a new directory info handler and here we are going to add new dart file app underscore info class app info extends change notifier directions
+03:57
+user pick up location and user drop off location in count total trips equals to empty another list history model all trips history information list equals to comment out this for now now i'm going to add void update pick up location address directions user pick up address user pick up user pick up at location equals to user pickup address notify listener void update drop off location address directions drop of address user drop of location equals to
+05:18
+drop of address notify listener notify listener and now in our assistant methods we are going to update our provider app info we have to import provider yes so let's add provider and in our main.dirt we have to change few things as well let's copy this material app add change notifier provider create context equals to app info and in the child I'm going to paste our material app now and here we can
+07:32
+okay let's run this up I'm going to take a picture of the The The ok so now we can copy this and go to our main
+09:34
+screen . . instead of position we can write peak location then peak location double address and write data dot address let's comment out this and
+10:51
+instead of this address we can write provider.of appinfo context.user pickup location not equals to null provider.of pick up location dot location name
+12:12
+dot substring 0 to 24 24 plus dot dot dot not getting address address so ok let's comment out this and see what's happening so we are not getting the address because in our assistant method we have written formatted not formatted it's formatted so if we run it again then we should see our address
+14:18
+yeah it's working fine fine as you can see our location is showing so we can make it changeable with our cursor we can comment out this and we can add this line here from provider.ofcontext.help.info update pick up location address user pick up location so it will update the user pick up location application so now if I run it again and if I change my cursor then you can see it's changing see so now we can implement this to properly let's comment out this
+15:33
+and to add UI for searching location so position bottom 0 left 0 right 0 child padding padding age insert start from left 20 top should be around 50 then right should be around 20 and bottom of around 20.
+16:39
+now i can just create a column and inside column main axis alignment dot space between then children container I'm going to add some padding edge insets dot all 10 decoration box decoration color dark theme colors dot right border radius border radius dot circular of n child column let's see how it's looking
+17:57
+now child column not container we need column children container decoration box decoration color dark theme colors dot gray dot shade 900 colors dot gray dot shade 100 border radius border radius dot circular 10 then child column children children padding
+19:13
+padding ageinsets.all then child row children icon icons dot location underscore on outline color dot theme if it is dot theme then colors dot ember dot shade 400 or colors.blue now write size box of width 10
+20:29
+column cross axis cross axis alignment dot start text text from style textile color style text style color dark theme ember.shade 400 or colors.blue
+21:44
+font-size should be around 12 and font-weight font-weight.fold lets make it 14, no 12 is ok now we can add another text provider I'm just going to copy and paste this Now style... style text style color colors dot gray and font size 214 yeah in the similar way after this padding
+23:12
+you can write a divider height 1 thickness 2 color color dark if dark theme then colors dot amber dot colors.amber.shade400 or colors.blue let's copy this and paste it here now we are going to add our
+24:30
+write another padding padding age inserts dot all five and child gesture detector on tap for now I'm going to keep this empty and the child I'm going to add a row you can just copy this and paste it and instead of user drop of we have to show where to
+25:58
+let's run this again null check use operator used under null value ok we can comment out this for now and let's run this okay it's showing error let's try to solve this so here instead of user drop pick up location we have to write user drop off location and now it's showing where to now we can implement our next part where we are going to search search our drop off location so so far we have done this we can
+27:12
+see our current location and we can change our current pick up location like this so now lets implement search places screen so for that i'm going to add a new dart file search places screen i'm going to import material.dart at first then we can add stateful widget search places screen and we can copy this boolean and paste it here
+28:53
+I'm going to design our search in place screen so scaffold or you can use gesture detector focus scope.offcontext.unfocus child scaffold background color dark theme colors dot black or colors dot white then you can use appbar background color if it's dark then colors.amber.shade400 or colors.blue leading gesture detector on tab navigator.pop context
+30:00
+child child icon icon start arrow back color if it's start theme then color start black or colors.black or colors.white now we can add title text search and set drop off location style textile color dark theme then colors dot black color start white if it's white thing elevation to zero
+31:42
+now let's add body for body we can use column then children then container decoration box box decoration let's see our page actually box decoration color dark theme colors.amber.shade400 colors. white 54 and blur radius should be 8 spread radius 0.5 offset 0.7 and after this we can add child padding padding ageinsets.all 10.0 zero
+33:51
+children sorry child column children row children icon icon start adjust sharp color dark theme colors.black and colors.white then you can add a size box of height 20 size box height 18 let's add 18
+35:00
+and now we can use expanded widget child padding ageinsets.all to 8 child text field unchanged unchanged decoration input decoration in text
+36:49
+search here location here dark theme colors dot black and colors dot white 54 field to true then border input border dot none content padding edge insets dot only left 8 11 top around 8 and bottom around 8 also also that's it our search places screen is done now here and unchanged let's add value and we are going to add a function here find place auto complete search value and now we have to implement this have to make this function to implement it so let's make it above here before that we need to create prediction places model class so let's make it
+38:26
+predicted places so class predicted places string place underscore id string main underscore text place underscore id string main underscore text and string secondary underscore text predicted places this dot main text this dot places id place id this dot dot main text this dot secondary text in the text predicted places dot from
+39:29
+JSON map string dynamic JSON data json data places id json data places id main text goes to JSON data structure underscore formatting main underscore text secondary equals to json data structured underscore formatting
+40:44
+secondary text text now let's add this variable predicted places not variable a list predicted list string input text as synchronous
+41:54
+now let's write this function so before we write this function let's add another thing here below our container and that is display place predictions result so we can write placeFissionList.length is greater than 0 then expandedDigit childListView.
+43:38
+separated and in our item builder we can add physics clamping scroll physics sorry in our I have to write this here and item builder should be context index return we have to add another dart file and I'm going to make a new directory widgets can add place prediction type
+45:00
+dot dot Stateful widget place prediction tile design Final predicted places Predicted places Place Prediction tile design This dot predicted places here we can design our tile tile dot thing equals to media dot
+46:34
+of context platform brightness equals equals brightness dot dark brightness.dark return elevated button we have to remove this and child should be padding padding age inserts dot all 8.0 then child row children icon icon start add location dark theme colors.amber or colors.blue
+48:12
+ember shade 400 lets add a size box of width 10 expanded child column cross axis alignment cross axis alignment dot start then children text dot printed places dot main text and overflow text overflow dot ellipses style textile font size of 16 and color if it is star theme then or colors.blue
+49:47
+lets copy this and paste it here again for our secondary text and now here we can add a style style form primary dark The now we have to add another function here Tchau.

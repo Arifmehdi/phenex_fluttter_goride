@@ -1,0 +1,36 @@
+00:00
+now let's add this function here get place direction details so we have to write string placeid context asynchronous show dialog context builder কন্টক্স্ট কন্টক্স্ট কন্টক্স্ট build context context progress
+01:14
+dialog we have to create progress dialog in our widgets progress underscore dialog so import material dot dart plus stateless widget progress dialog string string message progress dialog gist.message simply remove this line and instead of placeholder
+02:31
+I'm going to use dialog background color colors dot black 54 child container Black 54, child, container, margin, ageinsets.all, 16. box decoration color colors dot white border radius border radius dot circular six child row children size box width 6 circular focus indicator value color always stopped animation color color start green size box with 26.0 text
+04:12
+message style text style font-text-style color color start black font size 12 now we can write our progress dialogue and write message of is wait and after this you can add a string
+05:22
+place direction detail url equals to https maps.googleapis.com colon slash slash maps dot google apis dot com slash maps slash api slash place slash details slash json place underscore id equals to place ID and key equals to mapKey and add a variable response API equals to await
+06:28
+request assistant dot receive request place direction details url navigator dot Navigator.pop API equals to error occurred but failed.no response then return and so let's go to our request copy this one The equals to equals to and if
+09:08
+response API status equals equals ok then directions directions directions directions directions directions directions directions directions dot location name equals to response api result name directions dot location ID equals to place ID directions dot location latitude equals to response API
+10:25
+result response API result geometry location let let's copy this and paste it here again let's just change longitude lng provider.of we have to import provider app.info context.listen false.update drop of location address directions set state user drop of address equals to directions dot location name
+12:20
+we can make our user drop of address as global variable let's write string user drop of address now we can import global.tilt and here we have to add analgic then navigator.pop context crop of
+13:57
+this function is done now let's go to our search places screen and here in the return we can return place prediction tile design place prediction places equals to places list index and in the separator builder you can write build context context orint index return divider of height is 0 color dark-thin dark theme colors.ember.
+14:53
+shade400 or colors.blue thickness 0 now or else container an empty container and here we have to use semicolon we have to sample in here also and now we can write our this find place autocomplete search so for that if input text dot length is greater than one then string auto complete search equals to https text and key equals to map key and components equals to country you have to write your own country I'm going to write just BD for Bangladesh that's it
+17:06
+and now I can write for this response response auto complete search equals to await request assistant dot receive request url to complete search if i'm just going to copy this from our place prediction type and paste it here I have to change this and now write if response or to complete search status equals equals okay then var place predictions equals to
+18:35
+response autocomplete search predictions predictions predictions predictions predictions predictions predictions list list equals to list equals to place place predictions place predictions as place predictions as list.map place predictions as list.map json data prediction places predition places dot from json json data dot to list set state place predition list equals to placePredictionList
+19:55
+now in our main screen we are going to write spread screen from here we can go to our place prediction tile and we have to add this get place details here on pressed get details widget dot predictive places dot place id and now let's go back to our main page main screen and below here we have written this now we have to add here our search place screen so let's write go to
+21:15
+search places screen bar response from search screen equals to await for that you can write await navigator dot push context material page route c equals to search places screen and now we can write if response from search screen equals equals obtained drop off then set state open draw and navigation equals to false false
+22:57
+now let's run this and see what happens we can't see anything and why is that we have to check so we have to fix some errors so we are not getting the address and that's because in our search place screen that's because in our search place screen I have written different value here we have to write this place prediction list so if I run it again again
+24:11
+go to where to now if i write i should see this similar places that is close to UT letter and if I write Uttara then we are getting error invalid invalid value not in inclusive 0, 6, 24 testing error, ok, so let's see what is the issue here, so it's so it shows that invalid value not in inclusive range 0 to 6 or 24 so let's go to back to our main page main screen you have written here these things that we don't need actually so let's let's remove this and save it and run this again now i say uttara set to 11 then choose uttara sector 11 part ok
+25:47
+so now we want to see a polyline from our this location to this location so let's write the function here await draw poly line from origin to destination dark theme so lets write this function

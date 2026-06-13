@@ -1,0 +1,66 @@
+00:00
+foreign [Music] polyline from origin to destination method so I'm going to copy this and paste it somewhere here after locate user position and I'm going to add Boolean here because Dark theme is a Boolean we are passing the Dark theme Here we're passing that Boolean variable here and make this asynchronous now let's add some variables where origin
+01:06
+position origin position [Music] equals to provider dot off context app info Dot listen false Dot user pickup location I am going to copy this and paste it again for our destination position user drop off location then we are going to add a variable origin let Lang
+02:09
+equals to let line origin position Dot location latitude and origin position dot location longitude and I'll check here then we are going to copy this and write this for our destination let line so destination let line equals to destination position and destination position and now I am going to show a dialogue in Builder we can use our
+03:30
+progress dialog so build context context equals to progress dialog says please wait and after this we are going to add another variable Direction details info equals to avoid assistant methods Dot we have to write another function in our assistant methods so let's go there and write this method static
+04:42
+future Direction okay we need to assign another model class before we write this function so add Direction details [Music] info where we can add a class Direction details info and distance underscore value and duration underscore value then string E points
+05:47
+and string distance underscore text string duration underscore text so Direction details info this dot distance text this dot duration value this dot E points this dot distance value this dot duration text so now you can write our method in our assistant methods so Direction
+07:28
+let's copy this and paste it here obtain origin to test me Nation Direction details let Lang Orange gin position left line destination position asynchronous we have to import our model class
+08:34
+so let's import this and now we can write string URL origin to destination Direction details equals to https slash Maps dot Google apis dot com slash Maps slash API slash directions slash Json question mark Audi Gene origin position dot latitude and origin position Dot longitude
+09:53
+and destination equals to equals to destination dot latitude comma destination position dot longitude and k equals to map key now bar
+11:09
+response Direction API equals to await request assistant dot receive request let's pass this URL and we can just copy this from here paste it response Direction API internal Direction details info Direction it is
+12:15
+info equals to Direction it is info and Direction details info dot E points equal to respawn station API routes zero over few polyline and points that's it then Direction we can just copy this and paste it four times four times
+13:23
+dot distance text reaction details info dot distance text equals to route legs zero distance text now let's copy this and paste it here distance text and distance value text and value duration dates duration text
+14:33
+and duration value here instead of distance we can write duration and value return Direction details info there's seems to be a error
+15:44
+let's try to solve this because it has the return type now let's go back to our main screen and we can write optimization details origin instead of origin position you can write origin left line and destination let love sit straight this right now
+17:05
+Navigator pop print poly lines points P points equals to polyline points and list Point let length decode only line points result
+18:09
+is equals to P points DOT D chord polyline Direction okay let's add another Global variable here you can write Direction details info free Direction details info and now here we can write
+19:15
+equals to Direction details info here you can also write Direction details info dot E points P line list dot clear if decode for a line Point result list is not empty then decode polyline list for h Point Let's do point let name b line
+20:28
+coordinated list dot add let Lang dot latitude Point let land dot longitude only lines set dot clear then set state polyline polyline for a line equals to polyline color if Dark theme
+21:32
+then color start Amber accent or colors Dot blue polyline ID equals to online ID polyline ID join type join type dot round points field and coordinated list start cap dot round cap end cap dot round cap G or desicc to True with five lines set dot add
+22:42
+polyline now let's add marker and circles before that let them bounce bounce let land if origin let line dot latitude is greater than destination netline dot latitude and origin net line is the longitude is created then destination longitude then pounds that line equals to let land bounce Southwest destination
+23:51
+[Applause] Northwest is originally else if longitude is greater than destination let line dot longitude then bounce Red Line equals to let length bounds origin let Lang dot latitude destination then let Lang Dot longitude that line
+25:00
+origin line Dot so destination dot latitude origin letlam dot longitude again else if origin let Lang dot latitude better than destination netline dot latitude bounce that line equals to let land bounds let's copy and paste this instead of origin you are going to write
+26:11
+destination let's learn here we have to write origin letter here we can write originally there you can write destination letter now is bounds that line equals to let length bounds origin lettering destination right now new Google controllers dot animate camera update dot new left length
+27:17
+bounds bounce let's learn padding should be of around 65 that's it now let's run our project again we can see polyline here
+28:50
+you have to fix our peak.png the alignment of it so our polyline is showing now we can add markers marker origin marker equals to marker marker ID marker ID origin ID and info window info window origin position Dot location name dot snippet
+29:58
+origin position origin letter icon bitmap descriptor dot default marker with you bit map descriptor dot Hue green you can copy this and paste it again for our destination marker we can change the to test destination ID and here snippet should be destination you should be
+31:06
+red and we can set the markers here Marker set dot add origin marker and Marker set dot add destination marker and now we can add few circles before that let's check we need another one now
+32:11
+add we can see our marker see only one marker and why is that destination destination marker
+33:32
+now instead of this origin position we have to write destination position and now if we run this again now you still can't see our destination marker you fit good destination
+34:42
+let's add circles then we can check what's wrong so if you add Circle origin Circle equals to Circle ID Circle ID origin ID feel color start green radius should be around 12 stroke with three drop color s dot White Center
+35:48
+origin letter we can copy this and paste it again for our destination Circle let's change this to destination ID and here we have to write destination letter and then you can add set state circle shape Dot add origin Circle shape dot add destination Circle now if you run this we should see
+36:52
+to Circle at our origin position and destination position we still can't see it let's okay let's see what's wrong here so here instead of origin lettering we have to write destination level and if I run this again and you can see our two markers
+38:06
+and also are circles green circle and we can change this to red so it will be green and red circles and green and red marker so that's it

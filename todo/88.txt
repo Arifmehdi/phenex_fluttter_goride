@@ -1,0 +1,61 @@
+alright so let's change few things from our main screen we are going to hide this pic location from here so we can just comment out this align and then this camera on move on camera move and camera idle we can comment out this and this function as well so now if I run this again we no longer see that pick icon so let's create a new dart file precise pickup screen scaffold body should be stack and children google map so you have to import few things from our main screen let's copy these things
+02:10
+scaffold key position this too we need Let's copy this position let's import the dependency geolocator and this bottom padding and instead of initial camera you can write k googleplex and we also need this location user position function
+03:37
+I can just remove this let's import our and this one as well let's copy this function get address from latlan
+05:00
+and in our main screen we have to add two buttons here and for that I'm going to add a size box of height five and row children elevated button child should be text change pick up style should be text style
+06:43
+ok yeah, style should be text style color if dark theme then colors.black if light then colors.white and here you can add style elevated button dot style form primary dark theme then colors dot amber dot shade 400 and colors dot blue blue and text style should be around text style font-weight.bold and font size 16
+08:12
+let's copy this and paste it again after some size box of width 10 here we can change this to request alright and here navigator.
+10:00
+push dot push material page width precise pickup screen here we can write main axis alignment dot center dot Center now if I click this okay we need to change few things here lets add this one here and let's change our bottom padding of map to 100 I'm going to show you the Let's write econ cash sale at the red gmail.com and 654321 hello
+11:43
+let's run this again now lets hit change pickup now its working fine we want to add some padding top padding here and top padding here Now let's add a button position
+13:16
+bottom 0 left 0 and right 0 child padding sets.all to 12 and child elevated button onPressed and style elevated button.stylephone primary dark theme we need to add dark theme here. So lets add that. colors.amber.shade400 and colors.blue textile textile
+14:42
+you can just copy this and paste it here. font-weight.code and we need to add child text set current location You can decrease our bottom padding. Now if we change this and set current location then we see that our pickup location has also changed let's add dryer to our main screen I'm going to add here key scaffold key and here I can write drawer drawer screen okay we have to drawr underscore screen
+17:09
+there we can import material dot dart on main screen material dot dart and we can use stateless widget drawers screen we can use container then width around 220 child drawer child padding padding of then 50 then 0 and 20 child column
+18:36
+lets see our drawer screen we have to add Custom hamburger icon Button for dryer Position 50 left 20 child container Child gesture detector on tab and child circle avatar. background color if dark theme then colors.amber.shape400 or colors.white I can I can start menu
+20:29
+Color Dark theme Colors start black colors Light blue light blue and on on tap we can write scaffold state dot current state open drawer now if i hit this then this shows up now lets customize now if I hit this then this shows up now let's customize our another column children cross axis alignment
+21:33
+cross axis alignment dot start children padding container padding age in sets dot all to 30 then decoration box decoration color colors dot light blue and shape box shape dot circle and child icon icon start person color color start white then add a size box of height 20
+22:59
+and add a text we want to show our users name so for that we can just add user model kind info dot name and we have to add null check here style textile font-weight.bold and font-size to 20 okay we can see our name and because we have written here phone for all the field so you have to write name email and address let's add another size box of height 10 and add gesture detector on tab child
+24:39
+text edit profile style textile font-weight.bold font-size to 15 and color, colors.blue let's run this again again we can change this column cross axis alignment cross axis alignment dot start and main axis alignment dot space between so we can add more things here that we are going to implement later so text your trips
+26:47
+style textile style text style font-weight font-weight.bold and font-size of 15 let's copy this let's add a size box of height 15 let's copy this and paste it few more times so here you can write payment then notification notifications promos help and after this column we can add gesture detector for our logout button সাইল টিকস্ট লগাউট স্টাইল টিকস্টাইল ফান্ত এইট ফান্ত এইট ডাট পল্ড ফান্ত সাইস টু এটিন এইট টিন কলোর কলর স্টাইল স্টাইল স্টাইল স্টাইল স্টাইল স্টাইল স্টাইল স্টাইল স্টাইল স্টাইল স্টাইল স্টাইল স্টাইল স্টাইল স্টাইল স্টাইল স্টাইল স্টাইল স font-weight.fold, material page route to splash screen
+29:16
+so that's it now let's add our profile screen we can add profile underscore screen let's import material.dart stateful widget profile screen and gesture detector instead of placeholder on tap focus scope dot off context dot unfocus child scaffold let's add a app bar before that let's go to our screen and copy this and paste it here and instead of splash screen we can write profile screen now we can see a blank screen let's add app bar
+30:46
+app bar background color let's add title leading icon button on pressed on pressed and I can I can store not I can store arrow back iOS and color color start black colors.black and we can make it color start transparent and elevation to zero and now let's add title text profile screen
+32:21
+and style textile color colors dot black and font-weight font-weight dot bold make it center so center title to true now let's add body center child padding padding padding padding age inserts dot from left 20 20 right should be around 50 and child column
+33:35
+children container adding age insert dot all to 50 decoration box decoration color color start light blue box shape dot circle and we can add an icon here child icon icons dot person color colors dot white colors.white controller
+35:04
+let's copy this and paste it two more times for our phone and address now let's add our database let's add a function future void show username alert build context context string name now lets add return show dialogue context is context and have to add a builder
+36:19
+for that we can write ক্ষেল করার কে কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার কিন করার করার করার করার করার করার করার করার text update content single child scroll view child column children text form field to controller name text in controller and in actions we can add two button text button cancel style textile color colors dot red and here we can write navigator dot pop Navigator.pop
+38:07
+We can copy this and paste it again for ok. we want this black we have to add semicolon here and here now let's add a size box of height 30 then a row main axis alignment dot space between then children text user current model info dot name Textile font size of 18 and font weight font weight.bold and you can add an icon button
+40:00
+icon button icon icons dot edit icons.edit now if I hit this icon or click this then we should see show username so username dialog alert and we're going to pass our user model current info dot name now here we can write name text reading controller to name.
+41:56
+to add this few more times and after this row let's add a divider divider of thickness 1 let's add this row again for our phone address and email for email we don't need any icon button so let's remove this row and here we can add address we number address and our email and we can change this text button to something else let's go to our register screen
+43:36
+and copy this and paste it here paste it here let's import firebase database and here you can write userref dot child firebase auth dot current user dot uid dot update now we can change our name on firebase name text editing controller dot text dot train then then you can write name text editing controller
+44:50
+.clear flutter toast .short updated successfully to see the changes and if we get an error then we can write error message Flutter Toast error occurred and we can show the error
+46:37
+We have to add another thing here, resize to avoid bottom inset to false. So now if I hit OK, updates are successfully. So in the similar manner, we are going to add phone text reading controller and address text reading controller so let's copy this function and paste it two more times and change this to phone and this one to address and instead of name we are going to add phone and address we can change this to phone text editing controller phone text editing controller phone text editing controller
+47:40
+and phone text editing controller and here we can write address address text editing controller address text editing controller address text editing controller and address text editing controller here we have to change this to address and here we have to change this to phone and now here for our phone we can write phone and instead of show username you can write this and instead of this you can write show user address it changes to address update it successfully.
+49:14
+Let's reload the app to see the changes. Yeah, we can see our phone number changed. So that's it.

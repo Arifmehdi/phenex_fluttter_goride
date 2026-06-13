@@ -168,7 +168,7 @@ class _OwnerProfileScreenState extends State<OwnerProfileScreen> {
             Row(
               children: [
                 Expanded(child: StepIndicator(number: 1, title: 'Personal', isActive: _currentStep >= 0, isCompleted: _currentStep > 0)),
-                Expanded(child: StepIndicator(number: 2, title: _isDriver ? 'Driver' : 'Vehicle', isActive: _currentStep >= 1, isCompleted: _currentStep > 1)),
+                Expanded(child: StepIndicator(number: 2, title: _isDriver ? 'Rider' : 'Vehicle', isActive: _currentStep >= 1, isCompleted: _currentStep > 1)),
                 Expanded(child: StepIndicator(number: 3, title: 'Documents', isActive: _currentStep >= 2, isCompleted: _currentStep > 2)),
               ],
             ),
@@ -227,7 +227,7 @@ class _OwnerProfileScreenState extends State<OwnerProfileScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (_isDriver) ...[
-          const Text('Driver Information', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const Text('Rider Information', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           _buildTextField(_licenseController, 'License Number', Icons.drive_eta),
           _buildTextField(_licenseExpiryController, 'License Expiry Date', Icons.event, isDate: true),
@@ -269,7 +269,7 @@ class _OwnerProfileScreenState extends State<OwnerProfileScreen> {
         const Text('Document Uploads', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
         if (_isDriver) ...[
-          _buildUploadButton('Driver Photo', Icons.person),
+          _buildUploadButton('Rider Photo', Icons.person),
           _buildUploadButton('NID Upload', Icons.badge),
           _buildUploadButton('License Upload', Icons.credit_card),
         ],
@@ -426,7 +426,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     
     return Scaffold(
       appBar: AppBar(
-        title: Text(isCorporate ? localeController.get('Corporate Dashboard', 'কর্পোরেট ড্যাশবোর্ড') : localeController.get('Driver Dashboard', 'ড্রাইভার ড্যাশবোর্ড')),
+        title: Text(isCorporate ? localeController.get('Corporate Dashboard', 'কর্পোরেট ড্যাশবোর্ড') : localeController.get('Rider Dashboard', 'রাইডার ড্যাশবোর্ড')),
         backgroundColor: const Color(0xFF10713C),
         actions: [
           if (!isCorporate)
@@ -485,7 +485,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             Text(
-              isCorporate ? localeController.get('Verified Account', 'ভেরিফাইড অ্যাকাউন্ট') : localeController.get('Level 1 Driver', 'লেভেল ১ ড্রাইভার'),
+              isCorporate ? localeController.get('Verified Account', 'ভেরিফাইড অ্যাকাউন্ট') : localeController.get('Level 1 Rider', 'লেভেল ১ রাইডার'),
               style: const TextStyle(fontSize: 14, color: Colors.grey),
             ),
           ],

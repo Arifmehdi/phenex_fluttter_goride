@@ -113,7 +113,7 @@ class SidebarMenu extends StatelessWidget {
             Navigator.pop(context);
             onSelectedIndexChanged?.call(1);
           }),
-          _menuItem(Icons.people, 'Driver Management', () {
+          _menuItem(Icons.people, 'Rider Management', () {
             Navigator.pop(context);
             // Handle specific navigation if available
           }),

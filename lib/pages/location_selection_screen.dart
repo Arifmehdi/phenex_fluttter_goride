@@ -211,36 +211,34 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
         if (mounted) setState(() => _isDetectingGps = false);
         return;
       }
-      final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 8),
-      );
+
+      // Phase 1: Get last known position (instant, from device cache)
+      // This shows something immediately while GPS warms up
+      Position pos;
+      try {
+        final lastPos = await Geolocator.getLastKnownPosition();
+        if (lastPos != null) {
+          pos = lastPos;
+        } else {
+          // No cached position — get a quick network/cell position
+          pos = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.low,
+            timeLimit: const Duration(seconds: 3),
+          );
+        }
+      } catch (_) {
+        // If all quick methods fail, wait for GPS with no timeout
+        pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        );
+      }
+
       if (!mounted) return;
       _gpsLat = pos.latitude;
       _gpsLng = pos.longitude;
 
-      // Try reverse geocode
-      try {
-        List<Placemark> placemarks =
-            await placemarkFromCoordinates(pos.latitude, pos.longitude);
-        if (placemarks.isNotEmpty) {
-          final p = placemarks[0];
-          String location = '';
-          if (p.subLocality != null && p.subLocality!.isNotEmpty) {
-            location = p.subLocality!;
-          } else if (p.locality != null && p.locality!.isNotEmpty) {
-            location = p.locality!;
-          }
-          if (p.street != null && p.street!.isNotEmpty) {
-            location =
-                location.isEmpty ? p.street! : '$location, ${p.street}';
-          }
-          if (location.isEmpty) location = 'My Current Location';
-          _gpsAddress = location;
-        }
-      } catch (_) {
-        _gpsAddress = 'My Current Location';
-      }
+      // Resolve address from initial position for immediate display
+      await _resolveGpsAddress(pos.latitude, pos.longitude);
 
       if (mounted) {
         setState(() {
@@ -255,8 +253,91 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
           _isDetectingGps = false;
         });
       }
+
+      // Phase 2: Asynchronously try to get a more accurate GPS position
+      // GPS may need more time for first lock (cold start can take 30-60s)
+      _refineGpsPosition();
     } catch (e) {
       if (mounted) setState(() => _isDetectingGps = false);
+      // Phase 1 failed entirely, but GPS may still get a fix later
+      _refineGpsPosition();
+    }
+  }
+
+  /// Resolve a human-readable address from coordinates, updating [_gpsAddress].
+  /// Tries Google Maps API reverse geocoding first, then falls back to local geocoding.
+  Future<void> _resolveGpsAddress(double lat, double lng) async {
+    // Try Google Maps reverse geocoding first (more accurate names)
+    try {
+      final address = await _placesService.getAddressFromLatLng(lat, lng);
+      if (address != null && address.isNotEmpty) {
+        _gpsAddress = address;
+        return;
+      }
+    } catch (_) {}
+
+    // Fallback to local geocoding package
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
+      if (placemarks.isNotEmpty) {
+        final p = placemarks[0];
+        String location = '';
+        if (p.subLocality != null && p.subLocality!.isNotEmpty) {
+          location = p.subLocality!;
+        } else if (p.locality != null && p.locality!.isNotEmpty) {
+          location = p.locality!;
+        }
+        if (p.street != null && p.street!.isNotEmpty) {
+          location =
+              location.isEmpty ? p.street! : '$location, ${p.street}';
+        }
+        _gpsAddress = location.isNotEmpty ? location : 'My Current Location';
+        return;
+      }
+    } catch (_) {}
+
+    _gpsAddress = 'My Current Location';
+  }
+
+  /// Try to refine the position with a more accurate GPS fix.
+  /// GPS cold start can take 30-60 seconds, so this runs asynchronously
+  /// after showing the initial (possibly less accurate) position.
+  Future<void> _refineGpsPosition() async {
+    try {
+      // Attempt a high-accuracy position without a time limit
+      // so GPS has enough time to lock on properly
+      final betterPos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.best,
+      );
+
+      if (!mounted) return;
+
+      // Only update if the new position is meaningfully different (>50m)
+      final distance = Geolocator.distanceBetween(
+        _gpsLat ?? 0, _gpsLng ?? 0,
+        betterPos.latitude, betterPos.longitude,
+      );
+
+      if (distance > 50) {
+        _gpsLat = betterPos.latitude;
+        _gpsLng = betterPos.longitude;
+        await _resolveGpsAddress(betterPos.latitude, betterPos.longitude);
+
+        if (mounted) {
+          setState(() {
+            // Only auto-fill pickup if user hasn't manually edited it
+            if (!_pickupEditedByUser) {
+              _pickupController.text = _gpsAddress.isNotEmpty
+                  ? _gpsAddress
+                  : 'My Current Location';
+              _pickupLat = _gpsLat;
+              _pickupLng = _gpsLng;
+            }
+          });
+        }
+      }
+    } catch (_) {
+      // Phase 2 refinement failed — the Phase 1 result is already showing
     }
   }
 

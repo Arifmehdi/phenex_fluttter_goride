@@ -6,6 +6,8 @@ import 'package:goride/locale_controller.dart';
 import 'package:goride/registration_screens.dart';
 import 'package:goride/pages/home_page.dart';
 import 'package:goride/pages/dashboard_page.dart';
+import 'package:goride/pages/approval_pending_screen.dart';
+import 'package:goride/approval_helper.dart';
 import 'package:goride/pages/location_selection_screen.dart';
 import 'package:goride/pages/rent_car_booking_screen.dart';
 import 'package:goride/services/api_service.dart';
@@ -15,6 +17,9 @@ import 'package:goride/services/ride_service.dart';
 import 'package:goride/services/routing_service.dart';
 import 'package:goride/services/sslcommerz_service.dart';
 import 'package:goride/pages/login_page.dart';
+import 'package:goride/pages/register_screen.dart';
+import 'package:goride/pages/forgot_password_screen.dart';
+import 'package:goride/pages/reset_password_screen.dart';
 import 'package:goride/widgets/sidebar_menu.dart';
 
 void main() async {
@@ -69,6 +74,8 @@ class GoRideApp extends StatelessWidget {
         GetPage(name: '/home', page: () => const HomePage()),
         GetPage(name: '/login', page: () => const LoginPage()),
         GetPage(name: '/registration', page: () => const RegisterScreen()),
+        GetPage(name: '/forgot-password', page: () => const ForgotPasswordScreen()),
+        GetPage(name: '/reset-password', page: () => const ResetPasswordScreen()),
       ],
     );
   }
@@ -118,9 +125,17 @@ class _SplashScreenState extends State<SplashScreen> {
       if (apiService.isLoggedIn()) {
         final user = apiService.getUser();
         final role = apiService.getToken() != null ? (GetStorage().read('role') as String?) : null;
+        final bool isApproved = GetStorage().read('is_approved') ?? true;
+        final storedUser = apiService.getUser();
         
-        if (role != null && role != 'user' && role != 'solo') {
-          Get.offAll(() => GoRideApp.getDashboardForRole(role));
+        if (role != null && (role == 'admin' || role == 'driver' || role == 'corporate' || role == 'owner')) {
+          // Check approval from stored is_approved AND user status as fallback
+          final isPending = !isApproved || (storedUser != null && (storedUser['status'] == 0 || storedUser['status'] == '0' || storedUser['status'] == 'pending'));
+          if (isPending) {
+            Get.offAll(() => ApprovalPendingScreen(role: role));
+          } else {
+            Get.offAll(() => GoRideApp.getDashboardForRole(role));
+          }
         } else {
           Get.offAll(() => const HomePage());
         }
@@ -225,7 +240,7 @@ class RoleSelectionScreen extends StatelessWidget {
             _roleCard(
               context,
               icon: Icons.drive_eta,
-              title: 'Driver',
+              title: 'Rider',
               description: 'Earn by driving your own car',
               onTap: () => Navigator.of(context).pushReplacement(
                 MaterialPageRoute(
@@ -319,515 +334,6 @@ class RoleSelectionScreen extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-// ============== REGISTER SCREEN ==============
-class RegisterScreen extends StatefulWidget {
-  final String? selectedRole;
-  const RegisterScreen({Key? key, this.selectedRole}) : super(key: key);
-
-  @override
-  State<RegisterScreen> createState() => _RegisterScreenState();
-}
-
-class _RegisterScreenState extends State<RegisterScreen> {
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _companyNameController = TextEditingController();
-  final TextEditingController _vehicleTypeController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _mobileController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController =
-      TextEditingController();
-  final ApiService _apiService = Get.find<ApiService>();
-  String? _errorMessage;
-  late String _selectedRole;
-  bool _obscurePassword = true;
-  bool _obscureConfirmPassword = true;
-  bool _isLoading = false;
-
-  // Role tabs: 0=Customer, 1=Driver/Owner, 2=Corporate
-  int _selectedTabIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedRole = widget.selectedRole ?? 'solo';
-    _updateTabIndexFromRole(_selectedRole);
-  }
-
-  void _updateTabIndexFromRole(String role) {
-    switch (role) {
-      case 'driver':
-      case 'owner':
-        _selectedTabIndex = 1;
-        break;
-      case 'corporate':
-        _selectedTabIndex = 2;
-        break;
-      case 'user':
-      case 'solo':
-      default:
-        _selectedTabIndex = 0;
-        break;
-    }
-  }
-
-  Future<void> _register() async {
-    setState(() {
-      _errorMessage = null;
-    });
-
-    // Validate inputs
-    if (_nameController.text.isEmpty) {
-      setState(() => _errorMessage = 'Please enter your name');
-      return;
-    }
-
-    if (_emailController.text.isEmpty) {
-      setState(() => _errorMessage = 'Please enter your email');
-      return;
-    }
-
-    if (_mobileController.text.isEmpty) {
-      setState(() => _errorMessage = 'Please enter your mobile number');
-      return;
-    }
-
-    if (_passwordController.text.isEmpty) {
-      setState(() => _errorMessage = 'Please enter a password');
-      return;
-    }
-
-    if (_passwordController.text.length < 8) {
-      setState(() => _errorMessage = 'Password must be at least 8 characters');
-      return;
-    }
-
-    if (_passwordController.text != _confirmPasswordController.text) {
-      setState(() => _errorMessage = 'Passwords do not match');
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    // Build request data matching API expectations
-    final data = <String, dynamic>{
-      'name': _nameController.text,
-      'email': _emailController.text,
-      'mobile': _mobileController.text, // Mobile is required by API
-      'password': _passwordController.text,
-      'password_confirmation': _confirmPasswordController.text,
-      'role': _selectedRole, // solo, driver, owner, corporate
-    };
-
-    // Add company_name for corporate role
-    if (_selectedRole == 'corporate') {
-      data['company_name'] = _companyNameController.text;
-    }
-
-    // Add vehicle_type for driver/owner roles
-    if (_selectedRole == 'driver' || _selectedRole == 'owner') {
-      data['vehicle_type'] = _vehicleTypeController.text;
-    }
-
-    try {
-      print('Attempting registration with data: $data');
-      final response = await _apiService.register(data);
-      print('Registration response status: ${response.statusCode}');
-      print('Registration response data: ${response.data}');
-
-      // Handle response
-      bool isSuccess = false;
-
-      // Check if the response indicates success
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        isSuccess = true;
-      }
-
-      if (isSuccess) {
-        if (!mounted) return;
-        
-        // Retrieve role from storage (set by ApiService.register) or use selected role
-        final storedRole = GetStorage().read('role') as String?;
-        final role = storedRole ?? _selectedRole;
-        
-        print('Registration success! Navigating to dashboard for role: $role');
-        
-        if (role == 'admin' || role == 'driver' || role == 'corporate' || role == 'owner') {
-          Get.offAll(() => UnifiedDashboard(role: role));
-        } else {
-          Get.offAll(() => const HomePage());
-        }
-      } else {
-        setState(() {
-          _errorMessage = response.data?['message'] ?? 'Registration failed. Please try again.';
-        });
-      }
-    } on DioException catch (e) {
-      // Handle Dio specific errors
-      String message = 'Connection error. Please try again.';
-
-      if (e.response != null) {
-        if (e.response!.data is Map) {
-          message = e.response!.data?['message'] ??
-              e.response!.data?['error'] ??
-              'Registration failed';
-        } else if (e.response!.statusCode == 422) {
-          // Validation error - try to extract field errors
-          if (e.response!.data is Map && e.response!.data['errors'] != null) {
-            final errors = e.response!.data['errors'] as Map;
-            final firstError = errors.values.first;
-            if (firstError is List && firstError.isNotEmpty) {
-              message = firstError.first.toString();
-            }
-          } else {
-            message = 'Validation failed. Please check your inputs.';
-          }
-        }
-      }
-
-      setState(() {
-        _errorMessage = message;
-      });
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'An error occurred. Please try again.';
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isCorporate = _selectedRole == 'corporate';
-    final isSolo = _selectedRole == 'solo' || _selectedRole == 'user';
-    final isDriverOrOwner = !isCorporate && !isSolo;
-
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF10713C)),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Create Account',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Join GoRide Bangladesh today',
-                  style: TextStyle(color: Colors.grey, fontSize: 16),
-                ),
-                const SizedBox(height: 24),
-
-                // Role Tabs (like web version)
-                _buildRoleTabs(),
-
-                const SizedBox(height: 24),
-
-                // Name and Company fields logic
-                if (isCorporate) ...[
-                  _buildTextField(
-                    _companyNameController,
-                    'Company Name',
-                    Icons.business,
-                  ),
-                  const SizedBox(height: 16),
-                  _buildTextField(
-                    _nameController,
-                    'Contact Person',
-                    Icons.person,
-                  ),
-                  const SizedBox(height: 16),
-                ] else ...[
-                  _buildTextField(
-                    _nameController,
-                    'Full Name',
-                    Icons.person,
-                  ),
-                  const SizedBox(height: 16),
-                ],
-
-                // Email field (required for API)
-                _buildTextField(
-                  _emailController,
-                  'Email Address',
-                  Icons.email,
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                const SizedBox(height: 16),
-
-                // Mobile field (API expects 'mobile')
-                _buildTextField(
-                  _mobileController,
-                  'Mobile Number',
-                  Icons.phone,
-                  keyboardType: TextInputType.phone,
-                ),
-                const SizedBox(height: 16),
-
-                // Vehicle Type field (shown for driver/owner)
-                if (isDriverOrOwner) ...[
-                  _buildTextField(
-                    _vehicleTypeController,
-                    'Vehicle Type',
-                    Icons.directions_car,
-                  ),
-                  const SizedBox(height: 16),
-                ],
-
-                // Password field
-                _buildPasswordField(
-                  _passwordController,
-                  'Password',
-                  _obscurePassword,
-                  (v) => setState(() => _obscurePassword = v),
-                ),
-                const SizedBox(height: 16),
-
-                // Confirm Password field
-                _buildPasswordField(
-                  _confirmPasswordController,
-                  'Confirm Password',
-                  _obscureConfirmPassword,
-                  (v) => setState(() => _obscureConfirmPassword = v),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Role indicator
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10713C).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        isCorporate
-                            ? Icons.business
-                            : (isDriverOrOwner ? Icons.drive_eta : Icons.person),
-                        color: const Color(0xFF10713C),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        isCorporate
-                            ? 'Corporate Account'
-                            : (isDriverOrOwner ? 'Driver/Owner Account' : 'Customer Account'),
-                        style: const TextStyle(
-                          color: Color(0xFF10713C),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Error message
-                if (_errorMessage != null) ...[
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFED1C24).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFED1C24)),
-                    ),
-                    child: Text(
-                      _errorMessage!,
-                      style: const TextStyle(color: Color(0xFFED1C24)),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-
-                // Register button
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _register,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF10713C),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Text(
-                            'Register Now',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Center(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text('Already have an account?'),
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pushReplacement(
-                          MaterialPageRoute(
-                            builder: (_) => const LoginPage(),
-                          ),
-                        ),
-                        child: const Text(
-                          'Login',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF10713C),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Role tabs like web version
-  Widget _buildRoleTabs() {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
-      ),
-      child: Row(
-        children: [
-          _buildRoleTab('Customer', 0),
-          _buildRoleTab('Driver / Owner', 1),
-          _buildRoleTab('Corporate', 2),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRoleTab(String title, int index) {
-    final isActive = _selectedTabIndex == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() {
-            _selectedTabIndex = index;
-            // Update role based on tab selection
-            switch (index) {
-              case 0:
-                _selectedRole = 'user';
-                break;
-              case 1:
-                _selectedRole = 'driver'; // Default to driver for tab 1
-                break;
-              case 2:
-                _selectedRole = 'corporate';
-                break;
-            }
-          });
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: isActive ? const Color(0xFF10713C) : Colors.transparent,
-                width: 2,
-              ),
-            ),
-          ),
-          child: Text(
-            title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: isActive ? const Color(0xFF10713C) : Colors.grey,
-              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-              fontSize: 13,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField(
-    TextEditingController controller,
-    String label,
-    IconData icon, {
-    TextInputType? keyboardType,
-  }) {
-    return TextField(
-      controller: controller,
-      keyboardType: keyboardType,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-
-  Widget _buildPasswordField(
-    TextEditingController controller,
-    String label,
-    bool obscure,
-    Function(bool) onToggle,
-  ) {
-    return TextField(
-      controller: controller,
-      obscureText: obscure,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: const Icon(Icons.lock),
-        suffixIcon: IconButton(
-          icon: Icon(obscure ? Icons.visibility_off : Icons.visibility),
-          onPressed: () => onToggle(!obscure),
-        ),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -2060,7 +1566,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: const Text('Driver Dashboard'),
+        title: const Text('Rider Dashboard'),
         actions: [
           IconButton(icon: const Icon(Icons.notifications), onPressed: () {}),
         ],
@@ -2586,7 +2092,7 @@ class _CorporateDashboardScreenState extends State<CorporateDashboardScreen> {
                   '12',
                   const Color(0xFF10713C),
                 ),
-                _corporateStatCard('Drivers', '15', Colors.blue),
+                _corporateStatCard('Riders', '15', Colors.blue),
                 _corporateStatCard('Pending Trips', '8', Colors.orange),
                 _corporateStatCard(
                   'This Month Bill',
@@ -2764,7 +2270,7 @@ class _CorporateDashboardScreenState extends State<CorporateDashboardScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            Text('Driver: $driver', style: const TextStyle(fontSize: 12)),
+            Text('Rider: $driver', style: const TextStyle(fontSize: 12)),
             Text('Plate: $plate', style: const TextStyle(fontSize: 12)),
           ],
         ),

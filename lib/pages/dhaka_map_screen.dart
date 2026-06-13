@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'dart:ui' as ui;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
@@ -13,7 +12,6 @@ import '../services/sslcommerz_service.dart';
 import '../services/api_service.dart';
 import '../services/places_service.dart';
 
-import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firebase_service.dart';
 
@@ -51,7 +49,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   String _destinationAddress = 'Select Destination';
   double _distance = 0.0;
   double _price = 0.0;
-  bool _selectingPickup = true;
+  bool _selectingPickup = false; // Start with destination selection
   bool _isConfirmingPickup = false;
   bool _isRouteVisible = false;
 
@@ -68,14 +66,12 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   final RoutingService _routingService = Get.find<RoutingService>();
   final FirebaseService _firebaseService = Get.find<FirebaseService>();
   List<LatLng> _routePoints = [];
-  double _routeDistance = 0.0;
   int _routeDuration = 0;
   bool _isLoadingRoute = false;
 
   // Recent locations
   final RecentLocationsService _recentLocationsService = RecentLocationsService();
   final PlacesService _placesService = PlacesService();
-  final SslCommerzService _sslCommerzService = Get.find<SslCommerzService>();
   final ApiService _apiService = Get.find<ApiService>();
   Timer? _apiDriversTimer;
   Timer? _routeDebounce;
@@ -84,23 +80,20 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   BitmapDescriptor? _carIcon;
 
   bool _isInitialCameraMove = true;
+  bool _hasPreSelectedPickup = false;
+  bool _hasPreSelectedDest = false;
+  bool _isAnimatingToFit = false;
 
   @override
   void initState() {
     super.initState();
     _selectedRide = widget.initialRideType?.toLowerCase();
 
-    // Set a timer to enable map-based selection after initial animations
-    Timer(const Duration(milliseconds: 2000), () {
-      if (mounted) setState(() => _isInitialCameraMove = false);
-    });
-
-    // Use pre-selected coordinates from forward geocoding search (if provided)
     if (widget.pickupLat != null && widget.pickupLng != null) {
       _pickupLocation = LatLng(widget.pickupLat!, widget.pickupLng!);
       _pickupAddress = widget.pickupAddress ?? 'Selected Location';
+      _hasPreSelectedPickup = true;
     } else if (widget.pickupAddress != null && widget.pickupAddress!.isNotEmpty) {
-      // If we only have address, we'll need to resolve it
       _pickupAddress = widget.pickupAddress!;
       _resolveAddressToLatLng(widget.pickupAddress!, isPickup: true);
     }
@@ -108,12 +101,12 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
     if (widget.destLat != null && widget.destLng != null) {
       _destinationLocation = LatLng(widget.destLat!, widget.destLng!);
       _destinationAddress = widget.destinationAddress ?? 'Selected Destination';
+      _hasPreSelectedDest = true;
     } else if (widget.destinationAddress != null && widget.destinationAddress!.isNotEmpty) {
       _destinationAddress = widget.destinationAddress!;
       _resolveAddressToLatLng(widget.destinationAddress!, isPickup: false);
     }
 
-    // Fallback: Dhaka center
     if (_pickupLocation == null) {
       _pickupLocation = const LatLng(23.8103, 90.4125);
       _pickupAddress = widget.pickupAddress ?? 'Dhaka, Bangladesh';
@@ -122,41 +115,42 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
       }
     }
 
-    _loadIcons();
-
-    if (_pickupLocation != null && _destinationLocation != null) {
+    if (_hasPreSelectedPickup && _hasPreSelectedDest) {
       _isConfirmingPickup = true;
       _calculateRideDetails();
     }
 
+    Timer(const Duration(seconds: 5), () {
+      if (mounted && _isInitialCameraMove) {
+        setState(() => _isInitialCameraMove = false);
+      }
+    });
+
+    _loadIcons();
     _loadRecentLocations();
     _checkPermission();
     _listenToNearbyDrivers();
   }
 
   Future<void> _resolveAddressToLatLng(String address, {required bool isPickup}) async {
-    debugPrint('Resolving address: $address');
     try {
       final locations = await locationFromAddress('$address, Bangladesh');
       if (locations.isNotEmpty && mounted) {
-        debugPrint('Address resolved to: ${locations[0].latitude}, ${locations[0].longitude}');
         setState(() {
           if (isPickup) {
             _pickupLocation = LatLng(locations[0].latitude, locations[0].longitude);
+            _hasPreSelectedPickup = true;
           } else {
             _destinationLocation = LatLng(locations[0].latitude, locations[0].longitude);
+            _hasPreSelectedDest = true;
           }
         });
-        if (_pickupLocation != null && _destinationLocation != null) {
+        if (_hasPreSelectedPickup && _hasPreSelectedDest) {
           _isConfirmingPickup = true;
           _calculateRideDetails();
         }
-      } else {
-        debugPrint('No locations found for address: $address');
       }
     } catch (e) {
-      debugPrint('Error resolving address "$address": $e');
-      // If resolution fails, we might still have current position to use as pickup
       if (isPickup && _currentPosition != null) {
         setState(() => _pickupLocation = LatLng(_currentPosition!.latitude, _currentPosition!.longitude));
       }
@@ -177,23 +171,15 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
           .snapshots()
           .listen((snapshot) {
         if (!mounted) return;
-
         final center = _pickupLocation ?? (_currentPosition != null ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude) : null);
-
         final Set<Marker> markers = snapshot.docs.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
           final lat = data['latitude'] as double?;
           final lng = data['longitude'] as double?;
           if (lat == null || lng == null) return false;
-
           if (center != null) {
-            final distanceInMeters = Geolocator.distanceBetween(
-              center.latitude,
-              center.longitude,
-              lat,
-              lng,
-            );
-            return distanceInMeters <= 5000; // Only show drivers within 5km radius
+            final distanceInMeters = Geolocator.distanceBetween(center.latitude, center.longitude, lat, lng);
+            return distanceInMeters <= 5000;
           }
           return true;
         }).map((doc) {
@@ -201,7 +187,6 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
           final lat = data['latitude'] as double;
           final lng = data['longitude'] as double;
           final heading = (data['heading'] as num?)?.toDouble() ?? 0.0;
-
           return Marker(
             markerId: MarkerId(doc.id),
             position: LatLng(lat, lng),
@@ -210,55 +195,38 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
             anchor: const Offset(0.5, 0.5),
           );
         }).toSet();
-
-        setState(() {
-          _driverMarkers = markers;
-        });
+        setState(() => _driverMarkers = markers);
       });
     } else {
-      // Fallback: Poll Laravel API for nearby drivers
       _apiDriversTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
         if (!mounted) return;
         final center = _pickupLocation ?? (_currentPosition != null ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude) : null);
         if (center == null) return;
-
         try {
-          final response = await _apiService.getNearbyDrivers(
-            center.latitude,
-            center.longitude,
-            radius: 5.0, // 5km radius
-          );
-
+          final response = await _apiService.getNearbyDrivers(center.latitude, center.longitude, radius: 5.0);
           if (response.statusCode == 200 && response.data != null) {
             final List<dynamic> driversList = response.data['data'] ?? [];
             final Set<Marker> markers = driversList.map((driverData) {
               final double lat = (driverData['latitude'] as num).toDouble();
               final double lng = (driverData['longitude'] as num).toDouble();
-              final String driverId = driverData['id']?.toString() ?? UniqueKey().toString();
-
               return Marker(
-                markerId: MarkerId('driver_$driverId'),
+                markerId: MarkerId('driver_${driverData['id']}'),
                 position: LatLng(lat, lng),
                 icon: _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
                 anchor: const Offset(0.5, 0.5),
               );
             }).toSet();
-
-            setState(() {
-              _driverMarkers = markers;
-            });
+            setState(() => _driverMarkers = markers);
           }
         } catch (e) {
-          debugPrint('Error fetching nearby drivers from API: $e');
+          debugPrint('API Drivers error: $e');
         }
       });
     }
   }
 
   void _loadRecentLocations() {
-    setState(() {
-      _recentLocations = _recentLocationsService.getLocations();
-    });
+    setState(() => _recentLocations = _recentLocationsService.getLocations());
   }
 
   void _saveRecentLocation(String title, String area, LatLng coords, {String iconName = 'history'}) {
@@ -268,9 +236,8 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
       lat: coords.latitude,
       lng: coords.longitude,
       iconName: iconName,
-      timestamp: 0, // service overrides with current time
+      timestamp: 0,
     ));
-
     _loadRecentLocations();
   }
 
@@ -285,21 +252,19 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
 
   void _onMapTap(LatLng point) {
     if (_showRideOptions && !_isConfirmingPickup) return;
-    
-    final isPickupSelection = _selectingPickup;
     setState(() {
-      if (isPickupSelection) {
+      if (_selectingPickup) {
         _pickupLocation = point;
-        _pickupAddress = 'Loading address...';
+        _pickupAddress = 'Loading...';
         _selectingPickup = false;
+        _getAddressFromLatLngCoords(point.latitude, point.longitude, isPickup: true);
       } else {
         _destinationLocation = point;
-        _destinationAddress = 'Loading address...';
+        _destinationAddress = 'Loading...';
+        _getAddressFromLatLngCoords(point.latitude, point.longitude, isPickup: false);
       }
     });
-    _getAddressFromLatLngCoords(point.latitude, point.longitude, isPickup: isPickupSelection);
     _calculateRideDetails();
-    
     _mapController?.animateCamera(CameraUpdate.newLatLng(point));
   }
 
@@ -312,58 +277,24 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   Future<void> _fetchRoute() async {
     if (_pickupLocation == null || _destinationLocation == null) return;
     setState(() => _isLoadingRoute = true);
-    debugPrint('Fetching route from $_pickupLocation to $_destinationLocation');
-    
-    final response = await _routingService.getRoute(
-      origin: _pickupLocation!,
-      destination: _destinationLocation!,
-    );
-    
+    final response = await _routingService.getRoute(origin: _pickupLocation!, destination: _destinationLocation!);
     if (response.status == 'OK' && response.route != null && mounted) {
       final route = response.route!;
-      debugPrint('Route fetched successfully with ${route.points.length} points');
       setState(() {
         _routePoints = route.points;
-        _routeDistance = route.distance;
         _routeDuration = route.duration.toInt();
         _distance = route.distance;
         _price = 50 + (route.distance * 20);
         _isLoadingRoute = false;
       });
-      if (_routePoints.isNotEmpty) {
-        _fitRoute();
-      }
+      if (_routePoints.isNotEmpty) _fitRoute();
+      _checkInitialSetupComplete();
     } else {
-      debugPrint('Route fetch failed with status: ${response.status}');
-      
-      // Inform the user about the specific Google API error
-      if (response.status == 'REQUEST_DENIED') {
-        Get.snackbar(
-          'Google API Error',
-          'Directions API is restricted or not enabled. Check Google Cloud Console.',
-          backgroundColor: Colors.redAccent,
-          colorText: Colors.white,
-          snackPosition: SnackPosition.BOTTOM,
-          duration: const Duration(seconds: 5),
-        );
-      } else if (response.status != 'ZERO_RESULTS') {
-        Get.snackbar(
-          'Routing Error',
-          'Status: ${response.status}. ${response.errorMessage ?? ""}',
-          backgroundColor: Colors.orangeAccent,
-          colorText: Colors.white,
-          snackPosition: SnackPosition.BOTTOM,
-        );
-      }
-
       final double distanceInMeters = Geolocator.distanceBetween(
-        _pickupLocation!.latitude,
-        _pickupLocation!.longitude,
-        _destinationLocation!.latitude,
-        _destinationLocation!.longitude,
+        _pickupLocation!.latitude, _pickupLocation!.longitude,
+        _destinationLocation!.latitude, _destinationLocation!.longitude,
       );
       setState(() {
-        // Fallback to straight line so map isn't empty
         _routePoints = [_pickupLocation!, _destinationLocation!];
         _distance = distanceInMeters / 1000;
         _price = 50 + (_distance * 20);
@@ -372,75 +303,65 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
     }
   }
 
+  void _fitCameraToLocations(LatLng pickup, LatLng dest) {
+    if (_mapController == null) return;
+    final double minLat = pickup.latitude < dest.latitude ? pickup.latitude : dest.latitude;
+    final double maxLat = pickup.latitude > dest.latitude ? pickup.latitude : dest.latitude;
+    final double minLng = pickup.longitude < dest.longitude ? pickup.longitude : dest.longitude;
+    final double maxLng = pickup.longitude > dest.longitude ? pickup.longitude : dest.longitude;
+    _isAnimatingToFit = true;
+    _mapController!.animateCamera(CameraUpdate.newLatLngBounds(
+      LatLngBounds(southwest: LatLng(minLat, minLng), northeast: LatLng(maxLat, maxLng)), 100.0,
+    ));
+  }
+
   void _fitRoute() {
     if (_routePoints.isEmpty || _mapController == null) return;
-
-    double minLat = _routePoints.first.latitude;
-    double maxLat = _routePoints.first.latitude;
-    double minLng = _routePoints.first.longitude;
-    double maxLng = _routePoints.first.longitude;
-
+    double minLat = _routePoints.first.latitude, maxLat = _routePoints.first.latitude;
+    double minLng = _routePoints.first.longitude, maxLng = _routePoints.first.longitude;
     for (final point in _routePoints) {
       if (point.latitude < minLat) minLat = point.latitude;
       if (point.latitude > maxLat) maxLat = point.latitude;
       if (point.longitude < minLng) minLng = point.longitude;
       if (point.longitude > maxLng) maxLng = point.longitude;
     }
-
-    _mapController!.animateCamera(
-      CameraUpdate.newLatLngBounds(
-        LatLngBounds(
-          southwest: LatLng(minLat, minLng),
-          northeast: LatLng(maxLat, maxLng),
-        ),
-        80.0,
-      ),
-    );
+    _isAnimatingToFit = true;
+    _mapController!.animateCamera(CameraUpdate.newLatLngBounds(
+      LatLngBounds(southwest: LatLng(minLat, minLng), northeast: LatLng(maxLat, maxLng)), 80.0,
+    ));
   }
 
   Future<void> _checkPermission() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return;
-
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) return;
     }
-
     if (permission == LocationPermission.deniedForever) return;
-
-    // Get position immediately so map centers on user right away
     await _getInitialPosition();
     _startLiveTracking();
   }
 
   void _startLiveTracking() {
-    const LocationSettings locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 10,
-    );
-
-    _positionStreamSubscription = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
-      (Position position) {
-        if (mounted) {
-          setState(() {
-            _currentPosition = position;
-            // Set initial pickup location and geocode proper address
-            if (!_showRideOptions && _pickupLocation == null) {
-              _pickupLocation = LatLng(position.latitude, position.longitude);
-              _pickupAddress = 'Detecting location...';
-            }
-          });
-          if (!_showRideOptions && _pickupLocation != null) {
-            _mapController?.animateCamera(
-              CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
-            );
-            _getAddressFromLatLngCoords(position.latitude, position.longitude, isPickup: true);
+    _positionStreamSubscription = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10),
+    ).listen((Position position) {
+      if (mounted) {
+        setState(() {
+          _currentPosition = position;
+          if (!_showRideOptions && _pickupLocation == null && !_hasPreSelectedPickup) {
+            _pickupLocation = LatLng(position.latitude, position.longitude);
+            _pickupAddress = 'Detecting location...';
           }
+        });
+        if (!_hasPreSelectedPickup && !_showRideOptions && _pickupLocation != null) {
+          _mapController?.animateCamera(CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)));
+          _getAddressFromLatLngCoords(position.latitude, position.longitude, isPickup: true);
         }
-      },
-    );
+      }
+    });
   }
 
   Future<void> _getAddressFromLatLngCoords(double lat, double lng, {required bool isPickup}) async {
@@ -448,44 +369,23 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
       final address = await _placesService.getAddressFromLatLng(lat, lng);
       if (address != null && mounted) {
         setState(() {
-          if (isPickup) {
-            _pickupAddress = address;
-          } else {
+          if (isPickup) _pickupAddress = address;
+          else {
             _destinationAddress = address;
-            // Save the resolved destination as a recent location
-            if (_destinationLocation != null) {
-              _saveRecentLocation(address.split(',').first.trim(), address, _destinationLocation!);
-            }
+            if (_destinationLocation != null) _saveRecentLocation(address.split(',').first.trim(), address, _destinationLocation!);
           }
         });
       } else {
-        // Fallback to geocoding package if Google fails or returns null
         List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
         if (placemarks.isNotEmpty && mounted) {
-          Placemark place = placemarks[0];
-          String fallbackAddress = place.name != null && place.name!.isNotEmpty ? place.name! : '';
-          if (place.subLocality != null && place.subLocality!.isNotEmpty) {
-            fallbackAddress += '${fallbackAddress.isNotEmpty ? ', ' : ''}${place.subLocality}';
-          }
-          if (place.locality != null && place.locality!.isNotEmpty) {
-            fallbackAddress += '${fallbackAddress.isNotEmpty ? ', ' : ''}${place.locality}';
-          }
-          fallbackAddress = fallbackAddress.replaceAll(RegExp(r', ,'), ',').trim();
-          if (fallbackAddress.endsWith(',')) fallbackAddress = fallbackAddress.substring(0, fallbackAddress.length - 1).trim();
-          if (fallbackAddress.isEmpty) fallbackAddress = '$lat, $lng';
-          
-          if (mounted) {
-            setState(() {
-              if (isPickup) {
-                _pickupAddress = fallbackAddress;
-              } else {
-                _destinationAddress = fallbackAddress;
-                if (_destinationLocation != null) {
-                  _saveRecentLocation(fallbackAddress.split(',').first.trim(), fallbackAddress, _destinationLocation!);
-                }
-              }
-            });
-          }
+          String fallback = placemarks[0].name ?? '$lat, $lng';
+          setState(() {
+            if (isPickup) _pickupAddress = fallback;
+            else {
+              _destinationAddress = fallback;
+              if (_destinationLocation != null) _saveRecentLocation(fallback.split(',').first.trim(), fallback, _destinationLocation!);
+            }
+          });
         }
       }
     } catch (e) {
@@ -493,102 +393,93 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
     }
   }
 
-  /// Immediately get current location on app open (faster than waiting for stream)
   Future<void> _getInitialPosition() async {
     try {
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10),
-      );
+      final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
       if (!mounted) return;
       setState(() {
         _currentPosition = position;
-        // Set initial pickup location right away
-        if (!_showRideOptions && _pickupLocation == null) {
+        if (!_showRideOptions && _pickupLocation == null && !_hasPreSelectedPickup) {
           _pickupLocation = LatLng(position.latitude, position.longitude);
-          _pickupAddress = 'Detecting location...';
         }
       });
-      if (!_showRideOptions && _pickupLocation != null) {
-        _mapController?.animateCamera(
-          CameraUpdate.newLatLngZoom(LatLng(position.latitude, position.longitude), 15.0),
-        );
-        _getAddressFromLatLngCoords(position.latitude, position.longitude, isPickup: true);
+      if (!_hasPreSelectedPickup && !_showRideOptions && _pickupLocation != null) {
+        _mapController?.animateCamera(CameraUpdate.newLatLngZoom(_pickupLocation!, 15.0));
+        _getAddressFromLatLngCoords(_pickupLocation!.latitude, _pickupLocation!.longitude, isPickup: true);
       }
     } catch (e) {
       debugPrint('Initial position error: $e');
     }
   }
 
-  /// Called when the map stops moving — geocodes the center pin location
   void _onCameraIdle() {
-    if (_mapController == null) return;
-    if (_showRideOptions && !_isConfirmingPickup) return;
-    
-    // In Google Maps, we can't easily get the center during idle without a hack or storing it
-    // But we want to geocode where the center pin is pointing.
+    _isAnimatingToFit = false;
+    _checkInitialSetupComplete();
+
+    // Perform address lookup when camera stops moving
+    final LatLng? target = _isConfirmingPickup || _selectingPickup 
+        ? _pickupLocation 
+        : _destinationLocation;
+        
+    if (target != null && !_showRideOptions) {
+      _getAddressFromLatLngCoords(
+        target.latitude, 
+        target.longitude, 
+        isPickup: _isConfirmingPickup || _selectingPickup
+      );
+    }
+  }
+  
+  void _checkInitialSetupComplete() {
+    if (!_isInitialCameraMove) return;
+    if (_routePoints.isNotEmpty && !_isAnimatingToFit) {
+      if (mounted) setState(() => _isInitialCameraMove = false);
+    }
   }
 
   void _onCameraMove(CameraPosition position) {
-    if (_isInitialCameraMove) return;
+    if (_isInitialCameraMove || _isAnimatingToFit) return;
     if (_showRideOptions && !_isConfirmingPickup) return;
+    
     final center = position.target;
     
-    if (_isConfirmingPickup) {
-      setState(() {
+    // Immediate state update for visual markers only
+    setState(() {
+      if (_isConfirmingPickup || _selectingPickup) {
         _pickupLocation = center;
-        _pickupAddress = 'Loading address...';
-      });
-      _getAddressFromLatLngCoords(center.latitude, center.longitude, isPickup: true);
-      
-      // Debounce route calculation to save API calls and prevent flicker
-      _routeDebounce?.cancel();
-      _routeDebounce = Timer(const Duration(milliseconds: 500), () {
-        if (mounted) _calculateRideDetails();
-      });
-      return;
-    }
-    if (_selectingPickup) {
-      setState(() {
-        _pickupLocation = center;
-        _pickupAddress = 'Loading address...';
-      });
-      _getAddressFromLatLngCoords(center.latitude, center.longitude, isPickup: true);
-    } else {
-      setState(() {
+        _pickupAddress = 'Loading...';
+      } else {
         _destinationLocation = center;
-        _destinationAddress = 'Loading address...';
-      });
-      _getAddressFromLatLngCoords(center.latitude, center.longitude, isPickup: false);
-    }
+        _destinationAddress = 'Loading...';
+      }
+    });
+    
     if (_pickupLocation != null && _destinationLocation != null) {
-      _calculateRideDetails();
+      _routeDebounce?.cancel();
+      _routeDebounce = Timer(const Duration(milliseconds: 600), () => _calculateRideDetails());
     }
   }
 
-  /// Center map on GPS location (and set pickup/destination in selection mode)
   void _centerOnMyLocation() {
     if (_currentPosition == null) return;
     final pos = _currentPosition!;
-    _mapController?.animateCamera(
-      CameraUpdate.newLatLng(LatLng(pos.latitude, pos.longitude)),
-    );
-
+    final myLatLng = LatLng(pos.latitude, pos.longitude);
+    
+    _mapController?.animateCamera(CameraUpdate.newLatLng(myLatLng));
+    
     // In ride options mode, just re-center the map (Uber/Pathao behavior)
     if (_showRideOptions) return;
 
-    final isPickup = _selectingPickup;
     setState(() {
-      if (isPickup) {
-        _pickupLocation = LatLng(pos.latitude, pos.longitude);
-        _pickupAddress = 'Loading address...';
-        _selectingPickup = false;
+      if (_isConfirmingPickup || _selectingPickup) {
+        _pickupLocation = myLatLng;
+        _getAddressFromLatLngCoords(pos.latitude, pos.longitude, isPickup: true);
       } else {
-        _destinationLocation = LatLng(pos.latitude, pos.longitude);
-        _destinationAddress = 'Loading address...';
+        _destinationLocation = myLatLng;
+        _getAddressFromLatLngCoords(pos.latitude, pos.longitude, isPickup: false);
       }
     });
-    _getAddressFromLatLngCoords(pos.latitude, pos.longitude, isPickup: isPickup);
+    
     if (_pickupLocation != null && _destinationLocation != null) {
       _calculateRideDetails();
     }
@@ -602,49 +493,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
       body: Stack(
         children: [
           _buildMap(),
-          
-          // Center map pin — stays fixed while user drags the map
-          if (!_showRideOptions || _isConfirmingPickup)
-            Align(
-              alignment: Alignment.center,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 35), // Position pin tip at center
-                child: FractionalTranslation(
-                  translation: const Offset(0, -0.08), // Slight upward offset for visual pin placement
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    child: Column(
-                      key: ValueKey(_isConfirmingPickup ? 'confirm' : _selectingPickup),
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Pin icon (bottom layer)
-                        Icon(
-                          Icons.location_on,
-                          color: _isConfirmingPickup || _selectingPickup 
-                              ? const Color(0xFF10713C) 
-                              : const Color(0xFFED1C24),
-                          size: 45,
-                        ),
-                        // Pin shadow (positioned just below the pin tip)
-                        Container(
-                          width: 12,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.black26,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-          // Bottom UI Components
           _buildBottomUI(),
-          
-          // My Location Button
           Positioned(
             right: 16,
             bottom: _showRideOptions ? 420 : 320,
@@ -655,10 +504,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
               child: const Icon(Icons.my_location, color: Colors.black87),
             ),
           ),
-
-          // Loading overlay
-          if (_isLoadingRoute)
-            const Center(child: CircularProgressIndicator(color: Color(0xFF10713C))),
+          if (_isLoadingRoute) const Center(child: CircularProgressIndicator(color: Color(0xFF10713C))),
         ],
       ),
     );
@@ -674,11 +520,8 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
           child: IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.black, size: 20),
             onPressed: () {
-              if (_isConfirmingPickup) {
-                setState(() => _isConfirmingPickup = false);
-              } else {
-                Navigator.pop(context);
-              }
+              if (_isConfirmingPickup) setState(() => _isConfirmingPickup = false);
+              else Navigator.pop(context);
             },
           ),
         ),
@@ -723,14 +566,12 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   Widget _buildMap() {
     return GoogleMap(
       initialCameraPosition: CameraPosition(
-        target: _currentPosition != null
-            ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude)
-            : _dhakaCenterFallback,
+        target: _pickupLocation ?? _dhakaCenterFallback,
         zoom: 15,
       ),
       onMapCreated: (controller) {
         _mapController = controller;
-        if (_routePoints.isNotEmpty) _fitRoute();
+        if (_hasPreSelectedPickup && _hasPreSelectedDest) _fitCameraToLocations(_pickupLocation!, _destinationLocation!);
       },
       onCameraMove: _onCameraMove,
       onCameraIdle: _onCameraIdle,
@@ -738,14 +579,14 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
       myLocationEnabled: true,
       myLocationButtonEnabled: false,
       zoomControlsEnabled: false,
-      mapToolbarEnabled: false,
       markers: {
-        if (_pickupLocation != null && !_isConfirmingPickup)
+        if (_pickupLocation != null)
           Marker(
             markerId: const MarkerId('pickup'),
             position: _pickupLocation!,
             icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
             infoWindow: InfoWindow(title: 'Pickup', snippet: _pickupAddress),
+            anchor: const Offset(0.5, 1.0),
           ),
         if (_destinationLocation != null)
           Marker(
@@ -753,40 +594,33 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
             position: _destinationLocation!,
             icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
             infoWindow: InfoWindow(title: 'Destination', snippet: _destinationAddress),
+            anchor: const Offset(0.5, 1.0),
           ),
         ..._driverMarkers,
       },
       circles: {
         if (_pickupLocation != null)
-          Circle(
-            circleId: const CircleId('pickup_circle'),
-            center: _pickupLocation!,
-            radius: 12,
-            fillColor: Colors.green.withOpacity(0.3),
-            strokeColor: Colors.white,
-            strokeWidth: 3,
-          ),
+          Circle(circleId: const CircleId('p_c'), center: _pickupLocation!, radius: 12, fillColor: Colors.green.withOpacity(0.3), strokeWidth: 2),
         if (_destinationLocation != null)
-          Circle(
-            circleId: const CircleId('dest_circle'),
-            center: _destinationLocation!,
-            radius: 12,
-            fillColor: Colors.red.withOpacity(0.3),
-            strokeColor: Colors.white,
-            strokeWidth: 3,
-          ),
+          Circle(circleId: const CircleId('d_c'), center: _destinationLocation!, radius: 12, fillColor: Colors.red.withOpacity(0.3), strokeWidth: 2),
       },
       polylines: {
         if (_routePoints.isNotEmpty)
           Polyline(
-            polylineId: const PolylineId('route'),
+            polylineId: const PolylineId('r'),
             points: _routePoints,
             color: const Color(0xFF10713C),
             width: 5,
             jointType: JointType.round,
-            startCap: Cap.roundCap,
-            endCap: Cap.roundCap,
-            geodesic: true,
+          )
+        else if (_pickupLocation != null && _destinationLocation != null)
+          // Dynamic direction indicator line while panning
+          Polyline(
+            polylineId: const PolylineId('direction_line'),
+            points: [_pickupLocation!, _destinationLocation!],
+            color: const Color(0xFF10713C).withOpacity(0.6),
+            width: 3,
+            patterns: [PatternItem.dash(15), PatternItem.gap(10)],
           ),
       },
     );
@@ -828,19 +662,9 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
               Expanded(
                 child: Column(
                   children: [
-                    _buildLocationField(
-                      'Pickup Location',
-                      _pickupAddress,
-                      _selectingPickup,
-                      () => setState(() => _selectingPickup = true),
-                    ),
+                    _buildLocationField('Pickup (From)', _pickupAddress, _selectingPickup, () => setState(() => _selectingPickup = true)),
                     const Divider(height: 20),
-                    _buildLocationField(
-                      'Where to?',
-                      _destinationAddress,
-                      !_selectingPickup,
-                      () => setState(() => _selectingPickup = false),
-                    ),
+                    _buildLocationField('Destination (To)', _destinationAddress, !_selectingPickup, () => setState(() => _selectingPickup = false)),
                   ],
                 ),
               ),
@@ -852,21 +676,14 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
             height: 55,
             child: ElevatedButton(
               onPressed: () {
-                if (_selectingPickup) {
-                  setState(() => _selectingPickup = false);
-                } else if (_pickupLocation != null && _destinationLocation != null) {
+                if (_selectingPickup) setState(() => _selectingPickup = false);
+                else if (_pickupLocation != null && _destinationLocation != null) {
                   setState(() => _isConfirmingPickup = true);
+                  _mapController?.animateCamera(CameraUpdate.newLatLngZoom(_pickupLocation!, 16.0));
                 }
               },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF10713C),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                elevation: 0,
-              ),
-              child: Text(
-                _selectingPickup ? 'Confirm Pickup' : 'Select Destination',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-              ),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10713C), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+              child: Text(_selectingPickup ? 'Next: Select Destination' : 'Confirm Destination', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
             ),
           ),
         ],
@@ -880,25 +697,12 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 8),
         width: double.infinity,
-        decoration: BoxDecoration(
-          color: isActive ? Colors.grey[50] : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-        ),
+        decoration: BoxDecoration(color: isActive ? Colors.grey[50] : Colors.transparent, borderRadius: BorderRadius.circular(10)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[500])),
-            const SizedBox(height: 4),
-            Text(
-              address,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
-                color: isActive ? Colors.black : Colors.black54,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            Text(label, style: TextStyle(fontSize: 12, color: isActive ? const Color(0xFF10713C) : Colors.grey[500], fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
+            Text(address, style: TextStyle(fontSize: 15, fontWeight: isActive ? FontWeight.bold : FontWeight.w500, color: isActive ? Colors.black : Colors.black54), maxLines: 1, overflow: TextOverflow.ellipsis),
           ],
         ),
       ),
@@ -908,110 +712,33 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   Widget _buildConfirmPickupPanel() {
     return Container(
       padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + MediaQuery.of(context).padding.bottom),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.only(topLeft: Radius.circular(30), topRight: Radius.circular(30)),
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20, spreadRadius: 5)],
-      ),
+      decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.only(topLeft: Radius.circular(30), topRight: Radius.circular(30)), boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20)]),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
-            ),
-          ),
-          
-          // Destination Info (Read-only during pickup confirmation)
-          Row(
-            children: [
-              const Icon(Icons.location_on, color: Color(0xFFED1C24), size: 18),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'To: $_destinationAddress',
-                  style: const TextStyle(fontSize: 14, color: Colors.black54),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          const Padding(
-            padding: EdgeInsets.only(left: 8),
-            child: SizedBox(height: 10, child: VerticalDivider(width: 2, color: Colors.black12)),
-          ),
-          
-          // Pickup Info (Active)
-          Row(
-            children: [
-              const Icon(Icons.my_location, color: Color(0xFF10713C), size: 18),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Confirm Pickup Spot', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w600)),
-                    Text(
-                      _pickupAddress,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          
+          Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20), decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)))),
+          Row(children: [
+            const Icon(Icons.my_location, color: Color(0xFF10713C), size: 18),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('From: Pickup Spot', style: TextStyle(fontSize: 12, color: Color(0xFF10713C), fontWeight: FontWeight.bold)),
+              Text(_pickupAddress, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
+            ])),
+          ]),
+          const Padding(padding: EdgeInsets.only(left: 8), child: SizedBox(height: 15, child: VerticalDivider(width: 2, color: Colors.black12))),
+          Row(children: [
+            const Icon(Icons.location_on, color: Color(0xFFED1C24), size: 18),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('To: Destination', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w600)),
+              Text(_destinationAddress, style: const TextStyle(fontSize: 14, color: Colors.black54), maxLines: 1, overflow: TextOverflow.ellipsis),
+            ])),
+          ]),
           const SizedBox(height: 20),
-          
-          // Distance summary
-          if (_distance > 0)
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF10713C).withOpacity(0.08),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.straighten, size: 16, color: Color(0xFF10713C)),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${_distance.toStringAsFixed(1)} km to destination',
-                    style: const TextStyle(color: Color(0xFF10713C), fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-            ),
-
+          if (_distance > 0) Container(padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12), decoration: BoxDecoration(color: const Color(0xFF10713C).withOpacity(0.08), borderRadius: BorderRadius.circular(10)), child: Text('${_distance.toStringAsFixed(1)} km to destination', style: const TextStyle(color: Color(0xFF10713C), fontWeight: FontWeight.bold))),
           const SizedBox(height: 24),
-          
-          SizedBox(
-            width: double.infinity,
-            height: 55,
-            child: ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  _isConfirmingPickup = false;
-                  _isRouteVisible = true;
-                });
-                _calculateRideDetails();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF10713C),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                elevation: 0,
-              ),
-              child: const Text('Confirm Pickup', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white)),
-            ),
-          ),
+          SizedBox(width: double.infinity, height: 55, child: ElevatedButton(onPressed: () { setState(() { _isConfirmingPickup = false; _isRouteVisible = true; }); _calculateRideDetails(); }, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10713C), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))), child: const Text('Confirm Pickup Spot', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white)))),
         ],
       ),
     );
@@ -1020,117 +747,48 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   Widget _buildRideOptionsPanel() {
     return Container(
       padding: EdgeInsets.fromLTRB(20, 10, 20, 30 + MediaQuery.of(context).padding.bottom),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.only(topLeft: Radius.circular(25), topRight: Radius.circular(25)),
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)],
-      ),
+      decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.only(topLeft: Radius.circular(25), topRight: Radius.circular(25)), boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)]),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20), decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
-          
-          // Distance & Time Info
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildInfoChip(Icons.straighten, '${_distance.toStringAsFixed(1)} km'),
-              _buildInfoChip(Icons.access_time, '$_routeDuration min'),
-              _buildInfoChip(Icons.payments_outlined, 'Cash'),
-            ],
-          ),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            _buildInfoChip(Icons.straighten, '${_distance.toStringAsFixed(1)} km'),
+            _buildInfoChip(Icons.access_time, '$_routeDuration min'),
+            _buildInfoChip(Icons.payments_outlined, 'Cash'),
+          ]),
           const SizedBox(height: 20),
-          
-          // Ride types
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _buildRideType('motor', 'Motor', 'assets/motor.png', 0.6),
-                _buildRideType('car', 'Car', 'assets/car.png', 1.0),
-                _buildRideType('rent_car', 'Rent Car', 'assets/rent_car.png', 1.5),
-                _buildRideType('ambulance', 'Ambulance', 'assets/ambulance.png', 1.2),
-              ],
-            ),
-          ),
-          
+          SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
+            _buildRideType('motor', 'Motor', 'assets/motor.png', 0.6),
+            _buildRideType('car', 'Car', 'assets/car.png', 1.0),
+            _buildRideType('rent_car', 'Rent Car', 'assets/rent_car.png', 1.5),
+            _buildRideType('ambulance', 'Ambulance', 'assets/ambulance.png', 1.2),
+          ])),
           const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            height: 55,
-            child: ElevatedButton(
-              onPressed: _bookRide,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF10713C),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                elevation: 0,
-              ),
-              child: const Text('Book Ride Now', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-            ),
-          ),
+          SizedBox(width: double.infinity, height: 55, child: ElevatedButton(onPressed: _bookRide, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10713C), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))), child: const Text('Book Ride Now', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)))),
         ],
       ),
     );
   }
 
   Widget _buildInfoChip(IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(20)),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: Colors.grey[600]),
-          const SizedBox(width: 6),
-          Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
-        ],
-      ),
-    );
+    return Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(20)), child: Row(children: [Icon(icon, size: 16, color: Colors.grey[600]), const SizedBox(width: 6), Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))]));
   }
 
   Widget _buildRideType(String id, String name, String asset, double multiplier) {
     final isSelected = _selectedRide == id;
-    final price = _price * multiplier;
-    
     return GestureDetector(
       onTap: () => setState(() => _selectedRide = id),
-      child: Container(
-        width: 110,
-        margin: const EdgeInsets.only(right: 12),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF10713C).withOpacity(0.05) : Colors.transparent,
-          borderRadius: BorderRadius.circular(15),
-          border: Border.all(color: isSelected ? const Color(0xFF10713C) : Colors.grey[200]!, width: 1.5),
-        ),
-        child: Column(
-          children: [
-            Image.asset(asset, height: 40),
-            const SizedBox(height: 8),
-            Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            Text('৳${price.toStringAsFixed(0)}', style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500)),
-          ],
-        ),
-      ),
+      child: Container(width: 110, margin: const EdgeInsets.only(right: 12), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: isSelected ? const Color(0xFF10713C).withOpacity(0.05) : Colors.transparent, borderRadius: BorderRadius.circular(15), border: Border.all(color: isSelected ? const Color(0xFF10713C) : Colors.grey[200]!, width: 1.5)), child: Column(children: [Image.asset(asset, height: 40), const SizedBox(height: 8), Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)), Text('৳${(_price * multiplier).toStringAsFixed(0)}', style: TextStyle(fontSize: 12, color: Colors.grey[600]))])),
     );
   }
 
   void _bookRide() async {
-    if (_selectedRide == null) {
-      Get.snackbar('Select Ride', 'Please choose a ride type', backgroundColor: Colors.white70);
-      return;
-    }
-
-    // Pass data to live tracking
+    if (_selectedRide == null) return;
     Get.to(() => LiveTrackingScreen(
-      rideType: _selectedRide!,
-      pickupAddress: _pickupAddress,
-      destinationAddress: _destinationAddress,
-      price: _price, // Base price or calculated per type
-      pickupLat: _pickupLocation!.latitude,
-      pickupLng: _pickupLocation!.longitude,
-      destLat: _destinationLocation!.latitude,
-      destLng: _destinationLocation!.longitude,
+      rideType: _selectedRide!, pickupAddress: _pickupAddress, destinationAddress: _destinationAddress,
+      price: _price, pickupLat: _pickupLocation!.latitude, pickupLng: _pickupLocation!.longitude,
+      destLat: _destinationLocation!.latitude, destLng: _destinationLocation!.longitude,
     ));
   }
 }

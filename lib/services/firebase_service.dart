@@ -165,6 +165,7 @@ class FirebaseService extends GetxService {
     required double destLat,
     required double destLng,
     required String destAddress,
+    required String tripId,
   }) async {
     final coll = rideRequests;
     if (coll == null) return null;
@@ -178,6 +179,7 @@ class FirebaseService extends GetxService {
       'destLatitude': destLat,
       'destLongitude': destLng,
       'destAddress': destAddress,
+      'tripId': tripId,
       'status': 'pending',
       'createdAt': FieldValue.serverTimestamp(),
     });

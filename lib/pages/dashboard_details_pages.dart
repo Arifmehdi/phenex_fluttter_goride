@@ -285,7 +285,7 @@ class _UserManagementScreenState extends State<UserManagementScreen>
           unselectedLabelColor: Colors.white70,
           indicatorColor: Colors.white,
           tabs: const [
-            Tab(text: 'Drivers'),
+            Tab(text: 'Riders'),
             Tab(text: 'Owners'),
             Tab(text: 'Corporate'),
           ],
@@ -1121,7 +1121,7 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
           const Divider(),
           _buildSectionHeader('Approval Settings'),
           _settingsTile(
-            'Driver Approval',
+            'Rider Approval',
             'Manual driver approval required',
             Icons.approval,
             trailing: Switch(

@@ -88,6 +88,7 @@ class RideService extends GetxService {
         destLat: destLat,
         destLng: destLng,
         destAddress: destAddress,
+        tripId: tripId ?? '',
       );
 
       currentTripId.value = tripId ?? '';
@@ -176,19 +177,36 @@ class RideService extends GetxService {
   }
 
   /// Accept a ride request (driver side)
-  Future<bool> acceptRideRequest(String tripId, {int? laravelRideId}) async {
+  Future<bool> acceptRideRequest(String requestId, {int? laravelRideId, String? tripId}) async {
     final user = _apiService.getUser();
     final driverId = user?['id']?.toString() ?? _apiService.getToken() ?? 'driver';
 
     try {
-      await _firebaseService.assignDriverToTrip(tripId, driverId);
+      // 1. Update the ride request status
+      await _firebaseService.acceptRideRequest(requestId, driverId);
+
+      // 2. Update the active trip (assign driver)
+      String finalTripId = tripId ?? '';
+      
+      // If tripId is not provided, we should ideally fetch it from the requestId doc
+      // For now, if we assume they might be different, we need tripId.
+      // If we don't have it, we use requestId as a fallback (some old logic might rely on this)
+      if (finalTripId.isEmpty) {
+        finalTripId = requestId; 
+      }
+
+      await _firebaseService.assignDriverToTrip(finalTripId, driverId);
 
       if (laravelRideId != null) {
         await _apiService.updateRideStatus(laravelRideId, 'accepted');
       }
 
+      currentTripId.value = finalTripId;
       assignedDriverId.value = driverId;
       tripStatus.value = 'accepted';
+
+      // Start listening to the trip we just accepted
+      _listenToTrip(finalTripId);
 
       return true;
     } catch (e) {

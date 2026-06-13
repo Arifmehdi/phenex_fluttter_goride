@@ -12,9 +12,9 @@ class SslCommerzService extends g.GetxController {
   Future<String?> initiatePayment({
     required double amount,
     required String transactionId,
-    required String customerName,
-    required String customerEmail,
-    required String customerPhone,
+    required String passengerName,
+    required String passengerEmail,
+    required String passengerPhone,
   }) async {
     final String baseWebUrl = ApiService.baseUrl.replaceAll('/api/', '/');
 
@@ -28,13 +28,13 @@ class SslCommerzService extends g.GetxController {
         'success_url': '${baseWebUrl}success',
         'fail_url': '${baseWebUrl}fail',
         'cancel_url': '${baseWebUrl}cancel',
-        'cus_name': customerName,
-        'cus_email': customerEmail,
+        'cus_name': passengerName,
+        'cus_email': passengerEmail,
         'cus_add1': 'Dhaka',
         'cus_city': 'Dhaka',
         'cus_postcode': '1212',
         'cus_country': 'Bangladesh',
-        'cus_phone': customerPhone,
+        'cus_phone': passengerPhone,
         'shipping_method': 'NO',
         'product_name': 'Ride Booking',
         'product_category': 'Service',

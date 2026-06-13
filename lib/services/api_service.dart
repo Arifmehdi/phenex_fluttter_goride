@@ -94,6 +94,8 @@ class ApiService extends g.GetxController {
         if (response.data['role'] != null) {
           await _storage.write('role', response.data['role']);
         }
+        // Store approval status
+        await _storage.write('is_approved', response.data['is_approved'] ?? true);
         _isLoggedIn.value = true;
       }
       
@@ -198,5 +200,37 @@ class ApiService extends g.GetxController {
 
   Future<Response> getActiveRide() async {
     return await _dio.get('/active-ride');
+  }
+
+  // ── Password Reset ──
+
+  Future<Response> forgotPassword(String email) async {
+    try {
+      final response = await _dio.post('/forgot-password', data: {
+        'email': email,
+      });
+      return response;
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+    }
+  }
+
+  Future<Response> resetPassword({
+    required String email,
+    required String token,
+    required String password,
+    required String passwordConfirmation,
+  }) async {
+    try {
+      final response = await _dio.post('/reset-password', data: {
+        'email': email,
+        'token': token,
+        'password': password,
+        'password_confirmation': passwordConfirmation,
+      });
+      return response;
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+    }
   }
 }

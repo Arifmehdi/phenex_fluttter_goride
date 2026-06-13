@@ -30,15 +30,17 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
   final FirebaseService _firebaseService = Get.find<FirebaseService>();
   final RideService _rideService = Get.find<RideService>();
   
-  bool _isOnline = false;
+   bool _isOnline = true;
   int _selectedIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   void initState() {
     super.initState();
-    // Initialize online status based on location service if needed
-    _isOnline = _locationService.isTracking.value;
+    // Default driver to online immediately after login
+    if (widget.role == 'driver' && !_locationService.isTracking.value) {
+      _toggleOnlineStatus(true);
+    }
   }
 
   Future<void> _toggleOnlineStatus(bool online) async {
@@ -85,7 +87,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
           index: _selectedIndex,
           children: [
             _buildHomeTab(),
-            _buildSecondaryTab(), // 'Bids' for Driver, 'Fleet' for Owner/Corporate/Admin
+            _buildSecondaryTab(), // 'Bids' for Rider, 'Fleet' for Owner/Corporate/Admin
             _buildEarningsTab(),
             _buildProfileTab(),
           ],
@@ -141,7 +143,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
   AppBar _buildAppBar() {
     String title = '';
     if (widget.role == 'driver')
-      title = localeController.get('Driver Dashboard', 'ড্রাইভার ড্যাশবোর্ড');
+      title = localeController.get('Rider Dashboard', 'রাইডার ড্যাশবোর্ড');
     if (widget.role == 'owner')
       title = localeController.get('Owner Dashboard', 'মালিক ড্যাশবোর্ড');
     if (widget.role == 'corporate')
@@ -340,7 +342,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
           'color': Colors.green,
         },
         {
-          'label': localeController.get('Drivers', 'ড্রাইভার'),
+          'label': localeController.get('Riders', 'রাইডার'),
           'value': '3',
           'icon': Icons.people,
           'color': Colors.purple,
@@ -388,7 +390,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
           'color': Colors.blue,
         },
         {
-          'label': localeController.get('Active Drivers', 'সক্রিয় ড্রাইভার'),
+          'label': localeController.get('Active Riders', 'সক্রিয় রাইডার'),
           'value': '85',
           'icon': Icons.drive_eta,
           'color': Colors.green,
@@ -498,7 +500,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
                 final data = doc.data() as Map<String, dynamic>;
                 final String pickup = data['pickupAddress'] ?? 'Unknown';
                 final String destination = data['destAddress'] ?? 'Unknown';
-                final String riderName = data['riderName'] ?? 'Customer';
+                final String riderName = data['riderName'] ?? 'Passenger';
                 
                 return _buildRequestCard(
                   '$pickup to $destination',
@@ -567,10 +569,11 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
           ElevatedButton(
             onPressed: () async {
               Get.back();
-              // In a real app, we might want to get the Laravel ID too
-              final success = await _rideService.acceptRideRequest(requestId);
+              final String? tripId = data['tripId'];
+              final success = await _rideService.acceptRideRequest(requestId, tripId: tripId);
               if (success) {
                 Get.to(() => LiveTrackingScreen(
+                  role: 'driver',
                   rideType: data['rideType'] ?? 'car',
                   pickupAddress: data['pickupAddress'] ?? 'Pickup',
                   destinationAddress: data['destAddress'] ?? 'Destination',
@@ -579,7 +582,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
                   pickupLng: (data['pickupLongitude'] as num?)?.toDouble() ?? 0.0,
                   destLat: (data['destLatitude'] as num?)?.toDouble() ?? 0.0,
                   destLng: (data['destLongitude'] as num?)?.toDouble() ?? 0.0,
-                  tripId: requestId,
+                  tripId: tripId ?? requestId,
                 ));
               }
             },
@@ -671,7 +674,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
         _buildAdminCard(
           Icons.people,
           'User Management',
-          'Manage drivers, owners & corporates',
+          'Manage riders, owners & corporates',
           Colors.blue,
         ),
         _buildAdminCard(
