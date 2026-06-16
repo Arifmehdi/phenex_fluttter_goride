@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../locale_controller.dart';
+import '../services/api_service.dart';
 
 // ============== EDIT PROFILE SCREEN ==============
 class EditProfileScreen extends StatelessWidget {
@@ -9,6 +10,9 @@ class EditProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final localeController = Get.find<LocaleController>();
+    final apiService = Get.find<ApiService>();
+    final user = apiService.getUser();
+    
     return Scaffold(
       appBar: AppBar(
         title: Text(localeController.get('Edit Profile', 'প্রোফাইল এডিট')),
@@ -24,19 +28,19 @@ class EditProfileScreen extends StatelessWidget {
             const SizedBox(height: 20),
             _buildField(
               localeController.get('Full Name', 'পুরো নাম'),
-              'Karim Ahmed',
+              user?['name'] ?? 'Guest User',
             ),
             _buildField(
               localeController.get('Email', 'ইমেইল'),
-              'karim@example.com',
+              user?['email'] ?? 'user@example.com',
             ),
             _buildField(
               localeController.get('Phone', 'ফোন'),
-              '+880 1700000000',
+              user?['phone'] ?? '+880 1700000000',
             ),
             _buildField(
               localeController.get('Address', 'ঠিকানা'),
-              'Dhaka, Bangladesh',
+              user?['address'] ?? 'Dhaka, Bangladesh',
             ),
             const SizedBox(height: 30),
             SizedBox(

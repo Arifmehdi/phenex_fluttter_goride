@@ -65,6 +65,7 @@ class FirebaseService extends GetxService {
     required double heading,
     required double speed,
     required bool isOnline,
+    String? vehicleType,
     String? currentTripId,
   }) async {
     final coll = driverLocations;
@@ -76,6 +77,7 @@ class FirebaseService extends GetxService {
       'heading': heading,
       'speed': speed,
       'isOnline': isOnline,
+      'vehicleType': vehicleType ?? 'car',
       'currentTripId': currentTripId ?? '',
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -159,6 +161,7 @@ class FirebaseService extends GetxService {
   Future<String?> createRideRequest({
     required String riderId,
     required String riderName,
+    required String rideType,
     required double pickupLat,
     required double pickupLng,
     required String pickupAddress,
@@ -166,6 +169,7 @@ class FirebaseService extends GetxService {
     required double destLng,
     required String destAddress,
     required String tripId,
+    required double fare,
   }) async {
     final coll = rideRequests;
     if (coll == null) return null;
@@ -173,6 +177,7 @@ class FirebaseService extends GetxService {
     final docRef = await coll.add({
       'riderId': riderId,
       'riderName': riderName,
+      'rideType': rideType,
       'pickupLatitude': pickupLat,
       'pickupLongitude': pickupLng,
       'pickupAddress': pickupAddress,
@@ -180,6 +185,7 @@ class FirebaseService extends GetxService {
       'destLongitude': destLng,
       'destAddress': destAddress,
       'tripId': tripId,
+      'fare': fare,
       'status': 'pending',
       'createdAt': FieldValue.serverTimestamp(),
     });

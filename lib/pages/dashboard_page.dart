@@ -54,11 +54,14 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
 
     setState(() => _isOnline = online);
 
+    final vehicleType = user?['vehicle_type']?.toString().toLowerCase();
+
     if (online) {
       // Start tracking and sync to Firestore
       await _locationService.startTracking(
         syncToFirestore: true,
         driverId: driverId,
+        vehicleType: vehicleType,
         isOnline: true,
       );
       Get.snackbar('Online', 'You are now online and can receive ride requests.');
@@ -212,7 +215,8 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
   }
 
   Widget _buildWelcomeHeader() {
-    String name = widget.role == 'corporate' ? 'TechCorp Ltd.' : 'Karim Ahmed';
+    final user = _apiService.getUser();
+    String name = user?['name'] ?? (widget.role == 'corporate' ? 'TechCorp Ltd.' : 'Guest User');
     return Row(
       children: [
         CircleAvatar(
@@ -505,7 +509,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
                 return _buildRequestCard(
                   '$pickup to $destination',
                   riderName,
-                  '৳ ${data['fare'] ?? '0'}',
+                  '৳ ${(data['fare'] as num?)?.round() ?? '0'}',
                   doc.id,
                   data,
                 );

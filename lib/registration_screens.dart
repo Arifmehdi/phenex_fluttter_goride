@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'locale_controller.dart';
+import 'services/api_service.dart';
 import 'package:image_picker/image_picker.dart';
 
 class OwnerProfileScreen extends StatefulWidget {
@@ -415,6 +416,7 @@ class DriverDashboardScreen extends StatefulWidget {
 
 class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   final LocaleController localeController = Get.find<LocaleController>();
+  final ApiService _apiService = Get.find<ApiService>();
   bool _isOnline = false;
   
   // Simulation of profile completeness
@@ -423,6 +425,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final isCorporate = widget.userRole == 'corporate';
+    final user = _apiService.getUser();
+    final name = user?['name'] ?? (isCorporate ? 'TechCorp Ltd.' : 'Guest User');
     
     return Scaffold(
       appBar: AppBar(
@@ -451,7 +455,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildProfileSummary(isCorporate),
+            _buildProfileSummary(isCorporate, name),
             const SizedBox(height: 20),
             _buildProgressSection(),
             const SizedBox(height: 24),
@@ -468,7 +472,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     );
   }
 
-  Widget _buildProfileSummary(bool isCorporate) {
+  Widget _buildProfileSummary(bool isCorporate, String name) {
     return Row(
       children: [
         CircleAvatar(
@@ -481,7 +485,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              isCorporate ? 'TechCorp Ltd.' : 'Karim Ahmed',
+              name,
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             Text(

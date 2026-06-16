@@ -25,6 +25,7 @@ class LocationService extends GetxService {
   bool _isUpdatingFirestore = false;
   bool _isUpdatingApi = false;
   String? _driverId;
+  String? _vehicleType;
   String? _currentTripId;
   bool _isOnline = false;
   LatLng? _lastSyncedLocation;
@@ -84,6 +85,7 @@ class LocationService extends GetxService {
   Future<void> startTracking({
     bool syncToFirestore = false,
     String? driverId,
+    String? vehicleType,
     bool isOnline = false,
     String? tripId,
   }) async {
@@ -93,6 +95,7 @@ class LocationService extends GetxService {
     if (!hasPermission) return;
 
     _driverId = driverId;
+    _vehicleType = vehicleType;
     _isOnline = isOnline;
     _currentTripId = tripId;
 
@@ -157,11 +160,13 @@ class LocationService extends GetxService {
         heading: heading.value,
         speed: speed.value,
         isOnline: false,
+        vehicleType: _vehicleType,
       );
     }
 
     _isOnline = false;
     _driverId = null;
+    _vehicleType = null;
     _currentTripId = null;
   }
 
@@ -179,6 +184,7 @@ class LocationService extends GetxService {
         heading: heading.value,
         speed: speed.value,
         isOnline: _isOnline,
+        vehicleType: _vehicleType,
         currentTripId: _currentTripId,
       );
     } catch (e) {

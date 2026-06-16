@@ -1546,6 +1546,7 @@ class DriverDashboardScreen extends StatefulWidget {
 }
 
 class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
+  final ApiService _apiService = Get.find<ApiService>();
   int _selectedIndex = 0;
 
   @override
@@ -1622,9 +1623,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               child: Icon(Icons.person, size: 40, color: Colors.white),
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Welcome, Karim Ahmed!',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            Text(
+              'Welcome, ${_apiService.getUser()?['name'] ?? 'User'}!',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             // Stats cards
@@ -1935,23 +1936,23 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Padding(
-          padding: EdgeInsets.only(top: 16, bottom: 24),
+        Padding(
+          padding: const EdgeInsets.only(top: 16, bottom: 24),
           child: Center(
             child: Column(
               children: [
-                CircleAvatar(
+                const CircleAvatar(
                   radius: 50,
                   backgroundColor: Color(0xFF10713C),
                   child: Icon(Icons.person, size: 50, color: Colors.white),
                 ),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 Text(
-                  'Karim Ahmed',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  _apiService.getUser()?['name'] ?? 'User',
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
-                SizedBox(height: 4),
-                Text('+880 1700-000000', style: TextStyle(color: Colors.grey)),
+                const SizedBox(height: 4),
+                const Text('+880 1700-000000', style: TextStyle(color: Colors.grey)),
               ],
             ),
           ),
@@ -2007,6 +2008,7 @@ class CorporateDashboardScreen extends StatefulWidget {
 }
 
 class _CorporateDashboardScreenState extends State<CorporateDashboardScreen> {
+  final ApiService _apiService = Get.find<ApiService>();
   int _selectedIndex = 0;
 
   @override
@@ -2068,15 +2070,17 @@ class _CorporateDashboardScreenState extends State<CorporateDashboardScreen> {
   }
 
   Widget _buildDashboardTab() {
+    final user = _apiService.getUser();
+    final companyName = user?['name'] ?? 'TechCorp Ltd.';
     return SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'TechCorp Ltd.',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            Text(
+              companyName,
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             // Stats grid
@@ -2362,26 +2366,29 @@ class _CorporateDashboardScreenState extends State<CorporateDashboardScreen> {
   }
 
   Widget _buildProfileTab() {
+    final user = _apiService.getUser();
+    final companyName = user?['name'] ?? 'TechCorp Ltd.';
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Padding(
-          padding: EdgeInsets.only(top: 16, bottom: 24),
+        Padding(
+          padding: const EdgeInsets.only(top: 16, bottom: 24),
           child: Center(
             child: Column(
               children: [
-                CircleAvatar(
+                const CircleAvatar(
                   radius: 50,
                   backgroundColor: Color(0xFF10713C),
                   child: Icon(Icons.business, size: 50, color: Colors.white),
                 ),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 Text(
-                  'TechCorp Ltd.',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  companyName,
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
-                SizedBox(height: 4),
-                Text('Corporate Account', style: TextStyle(color: Colors.grey)),
+                const SizedBox(height: 4),
+                const Text('Corporate Account', style: TextStyle(color: Colors.grey)),
               ],
             ),
           ),

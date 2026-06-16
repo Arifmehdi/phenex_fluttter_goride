@@ -78,6 +78,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   List<RecentLocation> _recentLocations = [];
 
   BitmapDescriptor? _carIcon;
+  BitmapDescriptor? _bikeIcon;
 
   bool _isInitialCameraMove = true;
   bool _hasPreSelectedPickup = false;
@@ -162,6 +163,10 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
       const ImageConfiguration(size: Size(30, 30)),
       'assets/car.png',
     );
+    _bikeIcon = await BitmapDescriptor.fromAssetImage(
+      const ImageConfiguration(size: Size(30, 30)),
+      'assets/motor.png',
+    );
   }
 
   void _listenToNearbyDrivers() {
@@ -199,14 +204,17 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
           final lat = data['latitude'] as double;
           final lng = data['longitude'] as double;
           final heading = (data['heading'] as num?)?.toDouble() ?? 0.0;
+          final vehicleType = data['vehicleType'] as String? ?? 'car';
           
           return Marker(
             markerId: MarkerId(doc.id),
             position: LatLng(lat, lng),
-            icon: _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+            icon: (vehicleType == 'motor' || vehicleType == 'bike') 
+                ? (_bikeIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue))
+                : (_carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen)),
             rotation: heading,
             anchor: const Offset(0.5, 0.5),
-            infoWindow: InfoWindow(title: 'Driver ${doc.id.substring(0, 4)}'),
+            infoWindow: InfoWindow(title: 'Driver ${doc.id.substring(0, 4)} ($vehicleType)'),
           );
         }).toSet();
         
@@ -492,6 +500,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
         children: [
           _buildMap(),
           _buildBottomUI(),
+          _buildNearbyStatus(),
           Positioned(
             right: 16,
             bottom: _showRideOptions ? 420 : 320,
@@ -504,6 +513,55 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
           ),
           if (_isLoadingRoute) const Center(child: CircularProgressIndicator(color: Color(0xFF10713C))),
         ],
+      ),
+    );
+  }
+
+  Widget _buildNearbyStatus() {
+    if (_showRideOptions) return const SizedBox.shrink();
+    
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 60,
+      left: 20,
+      right: 20,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.9),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: _driverMarkers.isEmpty ? Colors.orange : Colors.green,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _driverMarkers.isEmpty 
+                  ? 'Searching for nearby drivers...' 
+                  : '${_driverMarkers.length} drivers available nearby',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -783,10 +841,24 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
 
   void _bookRide() async {
     if (_selectedRide == null) return;
+    
+    // Calculate final price based on ride type
+    double multiplier = 1.0;
+    if (_selectedRide == 'motor') multiplier = 0.6;
+    else if (_selectedRide == 'rent_car') multiplier = 1.5;
+    else if (_selectedRide == 'ambulance') multiplier = 1.2;
+    
+    final finalPrice = (_price * multiplier).roundToDouble();
+
     Get.to(() => LiveTrackingScreen(
-      rideType: _selectedRide!, pickupAddress: _pickupAddress, destinationAddress: _destinationAddress,
-      price: _price, pickupLat: _pickupLocation!.latitude, pickupLng: _pickupLocation!.longitude,
-      destLat: _destinationLocation!.latitude, destLng: _destinationLocation!.longitude,
+      rideType: _selectedRide!, 
+      pickupAddress: _pickupAddress, 
+      destinationAddress: _destinationAddress,
+      price: finalPrice, 
+      pickupLat: _pickupLocation!.latitude, 
+      pickupLng: _pickupLocation!.longitude,
+      destLat: _destinationLocation!.latitude, 
+      destLng: _destinationLocation!.longitude,
     ));
   }
 }

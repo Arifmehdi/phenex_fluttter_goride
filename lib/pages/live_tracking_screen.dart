@@ -76,6 +76,18 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
       _isDriverFound = true; // For driver, we are already "found"
     }
 
+    // Listen for driver acceptance (only for riders)
+    if (widget.role == 'rider') {
+      ever(_rideService.tripStatus, (status) {
+        if (mounted && (status == 'accepted' || status == 'arriving' || status == 'in_progress')) {
+          if (!_isDriverFound) {
+            setState(() => _isDriverFound = true);
+            _fetchRoute(); // Update route now that driver is assigned
+          }
+        }
+      });
+    }
+
     _loadIcons();
     _initialize();
   }
@@ -214,14 +226,6 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
       destAddress: widget.destinationAddress,
       fare: widget.price,
     );
-
-    // Listen for driver acceptance
-    ever(_rideService.tripStatus, (status) {
-      if (mounted && (status == 'accepted' || status == 'arriving' || status == 'in_progress')) {
-        setState(() => _isDriverFound = true);
-        _fetchRoute(); // Update route now that driver is assigned
-      }
-    });
   }
 
   @override
@@ -306,7 +310,9 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)],
       ),
       child: Obx(() {
-        final eta = widget.role == 'rider' ? _rideService.driverETA.value : 10; // Placeholder for driver ETA
+        // Access an observable regardless of role to satisfy GetX
+        final status = _rideService.tripStatus.value;
+        final eta = widget.role == 'rider' ? _rideService.driverETA.value : 10; 
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -495,18 +501,31 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
       return Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(statusText, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF10713C))),
-              const SizedBox(height: 4),
-              Text(subText, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(statusText, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF10713C))),
+                const SizedBox(height: 4),
+                Text(
+                  subText, 
+                  style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                  softWrap: true,
+                ),
+              ],
+            ),
           ),
+          const SizedBox(width: 12),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(12)),
-            child: Text('৳${widget.price.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF10713C).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '৳${widget.price.round()}',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF10713C)),
+            ),
           ),
         ],
       );

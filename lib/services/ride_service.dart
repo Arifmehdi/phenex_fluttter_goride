@@ -82,6 +82,7 @@ class RideService extends GetxService {
       await _firebaseService.createRideRequest(
         riderId: riderId,
         riderName: riderName,
+        rideType: rideType,
         pickupLat: pickupLat,
         pickupLng: pickupLng,
         pickupAddress: pickupAddress,
@@ -89,6 +90,7 @@ class RideService extends GetxService {
         destLng: destLng,
         destAddress: destAddress,
         tripId: tripId ?? '',
+        fare: fare,
       );
 
       currentTripId.value = tripId ?? '';

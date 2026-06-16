@@ -32,6 +32,7 @@ class _HomePageState extends State<HomePage> {
   double? _currentLat;
   double? _currentLng;
   bool _isRefreshingLocation = false;
+  StreamSubscription<ServiceStatus>? _serviceStatusSubscription;
 
   final List<ServiceItem> services = [
     ServiceItem(
@@ -67,11 +68,28 @@ class _HomePageState extends State<HomePage> {
     _bannerPageController = PageController();
     _startAutoScroll();
     _detectCurrentLocation();
+
+    // Listen for location service status changes (enabled/disabled)
+    _serviceStatusSubscription = Geolocator.getServiceStatusStream().listen((ServiceStatus status) {
+      if (status == ServiceStatus.enabled) {
+        // Automatically refresh location when user turns it on
+        _detectCurrentLocation();
+      } else if (status == ServiceStatus.disabled) {
+        if (mounted) {
+          setState(() {
+            _currentLocationText = 'Location off';
+            _currentLat = null;
+            _currentLng = null;
+          });
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
     _bannerPageController.dispose();
+    _serviceStatusSubscription?.cancel();
     super.dispose();
   }
 
