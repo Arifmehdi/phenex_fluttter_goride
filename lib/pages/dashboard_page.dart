@@ -8,9 +8,13 @@ import '../registration_screens.dart' show OwnerProfileScreen;
 import 'dashboard_details_pages.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
+import '../services/notification_service.dart';
 import '../widgets/sidebar_menu.dart';
+import 'ride_request_call_screen.dart';
 
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
 import '../services/firebase_service.dart';
 import '../services/ride_service.dart';
 import 'live_tracking_screen.dart';
@@ -29,10 +33,17 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
   final ApiService _apiService = Get.find<ApiService>();
   final FirebaseService _firebaseService = Get.find<FirebaseService>();
   final RideService _rideService = Get.find<RideService>();
+  final NotificationService _notificationService = NotificationService();
   
-   bool _isOnline = true;
+  bool _isOnline = true;
   int _selectedIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  // Nearby ride request tracking
+  static const double _nearbyRadiusKm = 5.0; // 5km radius
+  StreamSubscription<QuerySnapshot>? _requestSubscription;
+  final Set<String> _pendingRequestIds = {};
+  final Set<String> _declinedRequestIds = {}; // Track declined requests locally
 
   @override
   void initState() {
@@ -41,6 +52,151 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
     if (widget.role == 'driver' && !_locationService.isTracking.value) {
       _toggleOnlineStatus(true);
     }
+    if (widget.role == 'driver') {
+      _setupRideRequestListener();
+    }
+  }
+
+  @override
+  void dispose() {
+    _requestSubscription?.cancel();
+    super.dispose();
+  }
+
+  /// Set up a listener for new ride requests to trigger notifications
+  void _setupRideRequestListener() {
+    _requestSubscription = _firebaseService.streamPendingRequests().listen((snapshot) {
+      // Process document changes
+      for (final change in snapshot.docChanges) {
+        final requestId = change.doc.id;
+        final data = change.doc.data() as Map<String, dynamic>?;
+        if (data == null) continue;
+
+        switch (change.type) {
+          case DocumentChangeType.added:
+            _pendingRequestIds.add(requestId);
+            // Only trigger notification if driver is online
+            if (_isOnline && mounted) {
+              _notifyNewRideRequest(requestId, data);
+            }
+            break;
+          case DocumentChangeType.removed:
+            _pendingRequestIds.remove(requestId);
+            _notificationService.dismissRequest(requestId);
+            break;
+          case DocumentChangeType.modified:
+            final status = data['status'] as String?;
+            if (status != 'pending') {
+              _pendingRequestIds.remove(requestId);
+              _notificationService.dismissRequest(requestId);
+            }
+            break;
+        }
+      }
+    });
+  }
+
+  /// Show notification and full-screen call UI for a new ride request (only if nearby)
+  void _notifyNewRideRequest(String requestId, Map<String, dynamic> data) {
+    final pickupLat = (data['pickupLatitude'] as num?)?.toDouble();
+    final pickupLng = (data['pickupLongitude'] as num?)?.toDouble();
+    
+    // Check if driver already declined this request
+    if (_declinedRequestIds.contains(requestId)) {
+      debugPrint('Request $requestId was previously declined by this driver. Skipping.');
+      return;
+    }
+
+    // Check proximity first
+    if (pickupLat != null && pickupLng != null) {
+      final distance = _getDistanceFromDriver(pickupLat, pickupLng);
+      if (distance != null && distance > _nearbyRadiusKm) {
+        debugPrint('Request $requestId is $distance km away — outside $_nearbyRadiusKm km radius. Skipping notification.');
+        return; // Too far, don't notify
+      }
+    }
+
+    // Show system notification (for background alerts)
+    _notificationService.showRideRequestNotification(
+      requestId: requestId,
+      riderName: data['riderName'] as String? ?? 'Passenger',
+      pickupAddress: data['pickupAddress'] as String? ?? 'Unknown',
+      destinationAddress: data['destAddress'] as String? ?? 'Unknown',
+      fare: '৳ ${(data['fare'] as num?)?.round() ?? '0'}',
+    );
+
+    // Show full-screen incoming call UI
+    _showIncomingCallScreen(requestId, data);
+  }
+
+  /// Navigate to the full-screen incoming call UI
+  void _showIncomingCallScreen(String requestId, Map<String, dynamic> data) {
+    final riderName = data['riderName'] as String? ?? 'Passenger';
+    final pickupAddress = data['pickupAddress'] as String? ?? 'Unknown';
+    final destAddress = data['destAddress'] as String? ?? 'Unknown';
+    final rideType = data['rideType'] as String? ?? 'car';
+    final fare = (data['fare'] as num?)?.toDouble() ?? 0.0;
+    final pickupLat = (data['pickupLatitude'] as num?)?.toDouble() ?? 0.0;
+    final pickupLng = (data['pickupLongitude'] as num?)?.toDouble() ?? 0.0;
+    final destLat = (data['destLatitude'] as num?)?.toDouble() ?? 0.0;
+    final destLng = (data['destLongitude'] as num?)?.toDouble() ?? 0.0;
+    final tripId = data['tripId'] as String?;
+    final riderPhone = data['riderPhone'] as String?;
+
+    // Show the full-screen call. When it returns via Get.back(result: false),
+    // it means the driver declined or timed out — hide this request.
+    if (mounted && Get.isDialogOpen != true) {
+      Get.to<bool>(
+        () => RideRequestCallScreen(
+          requestId: requestId,
+          riderName: riderName,
+          pickupAddress: pickupAddress,
+          destinationAddress: destAddress,
+          rideType: rideType,
+          fare: fare,
+          pickupLat: pickupLat,
+          pickupLng: pickupLng,
+          destLat: destLat,
+          destLng: destLng,
+          tripId: tripId,
+          riderPhone: riderPhone,
+        ),
+        fullscreenDialog: true,
+        transition: Transition.fadeIn,
+        duration: const Duration(milliseconds: 300),
+      )?.then((wasAccepted) {
+        // If the call screen was dismissed without accepting (result == false or null),
+        // mark this request as declined so it won't bother this driver again.
+        // When the driver accepts, Get.offAll() replaces the entire stack and
+        // this widget gets disposed → mounted becomes false → skip the add.
+        if (!mounted) return;
+        if (wasAccepted != true) {
+          _declinedRequestIds.add(requestId);
+          debugPrint('Driver declined/timeout for request $requestId. Hiding from dashboard.');
+        }
+      });
+    }
+  }
+
+  /// Calculate distance from driver's current location to a point (in km)
+  double? _getDistanceFromDriver(double lat, double lng) {
+    final driverPos = _locationService.currentPosition.value;
+    if (driverPos == null) return null;
+    return Geolocator.distanceBetween(
+      driverPos.latitude, driverPos.longitude,
+      lat, lng,
+    ) / 1000; // Convert meters to km
+  }
+
+  /// Check if a ride request is nearby the driver
+  bool _isRideNearby(Map<String, dynamic> data) {
+    final pickupLat = (data['pickupLatitude'] as num?)?.toDouble();
+    final pickupLng = (data['pickupLongitude'] as num?)?.toDouble();
+    if (pickupLat == null || pickupLng == null) return true; // Show if no coordinates
+    
+    final distance = _getDistanceFromDriver(pickupLat, pickupLng);
+    if (distance == null) return true; // Show if we can't determine distance
+    return distance <= _nearbyRadiusKm;
   }
 
   Future<void> _toggleOnlineStatus(bool online) async {
@@ -55,6 +211,13 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
     setState(() => _isOnline = online);
 
     final vehicleType = user?['vehicle_type']?.toString().toLowerCase();
+
+    if (!online) {
+      // Clear all request tracking when going offline
+      _pendingRequestIds.clear();
+      _declinedRequestIds.clear();
+      _notificationService.cancelAll();
+    }
 
     if (online) {
       // Start tracking and sync to Firestore
@@ -499,8 +662,32 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
               );
             }
 
+            // Filter by nearby proximity and declined requests
+            final nearbyDocs = snapshot.data!.docs.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return _isRideNearby(data) && !_declinedRequestIds.contains(doc.id);
+            }).toList();
+
+            if (nearbyDocs.isEmpty) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.near_me_disabled_outlined, size: 40, color: Colors.grey[300]),
+                      const SizedBox(height: 8),
+                      Text(
+                        localeController.get('No nearby requests', 'কাছের কোন অনুরোধ নেই'),
+                        style: TextStyle(color: Colors.grey[400], fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
             return Column(
-              children: snapshot.data!.docs.map((doc) {
+              children: nearbyDocs.map((doc) {
                 final data = doc.data() as Map<String, dynamic>;
                 final String pickup = data['pickupAddress'] ?? 'Unknown';
                 final String destination = data['destAddress'] ?? 'Unknown';
@@ -573,8 +760,17 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
           ElevatedButton(
             onPressed: () async {
               Get.back();
+              // Dismiss notification
+              _notificationService.dismissRequest(requestId);
+              _pendingRequestIds.remove(requestId);
+              
               final String? tripId = data['tripId'];
-              final success = await _rideService.acceptRideRequest(requestId, tripId: tripId);
+              final success = await _rideService.acceptRideRequest(
+                requestId, 
+                tripId: tripId,
+                riderName: data['riderName'] as String?,
+                riderPhone: data['riderPhone'] as String?,
+              );
               if (success) {
                 Get.to(() => LiveTrackingScreen(
                   role: 'driver',

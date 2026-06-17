@@ -16,6 +16,10 @@ class RideService extends GetxService {
   final RxString tripStatus = 'idle'.obs; // idle, requesting, accepted, arriving, in_progress, completed, cancelled
   final RxString assignedDriverId = ''.obs;
   final RxString assignedDriverName = ''.obs;
+  final RxString assignedDriverPhone = ''.obs;
+  final RxDouble assignedDriverRating = 4.8.obs;
+  final RxString assignedRiderName = 'Passenger'.obs;
+  final RxString assignedRiderPhone = ''.obs;
   final RxDouble driverLatitude = 0.0.obs;
   final RxDouble driverLongitude = 0.0.obs;
   final RxDouble driverHeading = 0.0.obs;
@@ -49,12 +53,17 @@ class RideService extends GetxService {
     final user = _apiService.getUser();
     final riderId = user?['id']?.toString() ?? 'unknown';
     final riderName = user?['name']?.toString() ?? 'Rider';
+    final riderPhone = user?['mobile']?.toString() ?? '';
 
     try {
+      // Save rider phone locally so driver can access it
+      assignedRiderPhone.value = riderPhone;
+
       // Create the trip in Firestore
       final tripId = await _firebaseService.createTrip(
         riderId: riderId,
         riderName: riderName,
+        riderPhone: riderPhone,
         rideType: rideType,
         pickupLat: pickupLat,
         pickupLng: pickupLng,
@@ -82,6 +91,7 @@ class RideService extends GetxService {
       await _firebaseService.createRideRequest(
         riderId: riderId,
         riderName: riderName,
+        riderPhone: riderPhone,
         rideType: rideType,
         pickupLat: pickupLat,
         pickupLng: pickupLng,
@@ -118,14 +128,26 @@ class RideService extends GetxService {
       if (data == null) return;
 
       final status = data['status'] as String? ?? 'requesting';
-      tripStatus.value = status;
-
       final driverId = data['driverId'] as String? ?? '';
+
+      // Set driver info BEFORE tripStatus so GetX ever() listeners
+      // see the complete state when they fire synchronously
       if (driverId.isNotEmpty) {
         assignedDriverId.value = driverId;
+        assignedDriverName.value = data['driverName'] as String? ?? 'Driver';
+        // Try multiple possible field names for phone
+        assignedDriverPhone.value = (data['driverPhone'] as String? ??
+                                    data['phone'] as String? ??
+                                    '');
+        assignedDriverRating.value = (data['driverRating'] as num?)?.toDouble() ?? 4.8;
         // Start tracking the driver's location
         _listenToDriverLocation(driverId);
       }
+
+      // Now set tripStatus (this triggers ever() listeners which may call setState)
+      tripStatus.value = status;
+      assignedRiderName.value = data['riderName'] as String? ?? 'Passenger';
+      assignedRiderPhone.value = data['riderPhone'] as String? ?? '';
 
       if (status == 'completed' || status == 'cancelled') {
         _tripStream?.cancel();
@@ -179,9 +201,28 @@ class RideService extends GetxService {
   }
 
   /// Accept a ride request (driver side)
-  Future<bool> acceptRideRequest(String requestId, {int? laravelRideId, String? tripId}) async {
+  Future<bool> acceptRideRequest(String requestId, {int? laravelRideId, String? tripId, String? riderName, String? riderPhone}) async {
     final user = _apiService.getUser();
     final driverId = user?['id']?.toString() ?? _apiService.getToken() ?? 'driver';
+    final driverName = user?['name']?.toString() ?? 'Driver';
+    // Try multiple possible keys for driver phone across different API response formats
+    final driverPhone = 
+        user?['mobile']?.toString() ??
+        user?['phone']?.toString() ??
+        user?['phone_number']?.toString() ??
+        user?['contact']?.toString() ??
+        user?['mobile_number']?.toString() ??
+        '';
+    debugPrint('Driver phone extracted: "$driverPhone" from user keys: ${user?.keys}');
+    final driverRating = (user?['rating'] as num?)?.toDouble() ?? 4.8;
+
+    // Set the rider's info directly from the ride request data
+    if (riderName != null && riderName.isNotEmpty) {
+      assignedRiderName.value = riderName;
+    }
+    if (riderPhone != null && riderPhone.isNotEmpty) {
+      assignedRiderPhone.value = riderPhone;
+    }
 
     try {
       // 1. Update the ride request status
@@ -197,7 +238,13 @@ class RideService extends GetxService {
         finalTripId = requestId; 
       }
 
-      await _firebaseService.assignDriverToTrip(finalTripId, driverId);
+      await _firebaseService.assignDriverToTrip(
+        finalTripId, 
+        driverId,
+        driverName: driverName,
+        driverPhone: driverPhone,
+        driverRating: driverRating,
+      );
 
       if (laravelRideId != null) {
         await _apiService.updateRideStatus(laravelRideId, 'accepted');
@@ -205,6 +252,9 @@ class RideService extends GetxService {
 
       currentTripId.value = finalTripId;
       assignedDriverId.value = driverId;
+      assignedDriverName.value = driverName;
+      assignedDriverPhone.value = driverPhone;
+      assignedDriverRating.value = driverRating;
       tripStatus.value = 'accepted';
 
       // Start listening to the trip we just accepted
@@ -243,6 +293,9 @@ class RideService extends GetxService {
     tripStatus.value = 'idle';
     assignedDriverId.value = '';
     assignedDriverName.value = '';
+    assignedDriverPhone.value = '';
+    assignedRiderName.value = 'Passenger';
+    assignedRiderPhone.value = '';
     driverLatitude.value = 0;
     driverLongitude.value = 0;
     driverHeading.value = 0;

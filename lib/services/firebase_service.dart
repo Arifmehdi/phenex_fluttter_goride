@@ -102,6 +102,7 @@ class FirebaseService extends GetxService {
     required double destLng,
     required String destAddress,
     required double fare,
+    String? riderPhone,
   }) async {
     final coll = activeTrips;
     if (coll == null) return null;
@@ -110,6 +111,7 @@ class FirebaseService extends GetxService {
       'riderId': riderId,
       'driverId': '',
       'riderName': riderName,
+      'riderPhone': riderPhone ?? '',
       'rideType': rideType,
       'pickupLatitude': pickupLat,
       'pickupLongitude': pickupLng,
@@ -146,12 +148,21 @@ class FirebaseService extends GetxService {
   }
 
   /// Assign driver to trip
-  Future<void> assignDriverToTrip(String tripId, String driverId) async {
+  Future<void> assignDriverToTrip(
+    String tripId,
+    String driverId, {
+    String? driverName,
+    String? driverPhone,
+    double? driverRating,
+  }) async {
     final coll = activeTrips;
     if (coll == null) return;
 
     await coll.doc(tripId).update({
       'driverId': driverId,
+      'driverName': driverName ?? 'Driver',
+      'driverPhone': driverPhone ?? '',
+      'driverRating': driverRating ?? 4.8,
       'status': 'accepted',
       'acceptedAt': FieldValue.serverTimestamp(),
     });
@@ -170,6 +181,7 @@ class FirebaseService extends GetxService {
     required String destAddress,
     required String tripId,
     required double fare,
+    String? riderPhone,
   }) async {
     final coll = rideRequests;
     if (coll == null) return null;
@@ -177,6 +189,7 @@ class FirebaseService extends GetxService {
     final docRef = await coll.add({
       'riderId': riderId,
       'riderName': riderName,
+      'riderPhone': riderPhone ?? '',
       'rideType': rideType,
       'pickupLatitude': pickupLat,
       'pickupLongitude': pickupLng,

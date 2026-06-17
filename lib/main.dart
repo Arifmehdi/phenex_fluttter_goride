@@ -13,6 +13,7 @@ import 'package:goride/pages/rent_car_booking_screen.dart';
 import 'package:goride/services/api_service.dart';
 import 'package:goride/services/firebase_service.dart';
 import 'package:goride/services/location_service.dart';
+import 'package:goride/services/notification_service.dart';
 import 'package:goride/services/ride_service.dart';
 import 'package:goride/services/routing_service.dart';
 import 'package:goride/services/sslcommerz_service.dart';
@@ -44,6 +45,16 @@ void main() async {
   
   Get.put(RideService());
   Get.put(RoutingService());
+
+  // Initialize notification service for ride request alerts
+  final notificationService = NotificationService();
+  await notificationService.init();
+  try {
+    // Request Android 13+ notification permission
+    await notificationService.requestPermission();
+  } catch (e) {
+    debugPrint('Notification permission request error: $e');
+  }
 
   runApp(const GoRideApp());
 }

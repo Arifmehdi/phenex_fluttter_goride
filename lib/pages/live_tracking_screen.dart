@@ -237,7 +237,19 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
   }
 
   void _handleCall() async {
-    final phone = widget.role == 'rider' ? '+8801234567890' : '+8801987654321';
+    // Use the actual phone number from the ride service
+    final String phone;
+    if (widget.role == 'rider') {
+      // Rider calls the driver
+      phone = _rideService.assignedDriverPhone.value.isNotEmpty
+          ? _rideService.assignedDriverPhone.value
+          : '+8801234567890';
+    } else {
+      // Driver calls the rider/passenger
+      phone = _rideService.assignedRiderPhone.value.isNotEmpty
+          ? _rideService.assignedRiderPhone.value
+          : '+8801987654321';
+    }
     final uri = Uri(scheme: 'tel', path: phone);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
@@ -533,33 +545,62 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
   }
 
   Widget _buildParticipantInfo() {
-    final name = widget.role == 'rider' ? 'Rashed Ahmed' : 'Passenger';
-    return Row(
-      children: [
-        const CircleAvatar(radius: 28, backgroundColor: Color(0xFF10713C), child: Icon(Icons.person, color: Colors.white, size: 30)),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Icon(Icons.star, color: Colors.amber, size: 16),
-                  const SizedBox(width: 4),
-                  Text('4.8', style: TextStyle(color: Colors.grey[700], fontSize: 13)),
+    return Obx(() {
+      final String name;
+      final String rating;
+      final String phone;
+      
+      // Always access an observable to avoid GetX error
+      final status = _rideService.tripStatus.value;
+      
+      if (widget.role == 'rider') {
+        name = _rideService.assignedDriverName.value.isNotEmpty 
+            ? _rideService.assignedDriverName.value 
+            : 'Driver';
+        rating = _rideService.assignedDriverRating.value.toStringAsFixed(1);
+        phone = _rideService.assignedDriverPhone.value;
+      } else {
+        name = _rideService.assignedRiderName.value.isNotEmpty
+            ? _rideService.assignedRiderName.value
+            : 'Passenger';
+        rating = '5.0';
+        phone = _rideService.assignedRiderPhone.value;
+      }
+
+      return Row(
+        children: [
+          const CircleAvatar(radius: 28, backgroundColor: Color(0xFF10713C), child: Icon(Icons.person, color: Colors.white, size: 30)),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.star, color: Colors.amber, size: 16),
+                    const SizedBox(width: 4),
+                    Text(rating, style: TextStyle(color: Colors.grey[700], fontSize: 13)),
+                  ],
+                ),
+                if (phone.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    phone,
+                    style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                  ),
                 ],
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        IconButton(
-          onPressed: _handleCall,
-          icon: const CircleAvatar(backgroundColor: Color(0xFF10713C), child: Icon(Icons.call, color: Colors.white, size: 20)),
-        ),
-      ],
-    );
+          IconButton(
+            onPressed: _handleCall,
+            icon: const CircleAvatar(backgroundColor: Color(0xFF10713C), child: Icon(Icons.call, color: Colors.white, size: 20)),
+          ),
+        ],
+      );
+    });
   }
 
   Widget _buildDriverActions() {
