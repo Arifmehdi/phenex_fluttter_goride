@@ -35,7 +35,7 @@ class _RideStatusScreenState extends State<RideStatusScreen> with SingleTickerPr
   StreamSubscription<Position>? _positionStreamSubscription;
   
   final RideService _rideService = Get.find<RideService>();
-  BitmapDescriptor? _carIcon;
+  BitmapDescriptor? _vehicleIcon;
   
   @override
   void initState() {
@@ -51,9 +51,25 @@ class _RideStatusScreenState extends State<RideStatusScreen> with SingleTickerPr
   }
 
   Future<void> _loadIcons() async {
-    _carIcon = await BitmapDescriptor.fromAssetImage(
-      const ImageConfiguration(size: Size(30, 30)),
-      'assets/car.png',
+    // Load the appropriate vehicle icon based on ride type
+    final String assetPath;
+    switch (widget.rideType.toLowerCase()) {
+      case 'motor':
+      case 'bike':
+        assetPath = 'assets/motor.png';
+        break;
+      case 'ambulance':
+        assetPath = 'assets/ambulance.png';
+        break;
+      case 'rent_car':
+        assetPath = 'assets/rent_car.png';
+        break;
+      default:
+        assetPath = 'assets/car.png';
+    }
+    _vehicleIcon = await BitmapDescriptor.fromAssetImage(
+      const ImageConfiguration(size: Size(18, 18)),
+      assetPath,
     );
   }
 
@@ -190,7 +206,7 @@ class _RideStatusScreenState extends State<RideStatusScreen> with SingleTickerPr
             Marker(
               markerId: const MarkerId('driver'),
               position: LatLng(dLat, dLng),
-              icon: _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+              icon: _vehicleIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
               rotation: dHeading,
               anchor: const Offset(0.5, 0.5),
             ),

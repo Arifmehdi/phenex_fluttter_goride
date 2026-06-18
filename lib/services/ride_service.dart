@@ -29,6 +29,7 @@ class RideService extends GetxService {
   final RxDouble tripProgress = 0.0.obs; // 0.0 to 1.0
   final RxBool isDriverOnline = false.obs;
 
+  String _currentRideRequestId = '';
   StreamSubscription<DocumentSnapshot>? _tripStream;
   StreamSubscription<DocumentSnapshot>? _driverLocationStream;
 
@@ -74,41 +75,58 @@ class RideService extends GetxService {
         fare: fare,
       );
 
-      // Create the trip in Laravel API
-      await _apiService.createRideRequest({
-        'ride_type': rideType,
-        'pickup_latitude': pickupLat,
-        'pickup_longitude': pickupLng,
-        'pickup_address': pickupAddress,
-        'destination_latitude': destLat,
-        'destination_longitude': destLng,
-        'destination_address': destAddress,
-        'fare': fare,
-        'firebase_trip_id': tripId ?? '',
-      });
+      if (tripId == null) {
+        debugPrint('Failed to create trip in Firestore');
+        return null;
+      }
 
-      // Create a ride request for drivers to see in Firestore
-      await _firebaseService.createRideRequest(
-        riderId: riderId,
-        riderName: riderName,
-        riderPhone: riderPhone,
-        rideType: rideType,
-        pickupLat: pickupLat,
-        pickupLng: pickupLng,
-        pickupAddress: pickupAddress,
-        destLat: destLat,
-        destLng: destLng,
-        destAddress: destAddress,
-        tripId: tripId ?? '',
-        fare: fare,
-      );
-
-      currentTripId.value = tripId ?? '';
+      // MUST set up the trip listener BEFORE any API calls that could fail.
+      // The Laravel API might be unreachable, but the rider should still
+      // receive Firestore updates when the driver accepts the ride.
+      currentTripId.value = tripId;
       tripStatus.value = 'requesting';
+      _listenToTrip(tripId);
 
-      // Start listening for trip updates
-      if (tripId != null) {
-        _listenToTrip(tripId);
+      // Create the ride request for drivers to see in Firestore
+      // (This is non-critical — rider can still receive trip updates)
+      try {
+        final requestId = await _firebaseService.createRideRequest(
+          riderId: riderId,
+          riderName: riderName,
+          riderPhone: riderPhone,
+          rideType: rideType,
+          pickupLat: pickupLat,
+          pickupLng: pickupLng,
+          pickupAddress: pickupAddress,
+          destLat: destLat,
+          destLng: destLng,
+          destAddress: destAddress,
+          tripId: tripId,
+          fare: fare,
+        );
+        // Save the ride request ID so we can cancel it later
+        if (requestId != null) {
+          _currentRideRequestId = requestId;
+        }
+      } catch (e) {
+        debugPrint('Warning: could not create ride request in Firestore: $e');
+      }
+
+      // Create the trip in Laravel API (non-critical, rider can still receive updates)
+      try {
+        await _apiService.createRideRequest({
+          'ride_type': rideType,
+          'pickup_latitude': pickupLat,
+          'pickup_longitude': pickupLng,
+          'pickup_address': pickupAddress,
+          'destination_latitude': destLat,
+          'destination_longitude': destLng,
+          'destination_address': destAddress,
+          'fare': fare,
+          'firebase_trip_id': tripId,
+        });
+      } catch (e) {
+        debugPrint('Warning: could not create ride request in Laravel API: $e');
       }
 
       return tripId;
@@ -279,9 +297,26 @@ class RideService extends GetxService {
     tripStatus.value = status;
   }
 
-  /// Cancel the current trip
+  /// Cancel the current trip and its ride request
   Future<void> cancelTrip() async {
     await updateStatus('cancelled');
+    
+    // Also cancel the ride request so other drivers won't see it as pending
+    if (_currentRideRequestId.isNotEmpty) {
+      try {
+        final coll = _firebaseService.rideRequests;
+        if (coll != null) {
+          await coll.doc(_currentRideRequestId).update({
+            'status': 'cancelled',
+            'cancelReason': 'rider_cancelled',
+            'cancelledAt': FieldValue.serverTimestamp(),
+          });
+        }
+      } catch (e) {
+        debugPrint('Warning: could not cancel ride request: $e');
+      }
+    }
+    
     resetTrip();
   }
 
@@ -289,6 +324,7 @@ class RideService extends GetxService {
   void resetTrip() {
     _tripStream?.cancel();
     _driverLocationStream?.cancel();
+    _currentRideRequestId = '';
     currentTripId.value = '';
     tripStatus.value = 'idle';
     assignedDriverId.value = '';

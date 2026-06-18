@@ -57,8 +57,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
   bool _isLoadingRoute = true;
   bool _isDriverFound = false;
 
-  // Icons
-  BitmapDescriptor? _carIcon;
+  // Vehicle icons - loaded based on ride type
+  BitmapDescriptor? _vehicleIcon;
   BitmapDescriptor? _userIcon;
 
   LatLng get _pickupPoint => LatLng(widget.pickupLat, widget.pickupLng);
@@ -93,11 +93,26 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
   }
 
   Future<void> _loadIcons() async {
-    _carIcon = await BitmapDescriptor.fromAssetImage(
-      const ImageConfiguration(size: Size(30, 30)),
-      'assets/car.png',
+    // Load the appropriate vehicle icon based on ride type
+    final String assetPath;
+    switch (widget.rideType.toLowerCase()) {
+      case 'motor':
+      case 'bike':
+        assetPath = 'assets/motor.png';
+        break;
+      case 'ambulance':
+        assetPath = 'assets/ambulance.png';
+        break;
+      case 'rent_car':
+        assetPath = 'assets/rent_car.png';
+        break;
+      default:
+        assetPath = 'assets/car.png';
+    }
+    _vehicleIcon = await BitmapDescriptor.fromAssetImage(
+      const ImageConfiguration(size: Size(18, 18)),
+      assetPath,
     );
-    // Load a user icon if available, otherwise use default
   }
 
   Future<void> _initialize() async {
@@ -378,22 +393,22 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
             infoWindow: const InfoWindow(title: 'Destination'),
           ),
 
-          // Driver Marker (only if not self)
+          // Driver Marker (only if not self) — dynamically moves with driver location
           if (widget.role == 'rider' && dLat != 0 && dLng != 0)
             Marker(
               markerId: const MarkerId('driver'),
               position: LatLng(dLat, dLng),
-              icon: _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+              icon: _vehicleIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
               rotation: dHeading,
               anchor: const Offset(0.5, 0.5),
               infoWindow: const InfoWindow(title: 'Driver Location'),
             ),
           
-          // Rider Marker (for driver to see customer)
+          // Rider Marker (for driver to see customer) — shows at pickup point
           if (widget.role == 'driver')
             Marker(
               markerId: const MarkerId('rider'),
-              position: _pickupPoint, // In a real app, this could be the rider's LIVE location
+              position: _pickupPoint,
               icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
               infoWindow: const InfoWindow(title: 'Customer'),
             ),
@@ -453,12 +468,20 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
     );
   }
 
+  Future<void> _cancelRide() async {
+    // Cancel the trip in Firestore so the driver gets notified
+    await _rideService.cancelTrip();
+    if (mounted) {
+      Navigator.pop(context);
+    }
+  }
+
   Widget _buildCancelButton() {
     return SizedBox(
       width: double.infinity,
       height: 56,
       child: OutlinedButton(
-        onPressed: () => Navigator.pop(context),
+        onPressed: _cancelRide,
         style: OutlinedButton.styleFrom(
           side: const BorderSide(color: Colors.redAccent, width: 1.5),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

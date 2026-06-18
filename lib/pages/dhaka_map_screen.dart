@@ -160,11 +160,11 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
 
   Future<void> _loadIcons() async {
     _carIcon = await BitmapDescriptor.fromAssetImage(
-      const ImageConfiguration(size: Size(30, 30)),
+      const ImageConfiguration(size: Size(18, 18)),
       'assets/car.png',
     );
     _bikeIcon = await BitmapDescriptor.fromAssetImage(
-      const ImageConfiguration(size: Size(30, 30)),
+      const ImageConfiguration(size: Size(18, 18)),
       'assets/motor.png',
     );
   }

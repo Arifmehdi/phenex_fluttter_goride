@@ -20,7 +20,7 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _companyNameController = TextEditingController();
-  final TextEditingController _vehicleTypeController = TextEditingController();
+  String _selectedVehicleType = 'car';
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _mobileController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -94,7 +94,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     if (_selectedRole == 'driver' || _selectedRole == 'owner') {
-      data['vehicle_type'] = _vehicleTypeController.text;
+      data['vehicle_type'] = _selectedVehicleType;
     }
 
     try {
@@ -233,9 +233,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     keyboardType: TextInputType.phone),
                 const SizedBox(height: 16),
 
-                // ── Vehicle Type (for driver/owner) ──
+                // ── Vehicle Type dropdown (for driver/owner) ──
                 if (isDriverOrOwner) ...[
-                  _buildTextField(_vehicleTypeController, 'Vehicle Type', Icons.directions_car),
+                  _buildVehicleTypeDropdown(),
                   const SizedBox(height: 16),
                 ],
 
@@ -409,6 +409,40 @@ class _RegisterScreenState extends State<RegisterScreen> {
           borderSide: const BorderSide(color: Color(0xFF10713C), width: 1.5),
         ),
       ),
+    );
+  }
+
+  Widget _buildVehicleTypeDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _selectedVehicleType,
+      decoration: InputDecoration(
+        labelText: 'Vehicle Type',
+        prefixIcon: const Icon(Icons.directions_car, size: 20),
+        filled: true,
+        fillColor: const Color(0xFFF9FAFB),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFF10713C), width: 1.5),
+        ),
+      ),
+      items: const [
+        DropdownMenuItem(value: 'car', child: Text('Car')),
+        DropdownMenuItem(value: 'motor', child: Text('Bike')),
+        DropdownMenuItem(value: 'ambulance', child: Text('Ambulance')),
+      ],
+      onChanged: (value) {
+        if (value != null) {
+          setState(() => _selectedVehicleType = value);
+        }
+      },
     );
   }
 
