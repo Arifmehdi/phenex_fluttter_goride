@@ -29,6 +29,16 @@ class RideService extends GetxService {
   final RxDouble tripProgress = 0.0.obs; // 0.0 to 1.0
   final RxBool isDriverOnline = false.obs;
 
+  // Active trip details caching to support perfect session resumption
+  final RxString currentRideType = 'car'.obs;
+  final RxString currentPickupAddress = ''.obs;
+  final RxString currentDestAddress = ''.obs;
+  final RxDouble currentFare = 0.0.obs;
+  final RxDouble currentPickupLat = 0.0.obs;
+  final RxDouble currentPickupLng = 0.0.obs;
+  final RxDouble currentDestLat = 0.0.obs;
+  final RxDouble currentDestLng = 0.0.obs;
+
   String _currentRideRequestId = '';
   StreamSubscription<DocumentSnapshot>? _tripStream;
   StreamSubscription<DocumentSnapshot>? _driverLocationStream;
@@ -166,6 +176,16 @@ class RideService extends GetxService {
       tripStatus.value = status;
       assignedRiderName.value = data['riderName'] as String? ?? 'Passenger';
       assignedRiderPhone.value = data['riderPhone'] as String? ?? '';
+
+      // Persist active trip parameters for resume functionality
+      currentFare.value = (data['fare'] as num?)?.toDouble() ?? 0.0;
+      currentRideType.value = data['rideType'] as String? ?? 'car';
+      currentPickupAddress.value = data['pickupAddress'] as String? ?? 'Pickup';
+      currentDestAddress.value = data['destAddress'] as String? ?? 'Destination';
+      currentPickupLat.value = (data['pickupLatitude'] as num?)?.toDouble() ?? 0.0;
+      currentPickupLng.value = (data['pickupLongitude'] as num?)?.toDouble() ?? 0.0;
+      currentDestLat.value = (data['destLatitude'] as num?)?.toDouble() ?? 0.0;
+      currentDestLng.value = (data['destLongitude'] as num?)?.toDouble() ?? 0.0;
 
       if (status == 'completed' || status == 'cancelled') {
         _tripStream?.cancel();

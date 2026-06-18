@@ -86,6 +86,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   bool _hasPreSelectedPickup = false;
   bool _hasPreSelectedDest = false;
   bool _isAnimatingToFit = false;
+  bool _isFollowingUser = true; // Added to track if map should follow user movement
 
   @override
   void initState() {
@@ -119,7 +120,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
     }
 
     if (_hasPreSelectedPickup && _hasPreSelectedDest) {
-      _isConfirmingPickup = true;
+      _isRouteVisible = true;
       _calculateRideDetails();
     }
 
@@ -149,7 +150,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
           }
         });
         if (_hasPreSelectedPickup && _hasPreSelectedDest) {
-          _isConfirmingPickup = true;
+          _isRouteVisible = true;
           _calculateRideDetails();
         }
       }
@@ -359,15 +360,21 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10),
     ).listen((Position position) {
       if (mounted) {
+        final LatLng currentLatLng = LatLng(position.latitude, position.longitude);
         setState(() {
           _currentPosition = position;
-          if (!_showRideOptions && _pickupLocation == null && !_hasPreSelectedPickup) {
-            _pickupLocation = LatLng(position.latitude, position.longitude);
+          
+          // Automatically update pickup location if we are following the user
+          // and not already showing ride options (Uber/Pathao behavior)
+          if (_isFollowingUser && !_showRideOptions && !_hasPreSelectedPickup) {
+            _pickupLocation = currentLatLng;
             _pickupAddress = 'Detecting location...';
           }
         });
-        if (!_hasPreSelectedPickup && !_showRideOptions && _pickupLocation != null) {
-          _mapController?.animateCamera(CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)));
+
+        // Move camera and get address if following
+        if (_isFollowingUser && !_hasPreSelectedPickup && !_showRideOptions) {
+          _mapController?.animateCamera(CameraUpdate.newLatLng(currentLatLng));
           _getAddressFromLatLngCoords(position.latitude, position.longitude, isPickup: true);
         }
       }
@@ -449,6 +456,13 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
 
   void _onCameraMove(CameraPosition position) {
     if (_isInitialCameraMove || _isAnimatingToFit) return;
+    
+    // If the camera is moving and it's not a programmatic move (like _isAnimatingToFit)
+    // then the user is manually moving the map. We should stop following them.
+    if (_isFollowingUser) {
+      _isFollowingUser = false;
+    }
+    
     if (_showRideOptions && !_isConfirmingPickup) return;
     
     final center = position.target;
@@ -475,6 +489,11 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
     final pos = _currentPosition!;
     final myLatLng = LatLng(pos.latitude, pos.longitude);
     
+    // Re-enable following the user
+    setState(() {
+      _isFollowingUser = true;
+    });
+
     _mapController?.animateCamera(CameraUpdate.newLatLng(myLatLng));
     
     // In ride options mode, just re-center the map (Uber/Pathao behavior)
@@ -738,8 +757,10 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
               onPressed: () {
                 if (_selectingPickup) setState(() => _selectingPickup = false);
                 else if (_pickupLocation != null && _destinationLocation != null) {
-                  setState(() => _isConfirmingPickup = true);
-                  _mapController?.animateCamera(CameraUpdate.newLatLngZoom(_pickupLocation!, 16.0));
+                  setState(() {
+                    _isRouteVisible = true;
+                  });
+                  _calculateRideDetails();
                 }
               },
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10713C), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),

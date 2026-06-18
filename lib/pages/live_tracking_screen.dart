@@ -9,6 +9,8 @@ import '../services/ride_service.dart';
 import '../services/location_service.dart';
 import '../services/routing_service.dart';
 import 'trip_details_page.dart';
+import 'dashboard_page.dart';
+import 'home_page.dart';
 import '../utils/marker_utils.dart';
 
 class LiveTrackingScreen extends StatefulWidget {
@@ -62,8 +64,38 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
   BitmapDescriptor? _vehicleIcon;
   BitmapDescriptor? _userIcon;
 
-  LatLng get _pickupPoint => LatLng(widget.pickupLat, widget.pickupLng);
-  LatLng get _destPoint => LatLng(widget.destLat, widget.destLng);
+  // External navigation helper
+  Future<void> _launchExternalNavigation() async {
+    final status = _rideService.tripStatus.value;
+    // Go to destination if trip in progress, otherwise go to pickup
+    final lat = status == 'in_progress' ? widget.destLat : widget.pickupLat;
+    final lng = status == 'in_progress' ? widget.destLng : widget.pickupLng;
+    
+    final googleMapsUrl = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    final appleMapsUrl = Uri.parse('maps://?q=$lat,$lng');
+
+    if (await canLaunchUrl(googleMapsUrl)) {
+      await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
+    } else if (await canLaunchUrl(appleMapsUrl)) {
+      await launchUrl(appleMapsUrl, mode: LaunchMode.externalApplication);
+    } else {
+      Get.snackbar('Error', 'Could not open maps application');
+    }
+  }
+
+  LatLng get _pickupPoint {
+    if (_rideService.currentPickupLat.value != 0) {
+      return LatLng(_rideService.currentPickupLat.value, _rideService.currentPickupLng.value);
+    }
+    return LatLng(widget.pickupLat, widget.pickupLng);
+  }
+
+  LatLng get _destPoint {
+    if (_rideService.currentDestLat.value != 0) {
+      return LatLng(_rideService.currentDestLat.value, _rideService.currentDestLng.value);
+    }
+    return LatLng(widget.destLat, widget.destLng);
+  }
 
   @override
   void initState() {
@@ -111,6 +143,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
         assetPath = 'assets/car.png';
     }
     _vehicleIcon = await MarkerUtils.getBytesFromAsset(assetPath, 50);
+    _userIcon = await MarkerUtils.getBytesFromAsset('assets/passenger.png', 50);
   }
 
   Future<void> _initialize() async {
@@ -308,7 +341,13 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
                     backgroundColor: Colors.white,
                     child: IconButton(
                       icon: const Icon(Icons.arrow_back, color: Colors.black),
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () {
+                        if (widget.role == 'driver') {
+                          Get.offAll(() => const UnifiedDashboard(role: 'driver'));
+                        } else {
+                          Get.offAll(() => HomePage());
+                        }
+                      },
                     ),
                   ),
                   const Spacer(),
@@ -407,7 +446,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
             Marker(
               markerId: const MarkerId('rider'),
               position: _pickupPoint,
-              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+              icon: _userIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
               infoWindow: const InfoWindow(title: 'Customer'),
             ),
         },
@@ -518,6 +557,16 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
       String statusText = '';
       String subText = '';
       final status = _rideService.tripStatus.value;
+      final fareAmount = _rideService.currentFare.value > 0 
+          ? _rideService.currentFare.value 
+          : widget.price;
+      
+      final pickupAddr = _rideService.currentPickupAddress.value.isNotEmpty 
+          ? _rideService.currentPickupAddress.value 
+          : widget.pickupAddress;
+      final destAddr = _rideService.currentDestAddress.value.isNotEmpty
+          ? _rideService.currentDestAddress.value
+          : widget.destinationAddress;
 
       if (widget.role == 'rider') {
         if (status == 'accepted') { statusText = 'Rider is coming'; subText = 'Wait at the pickup point'; }
@@ -525,9 +574,9 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
         else if (status == 'in_progress') { statusText = 'On the way'; subText = 'Heading to your destination'; }
         else { statusText = 'Trip status updated'; subText = 'Please check details'; }
       } else {
-        if (status == 'accepted') { statusText = 'Heading to Pickup'; subText = 'Pick up ${widget.pickupAddress}'; }
+        if (status == 'accepted') { statusText = 'Heading to Pickup'; subText = 'Pick up $pickupAddr'; }
         else if (status == 'arriving') { statusText = 'At Pickup Point'; subText = 'Wait for the passenger'; }
-        else if (status == 'in_progress') { statusText = 'Driving to Destination'; subText = 'Heading to ${widget.destinationAddress}'; }
+        else if (status == 'in_progress') { statusText = 'Driving to Destination'; subText = 'Heading to $destAddr'; }
         else { statusText = 'Trip ongoing'; subText = 'Follow the map'; }
       }
 
@@ -556,7 +605,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              '৳${widget.price.round()}',
+              '৳${fareAmount.round()}',
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF10713C)),
             ),
           ),
@@ -624,6 +673,33 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
     });
   }
 
+  void _showCancelConfirmationDialog() {
+    Get.dialog(
+      AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Cancel this Trip?', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
+        content: const Text('Are you sure you want to cancel this ongoing trip request? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('No, Keep Trip', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Get.back(); // dismiss dialog
+              _cancelRide(); // perform cancellation and exit screen
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Yes, Cancel', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDriverActions() {
     return Obx(() {
       final status = _rideService.tripStatus.value;
@@ -643,20 +719,61 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
 
       return Column(
         children: [
+          if (status != 'completed') ...[
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton.icon(
+                onPressed: _launchExternalNavigation,
+                icon: const Icon(Icons.navigation, color: Color(0xFF10713C)),
+                label: const Text('Open External Navigator', style: TextStyle(fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.grey[100],
+                  foregroundColor: const Color(0xFF10713C),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFF10713C), width: 1)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (status == 'completed') 
             const Text('Trip Completed!', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green))
           else
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton(
-                onPressed: onPressed,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10713C),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: SizedBox(
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: onPressed,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF10713C),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      child: Text(btnText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                    ),
+                  ),
                 ),
-                child: Text(btnText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-              ),
+                if (status != 'completed') ...[
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: _showCancelConfirmationDialog,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red[50],
+                        foregroundColor: Colors.red,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Colors.redAccent, width: 1.5)),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                      ),
+                      child: const Icon(Icons.cancel, color: Colors.redAccent),
+                    ),
+                  ),
+                ],
+              ],
             ),
         ],
       );
@@ -667,8 +784,23 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
     return Row(
       children: [
         Expanded(child: _actionButton(Icons.share, 'Share', _handleShareTrip)),
-        const SizedBox(width: 12),
+        const SizedBox(width: 8),
         Expanded(child: _actionButton(Icons.security, 'Safety', _handleEmergency)),
+        const SizedBox(width: 8),
+        // Add Cancel button for Rider
+        Expanded(
+          child: ElevatedButton(
+            onPressed: _showCancelConfirmationDialog,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red[50],
+              foregroundColor: Colors.red,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Colors.redAccent, width: 1)),
+            ),
+            child: const Icon(Icons.cancel_outlined, size: 20, color: Colors.redAccent),
+          ),
+        ),
       ],
     );
   }

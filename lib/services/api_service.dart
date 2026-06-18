@@ -202,6 +202,30 @@ class ApiService extends g.GetxController {
     return await _dio.get('/active-ride');
   }
 
+  // ── Profile Completion ──
+
+  Future<Response> getProfileCompletion() async {
+    try {
+      final response = await _dio.get('/user/profile-completion');
+      return response;
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+    }
+  }
+
+  Future<Response> completeProfile(Map<String, dynamic> data) async {
+    try {
+      final response = await _dio.post('/user/complete-profile', data: data);
+      // Update stored user data
+      if (response.data is Map && response.data['user'] != null) {
+        await _storage.write('user', response.data['user']);
+      }
+      return response;
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+    }
+  }
+
   // ── Password Reset ──
 
   Future<Response> forgotPassword(String email) async {

@@ -11,6 +11,7 @@ import '../services/location_service.dart';
 import '../services/notification_service.dart';
 import '../widgets/sidebar_menu.dart';
 import 'ride_request_call_screen.dart';
+import 'profile_completion_screen.dart';
 
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -39,6 +40,10 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
   int _selectedIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  // Profile completion tracking
+  int _profileCompletionPercent = 0;
+  bool _isProfileLoading = true;
+
   // Nearby ride request tracking
   static const double _nearbyRadiusKm = 5.0; // 5km radius
   StreamSubscription<QuerySnapshot>? _requestSubscription;
@@ -54,6 +59,29 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
     }
     if (widget.role == 'driver') {
       _setupRideRequestListener();
+    }
+    // Load real profile completion data (non-admin roles)
+    if (widget.role != 'admin') {
+      _loadProfileCompletion();
+    }
+  }
+
+  Future<void> _loadProfileCompletion() async {
+    try {
+      final response = await _apiService.getProfileCompletion();
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final pct = response.data['profile_completion']['percentage'] ?? 0;
+        if (mounted) {
+          setState(() {
+            _profileCompletionPercent = pct;
+            _isProfileLoading = false;
+          });
+        }
+      } else {
+        if (mounted) setState(() => _isProfileLoading = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isProfileLoading = false);
     }
   }
 
@@ -171,7 +199,9 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
         // this widget gets disposed → mounted becomes false → skip the add.
         if (!mounted) return;
         if (wasAccepted != true) {
-          _declinedRequestIds.add(requestId);
+          setState(() {
+            _declinedRequestIds.add(requestId);
+          });
           debugPrint('Driver declined/timeout for request $requestId. Hiding from dashboard.');
         }
       });
@@ -368,6 +398,8 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
           const SizedBox(height: 24),
           _buildStatsGrid(),
           const SizedBox(height: 24),
+          if (widget.role == 'driver') _buildActiveTripSection(),
+          if (widget.role == 'driver') const SizedBox(height: 24),
           if (widget.role == 'driver') _buildPendingBidsSection(),
           if (widget.role == 'owner') _buildCarStatusSection(),
           if (widget.role == 'corporate') _buildCorporateAlerts(),
@@ -375,6 +407,84 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
         ],
       ),
     );
+  }
+
+  Widget _buildActiveTripSection() {
+    return Obx(() {
+      final status = _rideService.tripStatus.value;
+      if (status == 'idle' || status == 'completed' || status == 'cancelled') {
+        return const SizedBox.shrink();
+      }
+
+      String statusDisplay = 'Active Trip';
+      IconData statusIcon = Icons.local_taxi;
+      if (status == 'accepted') { statusDisplay = 'Accepted • Heading to Pickup'; statusIcon = Icons.directions_run; }
+      else if (status == 'arriving') { statusDisplay = 'Arrived at Pickup Spot'; statusIcon = Icons.pin_drop; }
+      else if (status == 'in_progress') { statusDisplay = 'In Progress • Driving'; statusIcon = Icons.navigation; }
+
+      return Card(
+        elevation: 2,
+        color: const Color(0xFF10713C).withOpacity(0.08),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Color(0xFF10713C), width: 1.5),
+        ),
+        child: InkWell(
+          onTap: () {
+            Get.to(() => LiveTrackingScreen(
+              role: 'driver',
+              rideType: _rideService.currentRideType.value,
+              pickupAddress: _rideService.currentPickupAddress.value,
+              destinationAddress: _rideService.currentDestAddress.value,
+              price: _rideService.currentFare.value,
+              pickupLat: _rideService.currentPickupLat.value,
+              pickupLng: _rideService.currentPickupLng.value,
+              destLat: _rideService.currentDestLat.value,
+              destLng: _rideService.currentDestLng.value,
+              tripId: _rideService.currentTripId.value,
+            ));
+          },
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(statusIcon, color: const Color(0xFF10713C)),
+                    const SizedBox(width: 8),
+                    Text(
+                      statusDisplay,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF10713C),
+                        fontSize: 14,
+                      ),
+                    ),
+                    const Spacer(),
+                    const Text(
+                      'Resume Live Map',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF10713C),
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'You have an ongoing trip in progress. Tap here to reopen the tracking screen and continue navigation.',
+                  style: TextStyle(fontSize: 12, color: Colors.black87, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    });
   }
 
   Widget _buildWelcomeHeader() {
@@ -413,56 +523,87 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
   }
 
   Widget _buildProgressTracker() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF10713C).withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF10713C).withOpacity(0.1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                localeController.get('Profile Completion', 'প্রোফাইল সম্পন্ন'),
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
+    final pct = _profileCompletionPercent;
+    final progressValue = pct / 100.0;
+    final isComplete = pct >= 100;
+    final color = pct >= 70 ? const Color(0xFF16A34A) : (pct >= 40 ? const Color(0xFFF59E0B) : const Color(0xFFED1C24));
+
+    return GestureDetector(
+      onTap: () => _navigateToProfileCompletion(),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF10713C).withOpacity(0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      isComplete ? Icons.check_circle : Icons.person_outline,
+                      size: 18,
+                      color: color,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      localeController.get('Profile Completion', 'প্রোফাইল সম্পন্ন'),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                  ],
                 ),
-              ),
-              const Text(
-                '65%',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF10713C),
+                Row(
+                  children: [
+                    Text(
+                      _isProfileLoading ? '...' : '$pct%',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 16),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.arrow_forward_ios, size: 12, color: color),
+                  ],
                 ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: LinearProgressIndicator(
+                value: _isProfileLoading ? 0 : progressValue,
+                minHeight: 8,
+                backgroundColor: Colors.white,
+                valueColor: AlwaysStoppedAnimation<Color>(color),
               ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: const LinearProgressIndicator(
-              value: 0.65,
-              minHeight: 8,
-              backgroundColor: Colors.white,
-              valueColor: AlwaysStoppedAnimation(Color(0xFF10713C)),
             ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            localeController.get(
-              'Finish Phase 3 to start receiving trips',
-              'ট্রিপ পাওয়া শুরু করতে ৩য় ধাপ শেষ করুন',
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  isComplete
+                      ? localeController.get('Profile complete! Pending approval', 'প্রোফাইল সম্পন্ন! অনুমোদন অপেক্ষায়')
+                      : localeController.get('Complete profile to get approved', 'অনুমোদনের জন্য প্রোফাইল সম্পন্ন করুন'),
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+                if (!isComplete)
+                  Text(
+                    localeController.get('Complete Now', 'এখন সম্পন্ন করুন'),
+                    style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.bold),
+                  ),
+              ],
             ),
-            style: const TextStyle(fontSize: 11, color: Colors.grey),
-          ),
-        ],
+          ],
+        ),
       ),
     );
+  }
+
+  void _navigateToProfileCompletion() {
+    Get.to(() => ProfileCompletionScreen(role: widget.role));
   }
 
   Widget _buildStatsGrid() {

@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'dhaka_map_screen.dart';
+import 'map_picker_screen.dart';
 import '../services/recent_locations_service.dart';
 import '../services/places_service.dart';
 
@@ -543,6 +545,33 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
         transitionDuration: const Duration(milliseconds: 600),
       ),
     );
+  }
+
+  Future<void> _openMapPicker() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MapPickerScreen(
+          initialLocation: _destLat != null && _destLng != null 
+              ? LatLng(_destLat!, _destLng!) 
+              : (_gpsLat != null && _gpsLng != null ? LatLng(_gpsLat!, _gpsLng!) : null),
+          title: 'Select Destination',
+        ),
+      ),
+    );
+
+    if (result != null && result is Map<String, dynamic>) {
+      setState(() {
+        _ignoreControllerListener = true;
+        _destinationController.text = result['address'];
+        _ignoreControllerListener = false;
+        _destLat = result['lat'];
+        _destLng = result['lng'];
+        _showSuggestions = false;
+      });
+      // Optionally navigate to main map automatically after selection
+      // _navigateToMap();
+    }
   }
 
   @override
@@ -1468,50 +1497,78 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
         border: Border(top: BorderSide(color: Colors.grey[200]!)),
       ),
       child: SafeArea(
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Cancel
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(context),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+            Row(
+              children: [
+                // Set on Map button
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _openMapPicker,
+                    icon: const Icon(Icons.map, size: 18),
+                    label: const Text('Set on map'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFF10713C),
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: const BorderSide(color: Color(0xFF10713C)),
+                      ),
+                    ),
                   ),
-                  side: BorderSide(color: Colors.grey[300]!),
                 ),
-                child: const Text('Cancel',
-                    style: TextStyle(color: Colors.black87)),
-              ),
+              ],
             ),
-            const SizedBox(width: 12),
-            // Set destination / Navigate
-            Expanded(
-              flex: 2,
-              child: ElevatedButton(
-                onPressed:
-                    _destinationController.text.isNotEmpty ? _navigateToMap : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10713C),
-                  disabledBackgroundColor: Colors.grey[300],
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  elevation: 0,
-                ),
-                child: Text(
-                  _destinationController.text.isNotEmpty
-                      ? 'Set Destination'
-                      : 'Enter destination',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                // Cancel
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      side: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    child: const Text('Cancel',
+                        style: TextStyle(color: Colors.black87)),
                   ),
                 ),
-              ),
+                const SizedBox(width: 12),
+                // Set destination / Navigate
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
+                    onPressed:
+                        _destinationController.text.isNotEmpty ? _navigateToMap : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10713C),
+                      disabledBackgroundColor: Colors.grey[300],
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      _destinationController.text.isNotEmpty
+                          ? 'Set Destination'
+                          : 'Enter destination',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
