@@ -9,6 +9,7 @@ import '../services/ride_service.dart';
 import '../services/location_service.dart';
 import '../services/routing_service.dart';
 import 'trip_details_page.dart';
+import '../utils/marker_utils.dart';
 
 class LiveTrackingScreen extends StatefulWidget {
   final String role; // 'rider' or 'driver'
@@ -109,10 +110,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
       default:
         assetPath = 'assets/car.png';
     }
-    _vehicleIcon = await BitmapDescriptor.fromAssetImage(
-      const ImageConfiguration(size: Size(18, 18)),
-      assetPath,
-    );
+    _vehicleIcon = await MarkerUtils.getBytesFromAsset(assetPath, 50);
   }
 
   Future<void> _initialize() async {

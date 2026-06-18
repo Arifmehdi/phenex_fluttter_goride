@@ -14,6 +14,7 @@ import '../services/places_service.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firebase_service.dart';
+import '../utils/marker_utils.dart';
 
 class DhakaMapScreen extends StatefulWidget {
   final String? initialRideType;
@@ -79,6 +80,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
 
   BitmapDescriptor? _carIcon;
   BitmapDescriptor? _bikeIcon;
+  BitmapDescriptor? _ambulanceIcon;
 
   bool _isInitialCameraMove = true;
   bool _hasPreSelectedPickup = false;
@@ -159,14 +161,9 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   }
 
   Future<void> _loadIcons() async {
-    _carIcon = await BitmapDescriptor.fromAssetImage(
-      const ImageConfiguration(size: Size(18, 18)),
-      'assets/car.png',
-    );
-    _bikeIcon = await BitmapDescriptor.fromAssetImage(
-      const ImageConfiguration(size: Size(18, 18)),
-      'assets/motor.png',
-    );
+    _carIcon = await MarkerUtils.getBytesFromAsset('assets/car.png', 50);
+    _bikeIcon = await MarkerUtils.getBytesFromAsset('assets/motor.png', 50);
+    _ambulanceIcon = await MarkerUtils.getBytesFromAsset('assets/ambulance.png', 50);
   }
 
   void _listenToNearbyDrivers() {
@@ -206,12 +203,19 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
           final heading = (data['heading'] as num?)?.toDouble() ?? 0.0;
           final vehicleType = data['vehicleType'] as String? ?? 'car';
           
+          BitmapDescriptor icon;
+          if (vehicleType == 'motor' || vehicleType == 'bike') {
+            icon = _bikeIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
+          } else if (vehicleType == 'ambulance') {
+            icon = _ambulanceIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
+          } else {
+            icon = _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
+          }
+
           return Marker(
             markerId: MarkerId(doc.id),
             position: LatLng(lat, lng),
-            icon: (vehicleType == 'motor' || vehicleType == 'bike') 
-                ? (_bikeIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue))
-                : (_carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen)),
+            icon: icon,
             rotation: heading,
             anchor: const Offset(0.5, 0.5),
             infoWindow: InfoWindow(title: 'Driver ${doc.id.substring(0, 4)} ($vehicleType)'),

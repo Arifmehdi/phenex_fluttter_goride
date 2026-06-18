@@ -8,6 +8,7 @@ import 'package:get/get.dart';
 import 'trip_details_page.dart';
 import 'live_tracking_screen.dart';
 import '../services/ride_service.dart';
+import '../utils/marker_utils.dart';
 
 class RideStatusScreen extends StatefulWidget {
   final String rideType;
@@ -67,10 +68,7 @@ class _RideStatusScreenState extends State<RideStatusScreen> with SingleTickerPr
       default:
         assetPath = 'assets/car.png';
     }
-    _vehicleIcon = await BitmapDescriptor.fromAssetImage(
-      const ImageConfiguration(size: Size(18, 18)),
-      assetPath,
-    );
+    _vehicleIcon = await MarkerUtils.getBytesFromAsset(assetPath, 50);
   }
 
   void _requestRide() {
