@@ -124,7 +124,7 @@ class RideService extends GetxService {
 
       // Create the trip in Laravel API (non-critical, rider can still receive updates)
       try {
-        await _apiService.createRideRequest({
+        final laravelResponse = await _apiService.createRideRequest({
           'ride_type': rideType,
           'pickup_latitude': pickupLat,
           'pickup_longitude': pickupLng,
@@ -135,6 +135,26 @@ class RideService extends GetxService {
           'fare': fare,
           'firebase_trip_id': tripId,
         });
+        // Store the Laravel ride request ID for rating submission
+        if (laravelResponse.statusCode == 201 && laravelResponse.data is Map) {
+          final rideData = laravelResponse.data['data'];
+          if (rideData != null && rideData['id'] != null) {
+            laravelRideId.value = (rideData['id'] as num).toInt();
+            if (rideData['driver_id'] != null) {
+              laravelDriverId.value = (rideData['driver_id'] as num).toInt();
+            }
+            debugPrint('Stored Laravel ride ID: ${laravelRideId.value}');
+          // Now match nearby drivers to this ride
+          if (laravelRideId.value > 0) {
+            try {
+              final matchRes = await _apiService.matchDrivers(rideRequestId: laravelRideId.value);
+              debugPrint('Driver matching response: ${matchRes.statusCode} - ${matchRes.data}');
+            } catch (e) {
+              debugPrint('Warning: could not match drivers: $e');
+            }
+          }
+          }
+        }
       } catch (e) {
         debugPrint('Warning: could not create ride request in Laravel API: $e');
       }
@@ -231,11 +251,12 @@ class RideService extends GetxService {
     });
   }
 
-  /// Get pickup location from current trip data in Firestore
+  /// Get pickup location from current trip data (stored in the service when trip is accepted)
   (double, double)? _getRidePickupLocation() {
-    // We store this temporarily - in production, we'd get it from the trip doc
-    // For now, we access from FirebaseService trips collection
-    return null; // Will be populated from the trip document
+    final pickupLat = currentPickupLat.value;
+    final pickupLng = currentPickupLng.value;
+    if (pickupLat == 0.0 || pickupLng == 0.0) return null;
+    return (pickupLat, pickupLng);
   }
 
   /// Accept a ride request (driver side)
@@ -361,4 +382,8 @@ class RideService extends GetxService {
     tripProgress.value = 0;
     isDriverOnline.value = false;
   }
+
+  // ── Laravel IDs for rating submission ──
+  final RxInt laravelRideId = 0.obs;
+  final RxInt laravelDriverId = 0.obs;
 }

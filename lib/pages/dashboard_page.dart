@@ -12,6 +12,7 @@ import '../services/notification_service.dart';
 import '../widgets/sidebar_menu.dart';
 import 'ride_request_call_screen.dart';
 import 'profile_completion_screen.dart';
+import 'ride_history_screen.dart';
 
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -1204,6 +1205,11 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
           Icons.history,
           localeController.get('Trip History', 'ট্রিপ হিস্ট্রি'),
           onTap: () => Get.to(() => const TripHistoryScreen()),
+        ),
+        _profileMenuItem(
+          Icons.history_toggle_off,
+          localeController.get('Ride History', 'Trip History'),
+          onTap: () => Get.to(() => const RideHistoryScreen()),
         ),
         _profileMenuItem(
           Icons.settings_outlined,

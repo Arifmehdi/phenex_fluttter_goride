@@ -257,4 +257,138 @@ class ApiService extends g.GetxController {
       return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
     }
   }
+
+
+  /// Fetches website parameters including per_km_rate for fare calculation
+  Future<Response> getWebsiteParameters() async {
+    try {
+      final response = await _dio.get('/website-parameters');
+      return response;
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+    }
+  }
+
+  // ── Driver Ratings ──
+
+  /// Submit a rating for a driver after a completed trip
+  Future<Response> rateDriver({
+    required int rideRequestId,
+    required int driverId,
+    required int rating,
+    String? review,
+  }) async {
+    try {
+      final Map<String, dynamic> data = {
+        'ride_request_id': rideRequestId,
+        'driver_id': driverId,
+        'rating': rating,
+      };
+      if (review != null && review.isNotEmpty) {
+        data['review'] = review;
+      }
+      final response = await _dio.post('/driver-ratings', data: data);
+      return response;
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+    }
+  }
+
+  /// Check if user has already rated a specific ride
+  Future<Response> checkDriverRating(int rideRequestId) async {
+    try {
+      final response = await _dio.get('/driver-ratings/check/$rideRequestId');
+      return response;
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+    }
+  }
+
+  // ── Ride Matching & History ──
+
+  /// Match nearby drivers and create ride offers
+  Future<Response> matchDrivers({required int rideRequestId}) async {
+    try {
+      final response = await _dio.post('/ride-requests/match', data: {
+        'ride_request_id': rideRequestId,
+      });
+      return response;
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+    }
+  }
+
+  /// Respond to a ride offer (accept or decline)
+  Future<Response> respondToRideOffer({
+    required int offerId,
+    required String response,
+    required int driverId,
+  }) async {
+    try {
+      final data = {
+        'response': response,
+        'driver_id': driverId,
+      };
+      final apiResponse = await _dio.post('/ride-offers/$offerId/respond', data: data);
+      return apiResponse;
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+    }
+  }
+
+  /// Get ride history for the current user
+  Future<Response> getRideHistory({String? status, int perPage = 20}) async {
+    try {
+      final queryParams = <String, dynamic>{'per_page': perPage};
+      if (status != null && status.isNotEmpty) {
+        queryParams['status'] = status;
+      }
+      final response = await _dio.get('/ride-history', queryParameters: queryParams);
+      return response;
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+    }
+  }
+
+  /// Get detailed info for a specific ride
+  Future<Response> getRideDetail(int rideId) async {
+    try {
+      final response = await _dio.get('/ride-requests/$rideId/detail');
+      return response;
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+    }
+  }
+
+  /// Get all ride offers for a specific ride
+  Future<Response> getRideOffers(int rideRequestId) async {
+    try {
+      final response = await _dio.get('/ride-requests/$rideRequestId/offers');
+      return response;
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+    }
+  }
+
+  /// Update ride payment info after trip completes
+  Future<Response> updateRidePayment(int rideId, Map<String, dynamic> paymentData) async {
+    try {
+      final response = await _dio.post('/ride-requests/$rideId/payment', data: paymentData);
+      return response;
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+    }
+  }
+
+  /// Toggle driver online/offline status
+  Future<Response> toggleDriverOnline(bool isOnline) async {
+    try {
+      final response = await _dio.post('/driver/toggle-online', data: {
+        'is_online': isOnline,
+      });
+      return response;
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+    }
+  }
 }

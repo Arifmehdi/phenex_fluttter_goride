@@ -50,6 +50,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   String _destinationAddress = 'Select Destination';
   double _distance = 0.0;
   double _price = 0.0;
+  double _perKmRate = 20.0; // Default fallback, fetched from API
   bool _selectingPickup = false; // Start with destination selection
   bool _isConfirmingPickup = false;
   bool _isRouteVisible = false;
@@ -134,6 +135,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
     _loadRecentLocations();
     _checkPermission();
     _listenToNearbyDrivers();
+    _fetchPerKmRate();
   }
 
   Future<void> _resolveAddressToLatLng(String address, {required bool isPickup}) async {
@@ -236,6 +238,25 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
     }
   }
 
+  /// Fetch the per_km_rate from the Laravel API (website parameters)
+  Future<void> _fetchPerKmRate() async {
+    try {
+      final response = await _apiService.getWebsiteParameters();
+      if (response.statusCode == 200 && response.data is Map) {
+        final data = response.data["data"] as Map<String, dynamic>?;
+        if (data != null && data["per_km_rate"] != null) {
+          final rate = (data["per_km_rate"] as num).toDouble();
+          if (rate > 0) {
+            setState(() => _perKmRate = rate);
+            debugPrint("Fetched per_km_rate from API: " + _perKmRate.toString());
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Failed to fetch per_km_rate, using default: 20.0 - " + e.toString());
+    }
+  }
+
   void _loadRecentLocations() {
     setState(() => _recentLocations = _recentLocationsService.getLocations());
   }
@@ -295,7 +316,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
         _routePoints = route.points;
         _routeDuration = route.duration.toInt();
         _distance = route.distance;
-        _price = 50 + (route.distance * 20);
+        _price = 50 + (route.distance * _perKmRate);
         _isLoadingRoute = false;
       });
       if (_routePoints.isNotEmpty) _fitRoute();
@@ -308,7 +329,7 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
       setState(() {
         _routePoints = [_pickupLocation!, _destinationLocation!];
         _distance = distanceInMeters / 1000;
-        _price = 50 + (_distance * 20);
+        _price = 50 + (_distance * _perKmRate);
         _isLoadingRoute = false;
       });
     }
