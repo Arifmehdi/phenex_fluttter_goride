@@ -22,6 +22,7 @@ import 'package:goride/pages/login_page.dart';
 import 'package:goride/pages/register_screen.dart';
 import 'package:goride/pages/forgot_password_screen.dart';
 import 'package:goride/pages/reset_password_screen.dart';
+import 'package:goride/pages/change_password_screen.dart';
 import 'package:goride/widgets/sidebar_menu.dart';
 
 void main() async {
@@ -89,6 +90,7 @@ class GoRideApp extends StatelessWidget {
         GetPage(name: '/registration', page: () => const RegisterScreen()),
         GetPage(name: '/forgot-password', page: () => const ForgotPasswordScreen()),
         GetPage(name: '/reset-password', page: () => const ResetPasswordScreen()),
+        GetPage(name: '/change-password', page: () => const ChangePasswordScreen()),
       ],
     );
   }
@@ -1181,6 +1183,7 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
           ),
           const SizedBox(height: 24),
           _profileMenuTile(Icons.wallet_rounded, 'GoRide Wallet', '৳ 1,250.00'),
+          _profileMenuTile(Icons.lock_outline, 'Change Password', ''),
           _profileMenuTile(Icons.card_giftcard_rounded, 'Promotions', '3 available'),
           _profileMenuTile(Icons.support_agent_rounded, 'Help & Support', ''),
           _profileMenuTile(Icons.settings_suggest_rounded, 'Settings', ''),

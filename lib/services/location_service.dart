@@ -99,10 +99,24 @@ class LocationService extends GetxService {
     _isOnline = isOnline;
     _currentTripId = tripId;
 
-    const locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 10, // Update every 10 meters
-    );
+    late final LocationSettings locationSettings;
+    if (GetPlatform.isAndroid) {
+      locationSettings = AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+        intervalDuration: const Duration(seconds: 3),
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationText: "GoRide is tracking your location to match you with nearby riders",
+          notificationTitle: "GoRide Driver is Online",
+          enableWakeLock: true,
+        ),
+      );
+    } else {
+      locationSettings = const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      );
+    }
 
     // Get initial position immediately
     await getCurrentPosition();

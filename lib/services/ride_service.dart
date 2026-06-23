@@ -144,15 +144,30 @@ class RideService extends GetxService {
               laravelDriverId.value = (rideData['driver_id'] as num).toInt();
             }
             debugPrint('Stored Laravel ride ID: ${laravelRideId.value}');
-          // Now match nearby drivers to this ride
-          if (laravelRideId.value > 0) {
-            try {
-              final matchRes = await _apiService.matchDrivers(rideRequestId: laravelRideId.value);
-              debugPrint('Driver matching response: ${matchRes.statusCode} - ${matchRes.data}');
-            } catch (e) {
-              debugPrint('Warning: could not match drivers: $e');
+            // Now match nearby drivers to this ride
+            if (laravelRideId.value > 0) {
+              try {
+                final matchRes = await _apiService.matchDrivers(rideRequestId: laravelRideId.value);
+                debugPrint('Driver matching response: ${matchRes.statusCode} - ${matchRes.data}');
+              } catch (e) {
+                debugPrint('Warning: could not match drivers: $e');
+              }
+              
+              // Sync the Laravel MySQL ID to Firestore so driver can fetch it
+              try {
+                await _firebaseService.activeTrips?.doc(tripId).update({
+                  'mysqlRideId': laravelRideId.value,
+                });
+                if (_currentRideRequestId.isNotEmpty) {
+                  await _firebaseService.rideRequests?.doc(_currentRideRequestId).update({
+                    'mysqlRideId': laravelRideId.value,
+                  });
+                }
+                debugPrint('Updated Firestore with mysqlRideId: ${laravelRideId.value}');
+              } catch (firebaseErr) {
+                debugPrint('Warning: could not update Firestore with mysqlRideId: $firebaseErr');
+              }
             }
-          }
           }
         }
       } catch (e) {
@@ -306,6 +321,7 @@ class RideService extends GetxService {
       );
 
       if (laravelRideId != null) {
+        this.laravelRideId.value = laravelRideId;
         await _apiService.updateRideStatus(laravelRideId, 'accepted');
       }
 
@@ -331,8 +347,9 @@ class RideService extends GetxService {
     if (currentTripId.value.isEmpty) return;
     await _firebaseService.updateTripStatus(currentTripId.value, status);
     
-    if (laravelRideId != null) {
-      await _apiService.updateRideStatus(laravelRideId, status);
+    final finalLaravelId = laravelRideId ?? this.laravelRideId.value;
+    if (finalLaravelId > 0) {
+      await _apiService.updateRideStatus(finalLaravelId, status);
     }
     
     tripStatus.value = status;

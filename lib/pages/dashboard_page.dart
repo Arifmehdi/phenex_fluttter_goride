@@ -171,6 +171,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
     final destLng = (data['destLongitude'] as num?)?.toDouble() ?? 0.0;
     final tripId = data['tripId'] as String?;
     final riderPhone = data['riderPhone'] as String?;
+    final mysqlRideId = (data['mysqlRideId'] as num?)?.toInt();
 
     // Show the full-screen call. When it returns via Get.back(result: false),
     // it means the driver declined or timed out — hide this request.
@@ -189,6 +190,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
           destLng: destLng,
           tripId: tripId,
           riderPhone: riderPhone,
+          mysqlRideId: mysqlRideId,
         ),
         fullscreenDialog: true,
         transition: Transition.fadeIn,
@@ -242,6 +244,14 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
     setState(() => _isOnline = online);
 
     final vehicleType = user?['vehicle_type']?.toString().toLowerCase();
+
+    // Synchronize online status to Laravel MySQL database
+    try {
+      await _apiService.toggleDriverOnline(online);
+      debugPrint('Synchronized online status to Laravel API: $online');
+    } catch (e) {
+      debugPrint('Error syncing online status to Laravel API: $e');
+    }
 
     if (!online) {
       // Clear all request tracking when going offline

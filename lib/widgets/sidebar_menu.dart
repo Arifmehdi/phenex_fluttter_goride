@@ -50,6 +50,14 @@ class SidebarMenu extends StatelessWidget {
           ..._buildRoleSpecificMenus(context),
           const Divider(),
           ListTile(
+            leading: const Icon(Icons.lock_outline, color: Color(0xFF10713C)),
+            title: const Text('Change Password'),
+            onTap: () {
+              Navigator.pop(context);
+              Get.toNamed('/change-password');
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.settings, color: Colors.grey),
             title: const Text('Settings'),
             onTap: () {

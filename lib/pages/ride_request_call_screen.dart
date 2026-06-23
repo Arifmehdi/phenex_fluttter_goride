@@ -23,6 +23,7 @@ class RideRequestCallScreen extends StatefulWidget {
   final String? tripId;
   final String? riderPhone;
   final String? riderRating;
+  final int? mysqlRideId;
 
   const RideRequestCallScreen({
     super.key,
@@ -39,6 +40,7 @@ class RideRequestCallScreen extends StatefulWidget {
     this.tripId,
     this.riderPhone,
     this.riderRating,
+    this.mysqlRideId,
   });
 
   @override
@@ -130,6 +132,7 @@ class _RideRequestCallScreenState extends State<RideRequestCallScreen>
       tripId: widget.tripId,
       riderName: widget.riderName,
       riderPhone: widget.riderPhone,
+      laravelRideId: widget.mysqlRideId,
     );
 
     if (mounted) {

@@ -650,6 +650,29 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen>
   }
 
   void _updateStatus(String status) async {
+    if (status == 'completed') {
+      final double distance = _totalRouteDistance;
+      // If remaining duration is 0 (since we arrived), fallback to a logical duration or routing estimations
+      final int duration = _remainingDuration > 0 ? _remainingDuration : 15;
+      final double fare = widget.price;
+      final int finalLaravelId = _rideService.laravelRideId.value;
+
+      if (finalLaravelId > 0) {
+        try {
+          await _apiService.updateRidePayment(finalLaravelId, {
+            'payment_status': 'paid',
+            'payment_method': 'cash',
+            'actual_fare': fare,
+            'distance_km': distance,
+            'duration_minutes': duration,
+          });
+          debugPrint('Laravel ride payment details updated on completion: ID=$finalLaravelId');
+        } catch (e) {
+          debugPrint('Failed to update Laravel ride payment details: $e');
+        }
+      }
+    }
+
     await _rideService.updateStatus(status);
     _fetchRoute(); // Update route for new status
   }

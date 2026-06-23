@@ -615,6 +615,9 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 24),
             _buildAccountMenuItem(Icons.edit, 'Edit Profile', () {}),
+            _buildAccountMenuItem(Icons.lock_outline, 'Change Password', () {
+              Get.toNamed('/change-password');
+            }),
             _buildAccountMenuItem(Icons.payment, 'Payment Methods', () {}),
             _buildAccountMenuItem(Icons.settings, 'Settings', () {}),
             _buildAccountMenuItem(Icons.help, 'Help & Support', () {}),

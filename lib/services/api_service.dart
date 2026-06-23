@@ -258,6 +258,23 @@ class ApiService extends g.GetxController {
     }
   }
 
+  /// Change password for authenticated user
+  Future<Response> changePassword({
+    required String currentPassword,
+    required String password,
+    required String passwordConfirmation,
+  }) async {
+    try {
+      final response = await _dio.patch('/user/password', data: {
+        'current_password': currentPassword,
+        'password': password,
+        'password_confirmation': passwordConfirmation,
+      });
+      return response;
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+    }
+  }
 
   /// Fetches website parameters including per_km_rate for fare calculation
   Future<Response> getWebsiteParameters() async {
