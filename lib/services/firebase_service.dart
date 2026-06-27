@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
@@ -28,20 +29,44 @@ class FirebaseService extends GetxService {
 
       await Firebase.initializeApp();
       _firestore = FirebaseFirestore.instance;
-      
+
       // Enable offline persistence for better reliability
       _firestore!.settings = const Settings(
         persistenceEnabled: true,
         cacheSizeBytes: 100_000_000, // 100MB
       );
-      
+
+      // Mark Firestore as ready BEFORE attempting auth
+      // so a failed auth never breaks the ride request stream.
       _initialized = true;
       debugPrint('Firebase initialized successfully');
+
+      // Try anonymous sign-in so Firestore rules (request.auth != null) pass.
+      // This is optional — if Anonymous Auth is not enabled in Firebase Console
+      // the sign-in fails silently and Firestore still works with open rules.
+      _signInAnonymouslySafe();
     } catch (e) {
       _initialized = false;
       _firestore = null;
       debugPrint('Firebase initialization error: $e');
       // Don't rethrow here to allow app to run in "offline/limited" mode
+    }
+  }
+
+  /// Sign in anonymously so Firestore security rules that check
+  /// `request.auth != null` pass. Fails silently if Anonymous Auth
+  /// is not enabled in the Firebase Console — Firestore still works.
+  Future<void> _signInAnonymouslySafe() async {
+    try {
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+        debugPrint('Firebase anonymous auth OK: ${FirebaseAuth.instance.currentUser?.uid}');
+      }
+    } catch (e) {
+      // Anonymous Auth not enabled in Firebase Console — that's fine.
+      // Set Firestore rules to "allow read, write: if true" for dev,
+      // or enable Anonymous Auth in Firebase Console → Authentication.
+      debugPrint('Firebase anonymous auth skipped: $e');
     }
   }
 

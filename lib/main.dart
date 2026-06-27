@@ -11,18 +11,23 @@ import 'package:goride/approval_helper.dart';
 import 'package:goride/pages/location_selection_screen.dart';
 import 'package:goride/pages/rent_car_booking_screen.dart';
 import 'package:goride/services/api_service.dart';
+import 'package:goride/services/chat_service.dart';
 import 'package:goride/services/firebase_service.dart';
 import 'package:goride/services/location_service.dart';
 import 'package:goride/services/notification_service.dart';
 import 'package:goride/services/ride_service.dart';
 import 'package:goride/services/routing_service.dart';
+import 'package:goride/services/saved_addresses_service.dart';
 import 'package:goride/services/sslcommerz_service.dart';
 import 'package:goride/services/voice_guidance_service.dart';
+import 'package:goride/services/deep_link_service.dart';
 import 'package:goride/pages/login_page.dart';
 import 'package:goride/pages/register_screen.dart';
 import 'package:goride/pages/forgot_password_screen.dart';
 import 'package:goride/pages/reset_password_screen.dart';
 import 'package:goride/pages/change_password_screen.dart';
+import 'package:goride/pages/saved_addresses_screen.dart';
+import 'package:goride/pages/chat_conversation_list_screen.dart';
 import 'package:goride/widgets/sidebar_menu.dart';
 
 void main() async {
@@ -30,9 +35,12 @@ void main() async {
   await GetStorage.init();
 
   // Initialize core services
-  Get.put(ApiService());
-  Get.put(LocaleController());
-  Get.put(SslCommerzService());
+   Get.put(ApiService());
+   Get.put(ChatService());
+   Get.put(DeepLinkService());
+   Get.put(SavedAddressesService());
+   Get.put(LocaleController());
+   Get.put(SslCommerzService());
 
   // Initialize Firebase for real-time features
   final firebaseService = Get.put(FirebaseService());
@@ -91,6 +99,9 @@ class GoRideApp extends StatelessWidget {
         GetPage(name: '/forgot-password', page: () => const ForgotPasswordScreen()),
         GetPage(name: '/reset-password', page: () => const ResetPasswordScreen()),
         GetPage(name: '/change-password', page: () => const ChangePasswordScreen()),
+         GetPage(name: '/saved-addresses', page: () => const SavedAddressesScreen()),
+         GetPage(name: '/chat', page: () => const ChatConversationListScreen()),
+         GetPage(name: '/chat/conversation-list', page: () => const ChatConversationListScreen()),
       ],
     );
   }

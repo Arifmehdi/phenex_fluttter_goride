@@ -355,18 +355,32 @@ class RideService extends GetxService {
     tripStatus.value = status;
   }
 
-  /// Cancel the current trip and its ride request
-  Future<void> cancelTrip() async {
-    await updateStatus('cancelled');
-    
-    // Also cancel the ride request so other drivers won't see it as pending
+  /// Cancel the current trip. Returns the cancellation fee (0 if free).
+  Future<double> cancelTrip({String reason = 'Cancelled by rider'}) async {
+    double fee = 0;
+    // Charge ৳50 if driver has already been assigned (accepted phase or later)
+    final chargeable = tripStatus.value == 'accepted' ||
+        tripStatus.value == 'arriving' ||
+        tripStatus.value == 'in_progress';
+    if (chargeable) fee = 50;
+
+    // Update Laravel with reason
+    if (laravelRideId.value > 0) {
+      await _apiService.cancelRide(
+        laravelRideId.value,
+        reason: reason,
+        cancelledBy: 'rider',
+      );
+    }
+
+    // Update Firestore
     if (_currentRideRequestId.isNotEmpty) {
       try {
         final coll = _firebaseService.rideRequests;
         if (coll != null) {
           await coll.doc(_currentRideRequestId).update({
             'status': 'cancelled',
-            'cancelReason': 'rider_cancelled',
+            'cancelReason': reason,
             'cancelledAt': FieldValue.serverTimestamp(),
           });
         }
@@ -374,8 +388,9 @@ class RideService extends GetxService {
         debugPrint('Warning: could not cancel ride request: $e');
       }
     }
-    
+
     resetTrip();
+    return fee;
   }
 
   /// Reset trip state

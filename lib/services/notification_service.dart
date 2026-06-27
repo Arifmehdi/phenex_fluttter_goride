@@ -1,52 +1,123 @@
 import 'dart:typed_data';
-
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:get/get.dart';
+import 'package:goride/services/api_service.dart';
 
-/// Service to handle ride request notifications with ringing and vibration.
-/// Plays a persistent alert for 10 seconds when a new ride request arrives.
+/// Background FCM handler — must be a top-level function
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  debugPrint('FCM background: ${message.notification?.title}');
+}
+
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
   NotificationService._internal();
 
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   bool _initialized = false;
 
-  // Notification IDs
   static const int _rideRequestNotificationId = 1001;
+  static const int _rideStatusNotificationId = 1002;
 
-  /// Track active request IDs to avoid duplicate alerts
   final Set<String> _activeRequestIds = {};
 
-  /// Initialize the notification plugin
   Future<void> init() async {
     if (_initialized) return;
 
+    // 1. Register background handler
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+    // 2. Request permission
+    await _fcm.requestPermission(alert: true, badge: true, sound: true);
+
+    // 3. Init local notifications
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
+    await _plugin.initialize(
+      settings: const InitializationSettings(android: androidSettings),
+      onDidReceiveNotificationResponse: _onNotificationTap,
     );
 
-    const initSettings = InitializationSettings(
-      android: androidSettings,
-      iOS: iosSettings,
+    // 4. Create channels
+    const AndroidNotificationChannel rideChannel = AndroidNotificationChannel(
+      'ride_requests_channel', 'Ride Requests',
+      description: 'New ride request alerts',
+      importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
     );
-
-    await _plugin.initialize(settings: initSettings);
-    _initialized = true;
-  }
-
-  /// Request Android 13+ notification permission
-  Future<void> requestPermission() async {
+    const AndroidNotificationChannel statusChannel = AndroidNotificationChannel(
+      'ride_status_channel', 'Ride Status',
+      description: 'Ride status updates',
+      importance: Importance.high,
+    );
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
+    await androidPlugin?.createNotificationChannel(rideChannel);
+    await androidPlugin?.createNotificationChannel(statusChannel);
     await androidPlugin?.requestNotificationsPermission();
+
+    // 5. Foreground FCM → show local notification
+    FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+
+    // 6. App opened from notification tap
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageOpenedApp);
+
+    _initialized = true;
+
+    // 7. Upload FCM token to backend
+    await _uploadFcmToken();
+    _fcm.onTokenRefresh.listen((_) => _uploadFcmToken());
   }
 
-  /// Show a ride request notification with ringing and vibration.
-  /// Uses the default system notification sound for ringing + vibration.
+  Future<void> _uploadFcmToken() async {
+    try {
+      final token = await _fcm.getToken();
+      if (token != null) {
+        final api = Get.find<ApiService>();
+        if (api.isLoggedInState) {
+          await api.updateFcmToken(token);
+          debugPrint('FCM token uploaded: ${token.substring(0, 20)}...');
+        }
+      }
+    } catch (e) {
+      debugPrint('FCM token upload error: $e');
+    }
+  }
+
+  void _handleForegroundMessage(RemoteMessage message) {
+    final data = message.data;
+    final type = data['type'] ?? '';
+
+    if (type == 'ride_request') {
+      showRideRequestNotification(
+        requestId: data['request_id'] ?? '',
+        riderName: data['rider_name'] ?? 'Passenger',
+        pickupAddress: data['pickup'] ?? '',
+        destinationAddress: data['destination'] ?? '',
+        fare: data['fare'] ?? '0',
+      );
+    } else {
+      // Generic status notification
+      _showStatusNotification(
+        title: message.notification?.title ?? 'GoRide',
+        body: message.notification?.body ?? '',
+      );
+    }
+  }
+
+  void _handleMessageOpenedApp(RemoteMessage message) {
+    debugPrint('Notification tapped: ${message.data}');
+    // Navigate based on type — extend as needed
+  }
+
+  void _onNotificationTap(NotificationResponse response) {
+    debugPrint('Local notification tapped: ${response.payload}');
+  }
+
   Future<void> showRideRequestNotification({
     required String requestId,
     required String riderName,
@@ -57,16 +128,10 @@ class NotificationService {
     if (_activeRequestIds.contains(requestId)) return;
     _activeRequestIds.add(requestId);
 
-    // Vibration pattern: vibrate pattern for phone-call-like behavior
-    final vibrationPattern = Int64List.fromList([
-      500, 500, 500, 500, 500, 1000, 500, 500,
-    ]);
+    final vibrationPattern = Int64List.fromList([500, 500, 500, 500, 500, 1000, 500, 500]);
 
-    // Android-specific high-priority notification for ringing like a phone call
     final androidDetails = AndroidNotificationDetails(
-      'ride_requests_channel',
-      'Ride Requests',
-      channelDescription: 'Notifications for new ride requests',
+      'ride_requests_channel', 'Ride Requests',
       importance: Importance.max,
       priority: Priority.max,
       playSound: true,
@@ -75,49 +140,47 @@ class NotificationService {
       category: AndroidNotificationCategory.call,
       visibility: NotificationVisibility.public,
       fullScreenIntent: true,
-      ongoing: false,
       autoCancel: false,
-    );
-
-    final iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-      sound: 'default',
-    );
-
-    final notificationDetails = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
     );
 
     await _plugin.show(
       id: _rideRequestNotificationId,
       title: '🚗 New Ride Request!',
-      body: '$riderName wants to go from $pickupAddress to $destinationAddress • $fare',
-      notificationDetails: notificationDetails,
+      body: '$riderName • $pickupAddress → $destinationAddress • ৳$fare',
+      notificationDetails: NotificationDetails(android: androidDetails),
+      payload: 'ride_request:$requestId',
     );
   }
 
-  /// Cancel the current ride request notification
+  Future<void> _showStatusNotification({required String title, required String body}) async {
+    const androidDetails = AndroidNotificationDetails(
+      'ride_status_channel', 'Ride Status',
+      importance: Importance.high,
+      priority: Priority.high,
+    );
+    await _plugin.show(
+      id: _rideStatusNotificationId,
+      title: title,
+      body: body,
+      notificationDetails: const NotificationDetails(android: androidDetails),
+    );
+  }
+
   Future<void> cancelRideRequestNotification() async {
     await _plugin.cancel(id: _rideRequestNotificationId);
   }
 
-  /// Remove a request ID from the active set (called when request is accepted/timed out)
   Future<void> dismissRequest(String requestId) async {
     _activeRequestIds.remove(requestId);
-    if (_activeRequestIds.isEmpty) {
-      await cancelRideRequestNotification();
-    }
+    if (_activeRequestIds.isEmpty) await cancelRideRequestNotification();
   }
 
-  /// Check if a request is already being alerted
-  bool isRequestActive(String requestId) {
-    return _activeRequestIds.contains(requestId);
-  }
+  bool isRequestActive(String requestId) => _activeRequestIds.contains(requestId);
 
-  /// Cancel all notifications
+  /// No-op: permissions are requested inside init() via FCM.
+  /// Kept for backwards compatibility with main.dart.
+  Future<void> requestPermission() async {}
+
   Future<void> cancelAll() async {
     _activeRequestIds.clear();
     await _plugin.cancelAll();

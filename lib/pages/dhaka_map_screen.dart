@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'fare_estimate_sheet.dart';
+import 'confirm_pickup_screen.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
@@ -886,25 +888,63 @@ class _DhakaMapScreenState extends State<DhakaMapScreen> {
   }
 
   void _bookRide() async {
-    if (_selectedRide == null) return;
-    
-    // Calculate final price based on ride type
+    if (_selectedRide == null || _pickupLocation == null) return;
+
+    // STEP 1 — Confirm pickup point (Uber/Pathao style draggable map)
+    final pickup = await Get.to<Map<String, dynamic>>(() => ConfirmPickupScreen(
+          initialLat: _pickupLocation!.latitude,
+          initialLng: _pickupLocation!.longitude,
+          initialAddress: _pickupAddress,
+        ));
+
+    if (pickup == null) return; // user backed out
+
+    // Update pickup with the confirmed point
+    final confirmedLat = (pickup['lat'] as num).toDouble();
+    final confirmedLng = (pickup['lng'] as num).toDouble();
+    final confirmedAddress = pickup['address'] as String? ?? _pickupAddress;
+    setState(() {
+      _pickupLocation = LatLng(confirmedLat, confirmedLng);
+      _pickupAddress = confirmedAddress;
+    });
+
     double multiplier = 1.0;
     if (_selectedRide == 'motor') multiplier = 0.6;
     else if (_selectedRide == 'rent_car') multiplier = 1.5;
     else if (_selectedRide == 'ambulance') multiplier = 1.2;
-    
-    final finalPrice = (_price * multiplier).roundToDouble();
 
-    Get.to(() => LiveTrackingScreen(
-      rideType: _selectedRide!, 
-      pickupAddress: _pickupAddress, 
-      destinationAddress: _destinationAddress,
-      price: finalPrice, 
-      pickupLat: _pickupLocation!.latitude, 
+    final rawPrice = (_price * multiplier).roundToDouble();
+
+    if (!mounted) return;
+
+    // STEP 2 — Fare estimate + promo code sheet
+    final result = await showFareEstimateSheet(
+      context: context,
+      rideType: _selectedRide!,
+      distanceKm: _distance,
+      baseFare: 50,
+      perKmRate: _perKmRate,
+      totalFare: rawPrice,
+    );
+
+    if (result == null || result['confirmed'] != true) return;
+
+    final finalPrice = (result['final_fare'] as num).toDouble();
+    final discount = (result['discount'] as num?)?.toDouble() ?? 0;
+    final promoCode = result['promo_code'] as String?;
+
+    // STEP 3 — RideStatusScreen (searching → driver found → live tracking)
+    Get.to(() => RideStatusScreen(
+      rideType: _selectedRide!,
+      pickup: _pickupAddress,
+      destination: _destinationAddress,
+      price: finalPrice,
+      pickupLat: _pickupLocation!.latitude,
       pickupLng: _pickupLocation!.longitude,
-      destLat: _destinationLocation!.latitude, 
+      destLat: _destinationLocation!.latitude,
       destLng: _destinationLocation!.longitude,
+      discount: discount,
+      promoCode: promoCode,
     ));
   }
 }

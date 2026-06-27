@@ -1,79 +1,258 @@
+import 'dart:io';
+import 'package:dio/dio.dart' as dio_lib;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:image_picker/image_picker.dart';
 import '../locale_controller.dart';
 import '../services/api_service.dart';
 
 // ============== EDIT PROFILE SCREEN ==============
-class EditProfileScreen extends StatelessWidget {
+class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
 
   @override
+  State<EditProfileScreen> createState() => _EditProfileScreenState();
+}
+
+class _EditProfileScreenState extends State<EditProfileScreen> {
+  final _api = Get.find<ApiService>();
+  final _locale = Get.find<LocaleController>();
+  final _formKey = GlobalKey<FormState>();
+  final _picker = ImagePicker();
+
+  late final TextEditingController _name;
+  late final TextEditingController _email;
+  late final TextEditingController _mobile;
+  late final TextEditingController _address;
+  late final TextEditingController _bloodGroup;
+  late final TextEditingController _emergencyName;
+  late final TextEditingController _emergencyPhone;
+
+  XFile? _pickedImage;
+  bool _saving = false;
+  String? _existingImageUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    final user = _api.getUser() ?? {};
+    _name          = TextEditingController(text: user['name'] ?? '');
+    _email         = TextEditingController(text: user['email'] ?? '');
+    _mobile        = TextEditingController(text: user['mobile'] ?? '');
+    _address       = TextEditingController(text: user['address'] ?? '');
+    _bloodGroup    = TextEditingController(text: user['blood_group'] ?? '');
+    _emergencyName  = TextEditingController(text: user['emergency_contact_name'] ?? '');
+    _emergencyPhone = TextEditingController(text: user['emergency_contact_phone'] ?? '');
+    _existingImageUrl = user['image'] as String?;
+  }
+
+  @override
+  void dispose() {
+    for (final c in [_name, _email, _mobile, _address, _bloodGroup, _emergencyName, _emergencyPhone]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    final img = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+    if (img != null) setState(() => _pickedImage = img);
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+
+    try {
+      // Build multipart-capable request data
+      final data = {
+        'name':                    _name.text.trim(),
+        'email':                   _email.text.trim(),
+        'mobile':                  _mobile.text.trim(),
+        'address':                 _address.text.trim(),
+        'blood_group':             _bloodGroup.text.trim(),
+        'emergency_contact_name':  _emergencyName.text.trim(),
+        'emergency_contact_phone': _emergencyPhone.text.trim(),
+      };
+
+      dio_lib.Response res;
+      if (_pickedImage != null) {
+        final formData = dio_lib.FormData.fromMap({
+          ...data,
+          'image': await dio_lib.MultipartFile.fromFile(_pickedImage!.path,
+              filename: _pickedImage!.name),
+        });
+        res = await _api.dio.post('/user/profile',
+            data: formData,
+            options: dio_lib.Options(method: 'POST', headers: {'X-HTTP-Method-Override': 'PATCH'}));
+      } else {
+        res = await _api.dio.patch('/user/profile', data: data);
+      }
+
+      if (res.statusCode == 200) {
+        // Refresh local storage with new user data
+        final updated = res.data is Map ? res.data : res.data['data'];
+        if (updated != null) await _api.refreshUser(updated as Map<String, dynamic>);
+        Get.back(result: true);
+        Get.snackbar('Saved', 'Profile updated successfully.',
+            backgroundColor: const Color(0xFF10713C), colorText: Colors.white);
+      } else {
+        final msg = res.data?['message'] ?? 'Failed to save profile.';
+        Get.snackbar('Error', msg, backgroundColor: Colors.red, colorText: Colors.white);
+      }
+    } catch (e) {
+      Get.snackbar('Error', 'Could not save. Check your connection.',
+          backgroundColor: Colors.red, colorText: Colors.white);
+    } finally {
+      setState(() => _saving = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final localeController = Get.find<LocaleController>();
-    final apiService = Get.find<ApiService>();
-    final user = apiService.getUser();
-    
     return Scaffold(
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: Text(localeController.get('Edit Profile', 'প্রোফাইল এডিট')),
+        title: Text(_locale.get('Edit Profile', 'প্রোফাইল এডিট')),
+        backgroundColor: const Color(0xFF10713C),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        actions: [
+          TextButton(
+            onPressed: _saving ? null : _save,
+            child: const Text('Save', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+          ),
+        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            const CircleAvatar(
-              radius: 50,
-              child: Icon(Icons.camera_alt, size: 30),
-            ),
-            const SizedBox(height: 20),
-            _buildField(
-              localeController.get('Full Name', 'পুরো নাম'),
-              user?['name'] ?? 'Guest User',
-            ),
-            _buildField(
-              localeController.get('Email', 'ইমেইল'),
-              user?['email'] ?? 'user@example.com',
-            ),
-            _buildField(
-              localeController.get('Phone', 'ফোন'),
-              user?['phone'] ?? '+880 1700000000',
-            ),
-            _buildField(
-              localeController.get('Address', 'ঠিকানা'),
-              user?['address'] ?? 'Dhaka, Bangladesh',
-            ),
-            const SizedBox(height: 30),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Get.back(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10713C),
-                ),
-                child: Text(
-                  localeController.get('Save Changes', 'পরিবর্তন সংরক্ষণ করুন'),
-                  style: const TextStyle(color: Colors.white),
+      body: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Avatar picker
+              Center(
+                child: GestureDetector(
+                  onTap: _pickImage,
+                  child: Stack(
+                    children: [
+                      CircleAvatar(
+                        radius: 52,
+                        backgroundColor: const Color(0xFF10713C).withValues(alpha: 0.1),
+                        backgroundImage: _pickedImage != null
+                            ? FileImage(File(_pickedImage!.path)) as ImageProvider
+                            : (_existingImageUrl != null ? NetworkImage(_existingImageUrl!) : null),
+                        child: (_pickedImage == null && _existingImageUrl == null)
+                            ? const Icon(Icons.person, size: 52, color: Color(0xFF10713C))
+                            : null,
+                      ),
+                      Positioned(
+                        bottom: 0, right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF10713C), shape: BoxShape.circle),
+                          child: const Icon(Icons.camera_alt, color: Colors.white, size: 16),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 28),
+
+              _sectionLabel('Personal Info'),
+              _field(_name, 'Full Name', Icons.person_outline, required: true),
+              _field(_email, 'Email', Icons.email_outlined,
+                  keyboardType: TextInputType.emailAddress),
+              _field(_mobile, 'Phone', Icons.phone_outlined,
+                  keyboardType: TextInputType.phone),
+              _field(_address, 'Address', Icons.location_on_outlined),
+              _field(_bloodGroup, 'Blood Group', Icons.bloodtype_outlined,
+                  hint: 'e.g. A+, O-'),
+              const SizedBox(height: 8),
+
+              _sectionLabel('Emergency Contact'),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red.shade100),
+                ),
+                child: Column(
+                  children: [
+                    Row(children: [
+                      Icon(Icons.warning_amber_outlined, color: Colors.red.shade400, size: 18),
+                      const SizedBox(width: 8),
+                      Text('Used for SOS alerts during trips',
+                          style: TextStyle(color: Colors.red.shade600, fontSize: 12)),
+                    ]),
+                    const SizedBox(height: 12),
+                    _field(_emergencyName, 'Contact Name', Icons.person_outline),
+                    _field(_emergencyPhone, 'Contact Phone', Icons.phone_outlined,
+                        keyboardType: TextInputType.phone),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 28),
+
+              SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: ElevatedButton(
+                  onPressed: _saving ? null : _save,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF10713C),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: _saving
+                      ? const SizedBox(width: 24, height: 24,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : Text(_locale.get('Save Changes', 'পরিবর্তন সংরক্ষণ করুন'),
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildField(String label, String initialValue) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: TextFormField(
-        initialValue: initialValue,
-        decoration: InputDecoration(
-          labelText: label,
-          border: const OutlineInputBorder(),
+  Widget _sectionLabel(String label) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.black54)),
+  );
+
+  Widget _field(
+    TextEditingController ctrl,
+    String label,
+    IconData icon, {
+    TextInputType? keyboardType,
+    String? hint,
+    bool required = false,
+  }) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: TextFormField(
+          controller: ctrl,
+          keyboardType: keyboardType,
+          validator: required ? (v) => (v == null || v.trim().isEmpty) ? '$label is required' : null : null,
+          decoration: InputDecoration(
+            labelText: label,
+            hintText: hint,
+            prefixIcon: Icon(icon, color: const Color(0xFF10713C), size: 20),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFF10713C), width: 2),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          ),
         ),
-      ),
-    );
-  }
+      );
 }
 
 // ============== DOCUMENTS SCREEN ==============

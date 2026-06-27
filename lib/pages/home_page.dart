@@ -26,6 +26,12 @@ class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
   late PageController _bannerPageController;
   int _currentBannerPage = 0;
+  List<Map<String, dynamic>> _apiBanners = [];
+  static const List<String> _fallbackBanners = [
+    'assets/banner/banner_01.jpg',
+    'assets/banner/banner_02.jpg',
+    'assets/banner/banner_03.jpg',
+  ];
 
   // Current location detected on the home page
   String _currentLocationText = 'Detecting location...';
@@ -68,6 +74,7 @@ class _HomePageState extends State<HomePage> {
     _bannerPageController = PageController();
     _startAutoScroll();
     _detectCurrentLocation();
+    _loadBanners();
 
     // Listen for location service status changes (enabled/disabled)
     _serviceStatusSubscription = Geolocator.getServiceStatusStream().listen((ServiceStatus status) {
@@ -1106,12 +1113,21 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<void> _loadBanners() async {
+    try {
+      final api = Get.find<ApiService>();
+      final res = await api.getBanners();
+      if (res.statusCode == 200 && res.data['success'] == true) {
+        final list = (res.data['banners'] as List)
+            .map((b) => Map<String, dynamic>.from(b as Map))
+            .toList();
+        if (mounted && list.isNotEmpty) setState(() => _apiBanners = list);
+      }
+    } catch (_) {}
+  }
+
   Widget _buildBannerSlider() {
-    final List<String> banners = [
-      'assets/banner/banner_01.jpg',
-      'assets/banner/banner_02.jpg',
-      'assets/banner/banner_03.jpg',
-    ];
+    final int count = _apiBanners.isNotEmpty ? _apiBanners.length : _fallbackBanners.length;
 
     return Stack(
       children: [
@@ -1120,11 +1136,13 @@ class _HomePageState extends State<HomePage> {
           child: PageView.builder(
             controller: _bannerPageController,
             onPageChanged: (index) {
-              setState(() => _currentBannerPage = index % banners.length);
+              setState(() => _currentBannerPage = index % count);
             },
-            itemCount: banners.length,
+            itemCount: count,
             pageSnapping: true,
             itemBuilder: (context, index) {
+              final isApi = _apiBanners.isNotEmpty;
+              final imageUrl = isApi ? (_apiBanners[index % count]['image_url'] as String?) ?? '' : '';
               return Container(
                 margin: const EdgeInsets.only(right: 12),
                 decoration: BoxDecoration(
@@ -1134,35 +1152,17 @@ class _HomePageState extends State<HomePage> {
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: Image.asset(
-                    banners[index % banners.length],
+                  child: isApi
+                      ? Image.network(imageUrl, fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Image.asset(
+                              _fallbackBanners[index % _fallbackBanners.length], fit: BoxFit.cover))
+                      : Image.asset(
+                    _fallbackBanners[index % _fallbackBanners.length],
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.local_offer,
-                              size: 50,
-                              color: const Color(
-                                0xFF10713C,
-                              ).withOpacity(0.5),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Exclusive Offer',
-                              style: TextStyle(
-                                color: const Color(
-                                  0xFF10713C,
-                                ).withOpacity(0.7),
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                    errorBuilder: (context, error, stackTrace) => Center(
+                      child: Icon(Icons.local_offer, size: 50,
+                          color: const Color(0xFF10713C).withValues(alpha: 0.5)),
+                    ),
                   ),
                 ),
               );
@@ -1176,7 +1176,7 @@ class _HomePageState extends State<HomePage> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(
-              banners.length,
+              count,
               (index) => Container(
                 margin: const EdgeInsets.symmetric(horizontal: 4),
                 width: 8,

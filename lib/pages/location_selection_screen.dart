@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'dhaka_map_screen.dart';
 import 'map_picker_screen.dart';
+import 'saved_addresses_screen.dart';
 import '../services/recent_locations_service.dart';
 import '../services/places_service.dart';
+import '../services/saved_addresses_service.dart';
 
 class LocationSelectionScreen extends StatefulWidget {
   final String? initialRideType;
@@ -55,6 +58,7 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
   final RecentLocationsService _recentLocationsService =
       RecentLocationsService();
   final PlacesService _placesService = PlacesService();
+  late final SavedAddressesService _savedAddressesService;
   List<RecentLocation> _recentLocations = [];
 
   // Hardcoded Dhaka areas — shown when search is empty or geocode fails
@@ -131,6 +135,7 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
   @override
   void initState() {
     super.initState();
+    _savedAddressesService = Get.find<SavedAddressesService>();
     _tabController = TabController(length: 2, vsync: this);
 
     // Illustration animations
@@ -1263,21 +1268,82 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
   }
 
   Widget _buildSavedTab() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // Illustration header
-        _buildSavedEmptyHeader(),
-        const SizedBox(height: 8),
-        _buildSavedItem(
-            Icons.home, 'Add Home', 'Set your home address'),
-        _buildSavedItem(
-            Icons.work, 'Add Work', 'Set your office address'),
-        _buildSavedItem(Icons.add, 'Add New', 'Save a new location'),
-        _buildSavedItem(Icons.location_searching,
-            'Add Missing Place', 'Help us find more locations'),
-      ],
+    return Obx(() {
+      final savedAddresses = _savedAddressesService.addresses;
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _buildSavedEmptyHeader(),
+          const SizedBox(height: 8),
+          if (savedAddresses.isEmpty) ...[
+            _buildSavedItem(Icons.home, 'Add Home', 'Set your home address', () {
+              _navigateToAddSavedAddress('home');
+            }),
+            _buildSavedItem(Icons.work, 'Add Work', 'Set your office address', () {
+              _navigateToAddSavedAddress('work');
+            }),
+            _buildSavedItem(Icons.add, 'Add New', 'Save a new location', () {
+              _navigateToAddSavedAddress('other');
+            }),
+          ] else ...[
+            ...savedAddresses.map((addr) => _buildSavedAddressItem(addr)),
+            const SizedBox(height: 8),
+            _buildSavedItem(Icons.add, 'Add New Address', 'Save another location', () {
+              _navigateToAddSavedAddress('other');
+            }),
+          ],
+        ],
+      );
+    });
+  }
+
+  IconData _getSavedIcon(String iconName) {
+    switch (iconName) {
+      case 'work':
+      case 'business':
+        return Icons.work;
+      case 'gym':
+      case 'fitness_center':
+        return Icons.fitness_center;
+      case 'star':
+        return Icons.star;
+      case 'location_on':
+        return Icons.location_on;
+      case 'home':
+      default:
+        return Icons.home;
+    }
+  }
+
+  Widget _buildSavedAddressItem(SavedAddress addr) {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF10713C).withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(_getSavedIcon(addr.iconName), color: const Color(0xFF10713C), size: 20),
+      ),
+      title: Text(addr.title, style: const TextStyle(fontWeight: FontWeight.w500)),
+      subtitle: Text(addr.address, style: TextStyle(color: Colors.grey[600], fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
+      trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+      onTap: () {
+        _destinationController.text = addr.address;
+        _destLat = addr.lat;
+        _destLng = addr.lng;
+        Navigator.pop(context, {
+          'address': addr.address,
+          'lat': addr.lat,
+          'lng': addr.lng,
+        });
+      },
     );
+  }
+
+  void _navigateToAddSavedAddress(String label) {
+    Navigator.pop(context);
+    Get.to(() => const SavedAddressesScreen());
   }
 
   Widget _buildSavedEmptyHeader() {
@@ -1469,7 +1535,7 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
   }
 
   Widget _buildSavedItem(
-      IconData icon, String title, String subtitle) {
+      IconData icon, String title, String subtitle, VoidCallback onTap) {
     return ListTile(
       leading: Container(
         padding: const EdgeInsets.all(8),
@@ -1485,7 +1551,7 @@ class _LocationSelectionScreenState extends State<LocationSelectionScreen>
           style: TextStyle(color: Colors.grey[600], fontSize: 12)),
       trailing: const Icon(Icons.arrow_forward_ios,
           size: 14, color: Colors.grey),
-      onTap: () {},
+      onTap: onTap,
     );
   }
 

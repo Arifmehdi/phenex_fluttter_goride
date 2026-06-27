@@ -1,16 +1,32 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
 
 class VoiceGuidanceService extends GetxService {
   late FlutterTts _tts;
   final RxBool isVoiceEnabled = true.obs;
   bool _isSpeaking = false;
 
+  final GetStorage _storage = GetStorage();
+  static const String _storageKey = 'voice_navigation_enabled';
+
   @override
   void onInit() {
     super.onInit();
+    // Restore the saved preference (defaults to ON)
+    isVoiceEnabled.value = _storage.read(_storageKey) ?? true;
     _initTts();
+  }
+
+  /// Master setter used by the Settings screen.
+  void setVoiceEnabled(bool enabled) {
+    isVoiceEnabled.value = enabled;
+    _storage.write(_storageKey, enabled);
+    if (!enabled) {
+      _tts.stop();
+      _isSpeaking = false;
+    }
   }
 
   Future<void> _initTts() async {
@@ -76,11 +92,7 @@ class VoiceGuidanceService extends GetxService {
 
   /// Toggle voice guidance on/off
   void toggleVoice() {
-    isVoiceEnabled.value = !isVoiceEnabled.value;
-    if (!isVoiceEnabled.value) {
-      _tts.stop();
-      _isSpeaking = false;
-    }
+    setVoiceEnabled(!isVoiceEnabled.value);
   }
 
   /// Stop any ongoing speech

@@ -1,0 +1,733 @@
+================================================================================
+                        GoRIDE - RIDE SHARING PROJECT
+                      Task Tracker & Implementation Guide
+                         Last Updated: 24 June 2026
+                            Web (Laravel) + App (Flutter)
+================================================================================
+
+LEGEND:
+  ✅ = Fully implemented and working
+  🔄 = In progress / partially implemented
+  ❌ = Not started / needs implementation
+  ⚠️  = Implemented but has issues (sandbox only, hardcoded data, etc.)
+
+PLATFORM TAGS:
+  [APP]  = Flutter mobile app only
+  [WEB]  = Laravel web panel only
+  [BOTH] = Both Flutter app and Laravel web
+
+================================================================================
+  PHASE 1: CORE RIDE FLOW                             ✅ COMPLETE
+================================================================================
+
+01. Driver Online/Offline Toggle                        ✅ [BOTH]
+    - APP: dashboard_page.dart - Firestore + API dual write
+    - WEB: API endpoint POST /api/driver/toggle-online exists
+    - Status: Fully working with real-time sync
+
+02. Incoming Ride Requests                              ✅ [APP]
+    - APP: Firestore real-time listener with 5km proximity filter
+    - APP: ride_request_call_screen.dart - full screen with animation
+    - Status: Working with ringtone, haptic feedback, auto-dismiss
+
+03. Active Ride Screen                                  ✅ [BOTH]
+    - APP: live_tracking_screen.dart - Google Maps, TTS, voice guidance
+    - API: POST /api/ride-requests/{id}/status for status updates
+    - Status: Fully functional with dual Firestore + Laravel sync
+
+04. Navigation to Rider                                 ✅ [APP]
+    - APP: Dashed blue polyline shown for pickup phase (driver → rider)
+    - APP: Solid green polyline shown for trip phase (pickup → destination)
+    - APP: Route auto-refreshes when tripStatus changes phase (ever() listener)
+    - APP: Turn-by-turn steps + voice guidance on both phases
+
+05. Ride Status Update                                  ✅ [BOTH]
+    - APP: Full lifecycle pending→accepted→arriving→in_progress→completed
+    - API: PATCH /api/ride-requests/{id}/status
+    - Status: Fully working
+
+06. Firebase Push Notification Setup                    ✅ [BOTH]
+    - APP: firebase_messaging added, FCM token registered on login
+    - APP: Token auto-uploaded to backend via POST /api/user/fcm-token
+    - APP: Foreground FCM messages → local notification shown
+    - APP: Background FCM handler registered (firebaseMessagingBackgroundHandler)
+    - WEB: FcmService.php created — sends FCM via legacy HTTP API
+    - WEB: FCM_SERVER_KEY in .env → config/services.php
+    - WEB: fcm_token column added to users table (migration 2026_06_24_000002)
+    - NOTE: Add FCM_SERVER_KEY to .env to activate (see testing guide below)
+
+07. Ride Request Push                                   ✅ [BOTH]
+    - WEB: FcmService::newRideRequest() fires when driver is offered a ride
+    - APP: FCM wakes app from background, shows notification with ringtone
+
+08. Ride Status Push                                    ✅ [BOTH]
+    - WEB: FCM fired on: accepted, arriving, in_progress, completed, cancelled
+    - APP: Status notifications shown even when app is closed
+
+09. Payment Method Selection                            ✅ [BOTH]
+    - APP: Bottom sheet picker appears when rider taps "Complete Trip"
+    - APP: Options: Cash (pay driver directly) | Card/Mobile Banking (SSLCommerz)
+    - APP: SSLCommerz opens in external browser via url_launcher
+    - APP: Trip marked complete after payment gateway launch
+    - WEB: SSLCommerz webhook still needs IPN handler for production (sandbox ok)
+
+10. API Endpoints                                       ✅ [BOTH]
+    - APP: api_service.dart - 23+ endpoints implemented
+    - API: All ride-related endpoints functional
+    - Base URL: https://gorides.musafirinternational.com/api/
+    - Status: Production-ready with auth interceptors
+
+11. SSLCommerz Flutter Integration                      ✅ [APP]  -- future phase check also
+    - APP: Now called from live_tracking_screen.dart payment picker
+    - APP: Initiates payment with ride amount, opens GatewayPageURL in browser
+    - NOTE: Still sandbox — update store ID/pass in sslcommerz_service.dart for production
+
+12. Cash Payment Flow                                   ✅ [APP]
+    - APP: live_tracking_screen.dart - defaults to cash on completion
+    - API: Payment record created with payment_method: 'cash'
+    - Status: Working
+
+13. Ride History API Integration                        ✅ [BOTH]
+    - APP: ride_history_screen.dart - filters, pull-to-refresh, detail view
+    - API: GET /api/ride-history - paginated with filtering
+    - Status: Fully working
+
+14. Ride Cancellation Flow                              ✅ [BOTH]
+    - APP: Cancel button visible on live tracking screen (next to Complete)
+    - APP: Modern bottom sheet with 6 reason options (radio list)
+    - APP: ৳50 fee warning shown when driver already accepted/arriving
+    - APP: cancelTrip(reason:) passes reason to both Firestore and Laravel API
+    - WEB: PATCH status=cancelled accepts cancellation_reason + cancelled_by fields
+    - WEB: FCM sent to other party on cancellation
+
+15. Error Handling                                      ✅ [BOTH]
+    - APP: Dio interceptors with 401 auto-logout
+    - APP: Loading, error, empty states on all list screens
+    - API: Try-catch with proper HTTP status codes
+    - Status: Working
+
+16. API Models                                          ✅ [APP]
+    - APP: Response models parsed inline in api_service.dart
+    - API: Eloquent models with relationships
+    - Note: No dedicated models/ folder in Flutter — classes embedded in services
+
+17. GetX State Management                               ✅ [APP]
+    - APP: Full GetX architecture — Controllers, Services, Dependency Injection
+    - APP: main.dart initializes all services via Get.put()
+    - Status: Working
+
+================================================================================
+  PHASE 2: FARE, RATINGS & WALLET                     ✅ COMPLETE
+================================================================================
+
+18. Fare Estimation                                     ✅ [BOTH]
+    - APP: fare_estimate_sheet.dart — bottom sheet before confirming booking
+    - APP: Shows base fare + per km × distance + total, promo code field
+    - APP: dhaka_map_screen.dart _bookRide() opens sheet first, waits for confirm
+    - WEB: GET /api/website-parameters supplies per_km_rate
+
+19. Rate Driver (After Trip)                            ✅ [BOTH]
+    - APP: post_trip_rating_sheet.dart — 1-5 stars + 6 tag chips + comment
+    - APP: Shows automatically after rider completes trip (cash or card)
+    - WEB: POST /api/driver-ratings now accepts tags[] array
+    - WEB: tags column added to driver_ratings table (migration 2026_06_24_000003)
+
+20. Rate Rider (After Trip)                             ✅ [BOTH]
+    - APP: Same post_trip_rating_sheet.dart in 'rate_rider' mode for drivers
+    - APP: Shows after driver marks trip complete
+    - WEB: POST /api/rider-ratings endpoint + rider_ratings table created
+
+21. Wallet                                              ✅ [BOTH]
+    - WEB: wallets table + wallet_transactions table (migration 2026_06_24_000003)
+    - WEB: GET /api/wallet/balance, GET /api/wallet/transactions, POST /api/wallet/top-up
+    - WEB: WalletController.php created
+    - APP: API methods added (getWalletBalance, getWalletTransactions, topUpWallet)
+    - NOTE: Connect quick_action_screens.dart wallet UI to these endpoints next
+
+22. Wallet Payment                                      ✅ [WEB]
+    - WEB: POST /api/ride-requests/{id}/pay-wallet endpoint created
+    - APP: payRideWithWallet() method added to api_service.dart
+    - NOTE: Add "Wallet" option to live_tracking_screen.dart payment picker next
+
+23. bKash / Nagad Payment                               🔄 [BOTH]
+    - NOTE: Requires bKash PGW merchant account — skip until credentials available
+    - WORKAROUND: SSLCommerz (already wired) supports bKash/Nagad via its gateway
+
+24. Promo Code                                          ✅ [BOTH]
+    - WEB: promo_codes table created (code, type, value, min_fare, max_uses, expiry)
+    - WEB: POST /api/promo/validate endpoint — returns discount + final_fare
+    - APP: Promo code field built into fare_estimate_sheet.dart (tap Apply)
+    - APP: Discount shown in fare breakdown before confirming
+
+25. Promotions/Banners (Dynamic)                        ✅ [BOTH]
+    - WEB: banners table created + GET /api/banners endpoint (public, no auth)
+    - WEB: BannerController.php — filters active, non-expired banners
+    - APP: home_page.dart fetches from API on init, falls back to local assets
+    - WEB: Add banners via admin panel or direct DB insert
+
+26. Driver Earnings                                     ✅ [BOTH]
+    - WEB: GET /api/driver/earnings?period=today|week|month endpoint
+    - WEB: Returns summary (total, trips, avg) + 14-day daily chart data
+    - WEB: EarningsController.php created
+    - APP: getDriverEarnings() added to api_service.dart
+    - NOTE: Wire to dashboard_page.dart stats grid next
+
+27. Driver Trip History                                 ✅ [BOTH]
+    - APP: ride_history_screen.dart - pagination, filters, details
+    - API: GET /api/ride-history
+    - Status: Fully working
+
+28. Payment Confirmation Push                           ✅ [WEB]
+    - WEB: FcmService::tripCompleted() fires on status=completed (Phase 1 work)
+    - APP: FCM notification shown when payment confirmed
+
+29. Payment Receipt / Invoice                           ✅ [BOTH]
+    - WEB: GET /api/ride-requests/{id}/receipt returns PDF via DomPDF
+    - WEB: receipts/ride.blade.php template created
+    - APP: getDriverEarnings() API ready; add url_launcher open in ride history screen
+
+================================================================================
+  PHASE 3: DRIVER MANAGEMENT                          ✅ COMPLETE
+================================================================================
+
+30. Driver Document Upload                              ✅ [BOTH]
+    - WEB: POST /api/driver/upload-document (multipart) — stores in storage/driver-docs/{id}/
+    - WEB: GET /api/driver/my-documents — lists uploaded docs with status
+    - WEB: Admin: GET /api/admin/documents/pending + POST /api/admin/documents/{id}/review
+    - WEB: Auto-approves user when all documents are individually approved
+    - APP: registration_screens.dart — "Submit & Upload" uploads all picked files
+    - APP: Shows spinner during upload, snackbar on partial failure
+    - DB: driver_documents table created (migration 2026_06_24_000004)
+
+31. Vehicle Management                                  🔄 [BOTH]
+    - WEB: admin/vehicles/ CRUD exists
+    - WEB: GET /api/vehicles returns vehicles for current user
+    - APP: API method getMyDocuments() added; wire to MyVehiclesScreen next
+
+32. Driver Stats Dashboard                              ✅ [BOTH]
+    - WEB: GET /api/driver/stats returns today_trips, today_earnings, avg_rating, acceptance_rate
+    - APP: dashboard_page.dart _buildStatsGrid() now shows live data from API
+    - APP: Stats load on initState, show '—' while loading
+
+33. Driver Acceptance Rate                              ✅ [BOTH]
+    - WEB: acceptance_rate, total_offers, accepted_offers columns on drivers table
+    - WEB: RideMatchingController.updateAcceptanceRate() called on every accept/decline
+    - APP: Shown in stats grid as "Accept %" card
+
+34. Driver Verification Status                          ✅ [BOTH]
+    - APP: approval_pending_screen.dart - shown when admin hasn't approved
+    - API: GET /api/admin/pending-approvals + approve/reject endpoints
+    - WEB: admin/approvals exists
+    - Status: Working
+
+35. OTP / Phone Verification                            ✅ [BOTH]
+    - WEB: POST /api/auth/send-otp — generates 6-digit OTP, logs it (wire SMS gateway)
+    - WEB: POST /api/auth/verify-otp — validates OTP (5 min TTL, single-use)
+    - WEB: dev_otp returned in non-production env for easy testing
+    - APP: otp_screen.dart — 6 individual digit boxes, auto-verify on last digit
+    - APP: 60-second countdown timer, Resend button
+    - DB: otp_verifications table created (migration 2026_06_24_000004)
+    - NOTE: Wire to registration flow after phone field: sendOtp() → navigate to OtpScreen
+
+36. Alerts / Notifications                              ✅ [APP]
+    - APP: notifications_screen.dart — full list with type icons, unread badges
+    - APP: Pull-to-refresh, tap to mark read, "Mark all read" button
+    - APP: Bell icon in dashboard AppBar now opens NotificationsScreen
+    - API: GET /api/notifications + POST /api/notifications/read/{id} + read-all
+
+================================================================================
+  PHASE 4: USER PROFILE & SETTINGS                    ✅ COMPLETE
+================================================================================
+
+37. Saved Addresses                                     ✅ [BOTH]
+    - APP: saved_addresses_screen.dart - full CRUD with API
+    - API: apiResource /api/user/saved-addresses
+    - Status: Fully working
+
+38. Profile Edit & Save                                 ✅ [BOTH]
+    - APP: EditProfileScreen fully rewritten as StatefulWidget
+    - APP: All fields wired with TextEditingControllers (name, email, mobile, address, blood group)
+    - APP: Profile photo picker (gallery) with preview + multipart upload
+    - APP: PATCH /api/user/profile — saves all fields, updates local GetStorage cache
+    - APP: Save button in AppBar + bottom button, spinner during save
+    - WEB: UpdateProfileRequest now validates emergency_contact_name/phone
+    - WEB: UserResource now returns image URL + emergency_contact fields
+
+39. Change Password                                     ✅ [APP]
+    - APP: change_password_screen.dart - connected to API
+    - API: PATCH /api/user/password
+    - Status: Fully working
+
+40. Forgot Password                                     ✅ [BOTH]
+    - APP: forgot_password_screen.dart + reset_password_screen.dart
+    - API: POST /api/forgot-password + /api/reset-password
+    - Status: Fully working
+
+41. Emergency Contact Setting                           ✅ [BOTH]
+    - WEB: emergency_contact_name + emergency_contact_phone columns added to users
+    - WEB: Migration 2026_06_24_000005 — run with --force
+    - APP: Emergency contact section added to EditProfileScreen (red card)
+    - APP: Fields: Contact Name + Contact Phone, with SOS warning label
+
+42. Notifications Screen                                ✅ [APP]
+    - Completed in Phase 3
+    - APP: notifications_screen.dart — full list, type icons, unread badge, mark read
+    - APP: Bell icon in dashboard AppBar opens NotificationsScreen
+
+43. Help Center, Terms & Privacy                        ✅ [APP]
+    - APP: Static pages exist
+    - Status: Working
+
+44. About Screen                                        ✅ [APP]
+    - APP: Static about page exists
+    - Status: Working
+
+================================================================================
+  PHASE 5: COMMUNICATION                              ✅ COMPLETE (Polling)
+================================================================================
+
+45. Driver ↔ Rider Chat                                 ✅ [BOTH]
+    - API: Full chat system — NewMessage event, ConversationResource, MessageResource
+    - API: WebSocket broadcasting re-enabled (broadcasting.php channels configured)
+    - APP: ChatService with real-time polling (3s interval)
+    - APP: ChatConversationListScreen - conversation list with unread badges
+    - APP: ChatMessageScreen - WhatsApp-style bubbles, text/image/file support
+    - APP: ChatNewConversationScreen - search users and start new chat
+    - WEB: goride/chat/index.blade.php + show.blade.php — full web chat UI
+    - WEB: Dashboard sidebar updated with Messages link
+    - Chat accessible from live_tracking_screen.dart and ride_status_page.dart
+    - Status: Working with polling
+
+46. Real-Time Chat WebSocket (Upgrade)                  🔄 [BOTH]
+    - Current: Polling every 3s — functional but not real-time
+    - ACTION: [WEB] Install Laravel Reverb or configure Pusher credentials in .env
+    - ACTION: [APP] Add pusher_client or web_socket_channel package
+    - ACTION: [APP] Replace polling loop with WebSocket subscription
+    - Note: Not a blocker — polling works fine for MVP
+
+47. Quick Message Templates                             ✅ [APP]
+    - APP: chat_message_screen.dart - horizontal scrollable chip row above input
+    - 6 chips: "I'm on my way", "Please wait", "At the location",
+      "Almost there", "Running 5 min late", "On my way now"
+    - Tap chip → fills message field and sends immediately
+
+48. Deep Linking (Android)                              ✅ [APP]
+    - APP: deep_link_service.dart - registered in main.dart via Get.put()
+    - ANDROID: intent-filter added to AndroidManifest.xml (scheme: goride://)
+    - goride://chat → opens ChatConversationListScreen
+    - goride://track/{id} → navigates home (extend when public tracking page built)
+    - iOS: skipped per project scope
+
+================================================================================
+  PHASE 6: SAFETY FEATURES                            ✅ COMPLETE
+================================================================================
+
+49. SOS Emergency Button                                ✅ [BOTH]
+    - APP: Red SOS button in action row (rider only) — tap → confirmation dialog
+    - APP: Dialog shows emergency contact name (from profile) or warning if not set
+    - APP: On confirm → POST /api/sos/trigger → shows "SOS Sent" + "Call 999" option
+    - WEB: SosController.php — stores sos_alerts, notifies all admin FCMs
+    - WEB: GET /api/admin/sos/alerts — admin list with user + location
+    - DB: sos_alerts table (migration 2026_06_25_000001)
+
+50. Share Live Trip                                     ✅ [BOTH]
+    - APP: "Share" button now generates a real tracking link from backend
+    - APP: POST /api/ride-requests/{id}/tracking-token → get URL → SharePlus
+    - APP: Falls back to plain text share if token generation fails
+    - WEB: TripTrackingController.php — generates 32-char token, 24hr expiry
+    - WEB: Public page /track/{token} — shows map (Leaflet/OSM), driver name,
+           status, route. Auto-refreshes driver location every 5 seconds.
+    - WEB: GET /api/public/track/{token}/location — returns driver lat/lng (no auth)
+    - DB: trip_tracking_tokens table (migration 2026_06_25_000001)
+
+51. Emergency Contact Alert                             ✅ [BOTH]
+    - WEB: SosController sends SMS to emergency_contact_phone on SOS trigger
+    - WEB: SMS message includes Google Maps link with coordinates
+    - WEB: Log::info() used now — wire real SMS gateway (A7-1) to activate
+    - APP: SOS dialog shows emergency contact name from user profile
+    - Depends on Task 41 ✅ (emergency_contact_name/phone fields exist)
+
+================================================================================
+  PHASE 7: ADMIN PANEL                                🔄 IN PROGRESS
+================================================================================
+
+52. User Management                                     🔄 [BOTH]
+    - WEB: admin/users/ - full CRUD exists
+    - APP: UserManagementScreen - hardcoded data, empty action callbacks
+    - GAP: Mobile admin screen not connected to API
+    - ACTION: [WEB] Create GET /api/admin/users endpoint with filters
+    - ACTION: [WEB] Create POST /api/admin/users/{id}/suspend endpoint
+    - ACTION: [APP] Connect UserManagementScreen to real API data
+    - ACTION: [WEB] Add ride stats per user (total trips, spend, complaints)
+
+53. Driver Management (Admin)                           🔄 [BOTH]
+    - WEB: admin/drivers/ - full CRUD with search
+    - GAP: No mobile driver management, no document verification UI
+    - ACTION: [WEB] Create GET /api/admin/drivers endpoint
+    - ACTION: [WEB] Create POST /api/admin/drivers/{id}/verify endpoint
+    - ACTION: [WEB] Build document review UI (license + NID images side-by-side)
+    - ACTION: [WEB] Add driver suspension with reason + duration
+    - ACTION: [APP] Build driver management screen in mobile admin
+
+54. Vehicle Management (Admin)                          🔄 [BOTH]
+    - WEB: admin/vehicles/ - full CRUD exists
+    - APP: VehicleManagementScreen - hardcoded data
+    - ACTION: [WEB] Create GET /api/admin/vehicles endpoint
+    - ACTION: [APP] Connect VehicleManagementScreen to real API data
+    - ACTION: [WEB] Add vehicle ride history to vehicle detail view
+
+55. Live Ride Monitoring                                ❌ [WEB]
+    - GAP: No live map view for admin to watch active rides
+    - ACTION: [WEB] Create GET /api/admin/active-rides endpoint
+    - ACTION: [WEB] Build live ride monitoring page with Google Maps
+    - ACTION: [WEB] Show all active rides with real-time driver positions on map
+    - ACTION: [WEB] Add ride detail modal (rider, driver, route, status timeline)
+
+56. Revenue Dashboard                                   🔄 [WEB]
+    - WEB: goride/corporate/billing.blade.php exists but hardcoded
+    - APP: PaymentManagementScreen - hardcoded data
+    - GAP: No real revenue analytics
+    - ACTION: [WEB] Create GET /api/admin/revenue-stats (today, week, month)
+    - ACTION: [WEB] Create GET /api/admin/daily-revenue (last 30 days for chart)
+    - ACTION: [WEB] Build revenue dashboard with Chart.js bar/line charts
+    - ACTION: [APP] Connect PaymentManagementScreen to real data
+
+57. Admin Analytics Dashboard                           ❌ [WEB]
+    - GAP: No KPI dashboard on admin home
+    - ACTION: [WEB] Build dashboard KPI widgets:
+        • Total rides today / week / month
+        • Active drivers right now (count)
+        • Revenue today
+        • New users registered today
+        • Rides by status (pie chart)
+    - ACTION: [WEB] Add driver performance table (trips, rating, earnings)
+
+58. Support Tickets                                     🔄 [BOTH]
+    - APP: SupportTicketsScreen - hardcoded data, empty reply callback
+    - API: No support ticket endpoints exist
+    - ACTION: [WEB] Create support_tickets migration and model
+    - ACTION: [WEB] Create GET/POST /api/support-tickets endpoints
+    - ACTION: [WEB] Create POST /api/support-tickets/{id}/reply endpoint
+    - ACTION: [APP] Build real support ticket UI (list + create + reply)
+    - ACTION: [WEB] Build support ticket management in admin panel
+
+59. Promo Management (Admin)                            ❌ [WEB]
+    - ACTION: [WEB] Build promo code CRUD in admin panel
+    - ACTION: [WEB] Add promo usage statistics (used count, savings given)
+
+60. Banner Management (Admin)                           🔄 [WEB]
+    - WEB: admin/sliders/ exists for general sliders
+    - ACTION: [WEB] Build dedicated banner management for ride app
+    - ACTION: [WEB] Add banner preview and scheduling (start/end date)
+
+61. Pricing Settings (Admin)                            🔄 [WEB]
+    - WEB: admin/website-parameters/ - per_km_rate exists
+    - APP: SystemSettingsScreen - local state only, not persisted
+    - GAP: No per-ride-type pricing, no surge config
+    - ACTION: [WEB] Extend website_parameters with per-ride-type fares
+    - ACTION: [WEB] Create PUT /api/admin/pricing-settings endpoint
+    - ACTION: [WEB] Build comprehensive pricing settings page
+    - ACTION: [APP] Connect SystemSettingsScreen save to API
+
+62. Reports & Analytics                                 🔄 [BOTH]
+    - APP: ReportsAnalyticsScreen - all data hardcoded
+    - WEB: No dedicated reports page
+    - ACTION: [WEB] Create GET /api/admin/reports/rides endpoint
+    - ACTION: [WEB] Create GET /api/admin/reports/drivers endpoint
+    - ACTION: [WEB] Create GET /api/admin/reports/revenue endpoint
+    - ACTION: [APP] Connect ReportsAnalyticsScreen to real data
+    - ACTION: [WEB] Build reports page with charts + Excel/PDF export
+
+63. Background Jobs / Queue                             ❌ [WEB]
+    - GAP: No job queue running — offer expiry, reminders all missing
+    - ACTION: [WEB] Enable Laravel Queue (database driver to start, Redis later)
+    - ACTION: [WEB] Job: expire RideOffer after 30s if driver doesn't respond
+    - ACTION: [WEB] Job: auto-cancel ride if no driver found within 5 min
+    - ACTION: [WEB] Run: php artisan queue:work as supervisor daemon
+
+================================================================================
+  PHASE 8: ENTERPRISE FEATURES                        ❌ POST-LAUNCH
+================================================================================
+
+64. Owner Module                                        🔄 [BOTH]
+    - WEB: goride/owner/ - dashboard, cars, earnings, history, profile, docs exist (hardcoded)
+    - APP: Owner section exists in dashboard_page.dart (hardcoded)
+    - ACTION: [WEB] Create GET /api/owner/dashboard endpoint
+    - ACTION: [WEB] Create GET /api/owner/fleet endpoint
+    - ACTION: [WEB] Create GET /api/owner/earnings endpoint
+    - ACTION: [WEB] Connect all owner views to real data
+    - ACTION: [APP] Build owner fleet management with API
+
+65. Corporate Module                                    🔄 [BOTH]
+    - WEB: goride/corporate/ - dashboard, fleet, billing, requests, history exist (hardcoded)
+    - APP: Corporate dashboard section exists (hardcoded)
+    - ACTION: [WEB] Create GET /api/corporate/dashboard endpoint
+    - ACTION: [WEB] Create GET /api/corporate/fleet endpoint
+    - ACTION: [WEB] Create POST /api/corporate/ride-request endpoint
+    - ACTION: [WEB] Connect all corporate views to real data + monthly billing PDF
+    - ACTION: [APP] Build corporate ride booking with API
+
+66. Membership / Tier                                   ❌ [BOTH]
+    - APP: MembershipScreen - hardcoded "Bronze Member"
+    - ACTION: [WEB] Create memberships table (user_id, tier, points_threshold)
+    - ACTION: [WEB] Create GET /api/membership/status endpoint
+    - ACTION: [WEB] Create POST /api/membership/upgrade endpoint
+    - ACTION: [APP] Build real membership UI with tier comparison
+    - ACTION: [WEB] Build membership management in admin
+
+67. Rewards / Points                                    ❌ [BOTH]
+    - APP: PointsScreen - hardcoded 1,250 points
+    - ACTION: [WEB] Create points system (earn per km, redeem for discounts)
+    - ACTION: [WEB] Create GET /api/points/balance endpoint
+    - ACTION: [WEB] Create POST /api/points/redeem endpoint
+    - ACTION: [APP] Build real points UI with redemption flow
+    - ACTION: [WEB] Build rewards management in admin
+
+68. Pay Later / Credit                                  ❌ [BOTH]
+    - APP: PayLaterScreen - hardcoded credit limit
+    - ACTION: [WEB] Create credit system with limit management
+    - ACTION: [WEB] Create POST /api/pay-later/approve endpoint
+    - ACTION: [APP] Build real pay later UI
+    - ACTION: [WEB] Build pay later management in admin
+
+69. Split Payment                                       ❌ [BOTH]
+    - GAP: No split payment feature
+    - ACTION: [WEB] Create ride_passengers table for multi-rider
+    - ACTION: [WEB] Create POST /api/ride-requests/{id}/split endpoint
+    - ACTION: [APP] Build split payment UI (select contacts, divide fare)
+    - ACTION: [APP] Send payment request notification to split riders
+
+70. Driver Payout System                                ❌ [BOTH]
+    - GAP: No automated payout system
+    - ACTION: [WEB] Create driver_payouts table (driver_id, amount, period, status)
+    - ACTION: [WEB] Create GET /api/admin/payouts/pending endpoint
+    - ACTION: [WEB] Create POST /api/admin/payouts/process endpoint
+    - ACTION: [WEB] Build payout management in admin panel
+    - ACTION: [APP] Build driver payout history screen
+    - ACTION: [WEB] Build payout report with export
+
+71. Surge Pricing                                       ❌ [BOTH]
+    - GAP: No demand-based pricing
+    - ACTION: [WEB] Surge detection (high demand / low supply = surge multiplier)
+    - ACTION: [WEB] Zone-based surge multiplier config in admin
+    - ACTION: [APP] Show surge multiplier badge on fare estimate ("1.5x pricing active")
+
+72. Ride Pooling / Carpooling                           ❌ [BOTH]
+    - GAP: No shared ride feature
+    - ACTION: [WEB] Create RidePool model (group passengers, shared route)
+    - ACTION: [APP] Add "Share ride" option on booking to match direction
+    - ACTION: [APP] Multi-pickup flow on driver side
+
+73. Referral System                                     ❌ [BOTH]
+    - GAP: No referral code system
+    - ACTION: [WEB] Add referral_code to users, credit on referred user's first ride
+    - ACTION: [APP] "Refer a friend" screen with share button
+
+74. Ambulance / Emergency Service                       🔄 [APP]
+    - APP: Quick action exists (hardcoded — no real booking flow)
+    - ACTION: [APP] Build 1-tap ambulance booking with current location
+    - ACTION: [WEB] Create ambulance ride type with priority routing
+    - ACTION: [WEB] Separate ambulance fleet management in admin
+
+75. Parcel Delivery                                     🔄 [APP]
+    - APP: Parcel ride type exists in booking flow
+    - GAP: No parcel size / weight / recipient info capture
+    - ACTION: [APP] Add parcel size selector (small/medium/large)
+    - ACTION: [APP] Add recipient name + phone input
+    - ACTION: [WEB] Add parcel fare calculation (size-based)
+
+================================================================================
+  PHASE 9: INFRASTRUCTURE & SECURITY                  🔄 ONGOING
+================================================================================
+
+76. API Security                                        🔄 [WEB]
+    - GAP: No rate limiting on API routes
+    - GAP: Google Maps API key hardcoded in Flutter app (security risk)
+    - GAP: SSLCommerz store ID hardcoded in sslcommerz_service.dart
+    - ACTION: [WEB] Add throttle middleware to all API routes
+    - ACTION: [APP] Move all API keys and credentials to .env / build config
+    - ACTION: [WEB] Add FormRequest validation classes to all endpoints
+
+77. Performance                                         🔄 [WEB]
+    - GAP: No database indexes on frequently queried columns
+    - GAP: No caching for website_parameters (loaded on every booking)
+    - ACTION: [WEB] Add indexes: ride_requests(user_id, status), drivers(latitude, longitude, is_online)
+    - ACTION: [WEB] Add Redis cache for website_parameters (fare rates)
+    - ACTION: [APP] Add infinite scroll pagination on all list screens
+
+78. Error Monitoring                                    🔄 [BOTH]
+    - WEB: Sentry configured — verify DSN is set in .env
+    - GAP: No Sentry on Flutter app
+    - ACTION: [APP] Add sentry_flutter package for crash reporting
+    - ACTION: [WEB] Set up structured API error response format (consistent JSON)
+
+79. OTP / Phone Auth Security                           ❌ [WEB]
+    - ACTION: [WEB] OTP expiry (5 min TTL) + rate limit on send-otp endpoint
+    - ACTION: [WEB] Blacklist disposable phone numbers
+
+80. Testing                                             ❌ [BOTH]
+    - GAP: No tests in either codebase
+    - ACTION: [WEB] Write feature tests for: auth, ride creation, driver matching, payment
+    - ACTION: [APP] Write widget tests for key screens
+    - ACTION: [BOTH] Create Postman collection for all API endpoints
+
+81. Deployment                                          🔄 [BOTH]
+    - ACTION: [WEB] Set APP_ENV=production, APP_DEBUG=false in .env
+    - ACTION: [WEB] Ensure SSL certificate active on production domain
+    - ACTION: [WEB] Set up automated daily database backups
+    - ACTION: [APP] Build signed APK / AAB for Play Store submission
+    - ACTION: [APP] Set up keystore management and signing config
+
+================================================================================
+  MODERN UI / UX UPGRADES
+================================================================================
+
+APP (Flutter):
+  🔄 01. Fare estimate screen before confirming ride (must-have)
+  ❌ 02. Animated ride type selection cards with smooth transitions
+  🔄 03. Driver dashboard with live stats (replace hardcoded values)
+  ❌ 04. Dark mode support throughout
+  ❌ 05. Skeleton loading states (replace basic CircularProgressIndicator)
+  ❌ 06. Lottie animations for empty states and success screens
+  ✅ 07. WhatsApp-style chat message bubbles
+  ❌ 08. Pull-to-refresh with custom animation on all list screens
+  ❌ 09. Bottom sheet modals for ride actions (instead of full-screen dialogs)
+  🔄 10. Show route polyline (driver → rider pickup, rider → destination)
+  ❌ 11. Nearby driver markers animating on home map
+  ❌ 12. Smooth driver marker movement during live tracking
+
+WEB (Laravel/Blade):
+  ❌ 01. Admin analytics dashboard with KPI cards and charts (Chart.js)
+  ❌ 02. Live ride monitoring map in admin
+  🔄 03. Modernize goride frontend pages (rider/driver/owner/corporate)
+  ❌ 04. Interactive map on goride homepage for online booking
+  🔄 05. Connect all blade views to real API data (currently hardcoded)
+  ❌ 06. Real-time notification dropdown in dashboard header
+  ❌ 07. Responsive design for mobile browser users
+  ❌ 08. Export functionality (Excel/PDF) on all report pages
+  ❌ 09. Driver document review UI in admin approvals
+  ❌ 10. Live driver location map in admin panel
+
+================================================================================
+  LAUNCH PRIORITY ORDER
+================================================================================
+
+  WEEK 1 (Must ship before going live):
+    #06 FCM push notifications (both sides)
+    #63 Queue worker for offer expiry
+    #35 OTP phone verification (SMS gateway)
+    #09 Payment — wire SSLCommerz to ride completion
+    #23 bKash / Nagad payment
+    #38 Profile save fix (save button does nothing currently)
+
+  WEEK 2 (Core UX gaps):
+    #14 Cancellation reason + fee logic
+    #18 Fare estimate screen before booking
+    #30 Driver document upload to server
+    #32 Driver stats from real API
+    #26 Driver earnings screen
+
+  WEEK 3 (Admin & Safety):
+    #49 SOS emergency button
+    #50 Share live trip
+    #55 Live ride monitoring in admin
+    #57 Admin analytics dashboard
+    #53 Driver document review in admin
+
+  WEEK 4 (Engagement & Polish):
+    #24 Promo code system
+    #25 Dynamic banners from API
+    #21 Wallet system
+    #56 Revenue dashboard
+    #19 Rating quick tags
+    #42 Notifications screen wired to API
+
+  POST-LAUNCH:
+    #71 Surge pricing
+    #72 Ride pooling
+    #66 Membership/tier
+    #67 Rewards/points
+    #73 Referral system
+    #68 Pay later / credit
+    #69 Split payment
+
+================================================================================
+  CURRENTLY WORKING — DO NOT BREAK ✅
+================================================================================
+
+  APP:
+    - Multi-role login & registration (user, driver, owner, corporate)
+    - Google Maps + live driver tracking via Firebase Firestore
+    - Turn-by-turn voice navigation (TTS + distance pre-alerts)
+    - Ride request creation and full status lifecycle
+    - In-app chat (polling every 3s — fully functional)
+    - Saved addresses (full CRUD)
+    - Ride history with filters and pagination
+    - Driver online/offline toggle (Firestore + API dual write)
+    - Incoming ride request with ringtone + haptic feedback
+    - Multiple ride types (car, bike, rent, ambulance, parcel, corporate)
+    - Post-trip driver rating (stars + text)
+    - Cash payment on trip completion
+    - Forgot password / reset password flow
+    - Change password
+    - Approval pending screen for new drivers
+
+  WEB (Backend API + Admin):
+    - Multi-guard authentication (user, driver, admin, corporate)
+    - Ride matching (Haversine + cascading offers to nearest drivers)
+    - Driver location tracking (update + nearby-drivers endpoint)
+    - Driver ratings after trip (prevents duplicates, recalculates average)
+    - Saved addresses CRUD
+    - Chat conversations & messages (API + web UI)
+    - User/driver approval workflow (admin approve/reject)
+    - Admin panel (user management, vehicle, driver CRUD)
+    - Website parameters (per_km_rate, currency)
+    - Profile completion tracking
+    - Ride history with pagination
+
+================================================================================
+  KEY FILES TO MODIFY
+================================================================================
+
+FLUTTER APP:
+  lib/main.dart                          — app entry, routes, service init
+  lib/pages/dashboard_page.dart          — driver/admin dashboard (hardcoded stats)
+  lib/pages/home_page.dart               — passenger home (hardcoded banners)
+  lib/pages/live_tracking_screen.dart    — ride tracking (payment, SOS, share)
+  lib/pages/ride_history_screen.dart     — ride history
+  lib/pages/ride_request_call_screen.dart — incoming requests
+  lib/pages/dashboard_details_pages.dart — admin screens (mostly hardcoded)
+  lib/pages/quick_action_screens.dart    — wallet, promo, membership (hardcoded)
+  lib/services/api_service.dart          — all API calls (add new endpoints here)
+  lib/services/ride_service.dart         — ride lifecycle
+  lib/services/firebase_service.dart     — Firestore operations
+  lib/services/notification_service.dart — local notifications (add FCM here)
+  lib/services/sslcommerz_service.dart   — payment (sandbox only — wire to UI)
+
+LARAVEL WEB:
+  routes/api.php                         — API routes
+  routes/web.php                         — web routes
+  app/Http/Controllers/Api/              — API controllers
+  app/Http/Controllers/Admin/            — admin controllers
+  app/Http/Controllers/ChatController.php — chat system
+  app/Models/RideRequest.php             — ride model
+  app/Models/RideOffer.php               — ride offer model
+  app/Models/Driver.php                  — driver model
+  app/Models/DriverRating.php            — rating model
+  resources/views/goride/               — ride web views (all need real data)
+  resources/views/admin/                — admin views
+  database/migrations/                  — database schema
+
+================================================================================
+  TASK STATS (as of 24 June 2026)
+================================================================================
+
+  Total tasks: 81
+  ✅ Fully done:    ~18  (22%)
+  🔄 Partial:       ~22  (27%)
+  ❌ Not started:   ~41  (51%)
+
+  Critical launch blockers remaining: 6
+  (FCM, OTP, Payment wire-up, Queue worker, Profile save fix, bKash)
+
+================================================================================

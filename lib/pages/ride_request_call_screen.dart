@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:get/get.dart';
 import '../services/ride_service.dart';
+import '../services/firebase_service.dart';
 import 'live_tracking_screen.dart';
 
 /// Full-screen incoming call screen for ride requests.
@@ -127,12 +128,30 @@ class _RideRequestCallScreenState extends State<RideRequestCallScreen>
   Future<void> _acceptRide() async {
     _autoDismissTimer?.cancel();
 
+    // Re-read the Firestore document to get the latest mysqlRideId.
+    // The rider's app writes this ~1 second after the document is created
+    // (race condition), so the widget may have received a null value initially.
+    int? freshMysqlRideId = widget.mysqlRideId;
+    try {
+      final firebaseService = Get.find<FirebaseService>();
+      final doc = await firebaseService.rideRequests?.doc(widget.requestId).get();
+      if (doc != null && doc.exists) {
+        final fresh = (doc.data() as Map<String, dynamic>?)?['mysqlRideId'];
+        if (fresh != null) {
+          freshMysqlRideId = (fresh as num).toInt();
+          debugPrint('Fetched fresh mysqlRideId: $freshMysqlRideId');
+        }
+      }
+    } catch (e) {
+      debugPrint('Could not re-fetch mysqlRideId: $e');
+    }
+
     final success = await _rideService.acceptRideRequest(
       widget.requestId,
       tripId: widget.tripId,
       riderName: widget.riderName,
       riderPhone: widget.riderPhone,
-      laravelRideId: widget.mysqlRideId,
+      laravelRideId: freshMysqlRideId,
     );
 
     if (mounted) {

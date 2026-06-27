@@ -110,10 +110,63 @@ class _OwnerProfileScreenState extends State<OwnerProfileScreen> {
     });
   }
 
+  bool _uploading = false;
+
   void _saveAndContinue() {
     if (_currentStep < 2) {
       setState(() => _currentStep++);
     } else {
+      _uploadDocumentsAndSubmit();
+    }
+  }
+
+  // Maps our UI keys to the backend document_type values
+  static const Map<String, String> _docTypeMap = {
+    'nid_front':            'nid_front',
+    'nid_back':             'nid_back',
+    'license_front':        'license_front',
+    'license_back':         'license_back',
+    'vehicle_registration': 'vehicle_registration',
+    'selfie':               'selfie',
+  };
+
+  Future<void> _uploadDocumentsAndSubmit() async {
+    if (_uploadedXFiles.isEmpty) {
+      _showSubmitDialog();
+      return;
+    }
+
+    setState(() => _uploading = true);
+    final api = Get.find<ApiService>();
+    int uploaded = 0;
+    int failed = 0;
+
+    for (final entry in _uploadedXFiles.entries) {
+      final docType = _docTypeMap[entry.key] ?? entry.key;
+      try {
+        final res = await api.uploadDriverDocument(docType, entry.value!.path);
+        if (res.statusCode == 200) {
+          uploaded++;
+        } else {
+          failed++;
+        }
+      } catch (_) {
+        failed++;
+      }
+    }
+
+    setState(() => _uploading = false);
+
+    if (mounted) {
+      if (failed > 0) {
+        Get.snackbar(
+          'Partial Upload',
+          '$uploaded file(s) uploaded. $failed failed — you can re-upload later.',
+          backgroundColor: Colors.orange,
+          colorText: Colors.white,
+          duration: const Duration(seconds: 4),
+        );
+      }
       _showSubmitDialog();
     }
   }
@@ -193,9 +246,11 @@ class _OwnerProfileScreenState extends State<OwnerProfileScreen> {
                 Expanded(
                   flex: 2,
                   child: ElevatedButton(
-                    onPressed: _saveAndContinue,
+                    onPressed: _uploading ? null : _saveAndContinue,
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10713C), padding: const EdgeInsets.symmetric(vertical: 12)),
-                    child: Text(_currentStep == 2 ? 'Submit' : 'Save & Continue', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
+                    child: _uploading
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : Text(_currentStep == 2 ? 'Submit & Upload' : 'Save & Continue', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
                   ),
                 ),
               ],

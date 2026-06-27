@@ -20,6 +20,7 @@ import 'package:geolocator/geolocator.dart';
 import '../services/firebase_service.dart';
 import '../services/ride_service.dart';
 import 'live_tracking_screen.dart';
+import 'notifications_screen.dart';
 
 class UnifiedDashboard extends StatefulWidget {
   final String role; // 'driver', 'owner', 'corporate', 'admin'
@@ -52,19 +53,30 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
   final Set<String> _declinedRequestIds = {}; // Track declined requests locally
 
   @override
+  // Driver live stats
+  Map<String, dynamic> _driverStats = {};
+
   void initState() {
     super.initState();
-    // Default driver to online immediately after login
     if (widget.role == 'driver' && !_locationService.isTracking.value) {
       _toggleOnlineStatus(true);
     }
     if (widget.role == 'driver') {
       _setupRideRequestListener();
+      _loadDriverStats();
     }
-    // Load real profile completion data (non-admin roles)
     if (widget.role != 'admin') {
       _loadProfileCompletion();
     }
+  }
+
+  Future<void> _loadDriverStats() async {
+    try {
+      final res = await _apiService.getDriverStats();
+      if (res.statusCode == 200 && res.data['success'] == true) {
+        if (mounted) setState(() => _driverStats = Map<String, dynamic>.from(res.data['stats'] ?? {}));
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadProfileCompletion() async {
@@ -94,35 +106,40 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
 
   /// Set up a listener for new ride requests to trigger notifications
   void _setupRideRequestListener() {
-    _requestSubscription = _firebaseService.streamPendingRequests().listen((snapshot) {
-      // Process document changes
-      for (final change in snapshot.docChanges) {
-        final requestId = change.doc.id;
-        final data = change.doc.data() as Map<String, dynamic>?;
-        if (data == null) continue;
+    _requestSubscription = _firebaseService.streamPendingRequests().listen(
+      (snapshot) {
+        for (final change in snapshot.docChanges) {
+          final requestId = change.doc.id;
+          final data = change.doc.data() as Map<String, dynamic>?;
+          if (data == null) continue;
 
-        switch (change.type) {
-          case DocumentChangeType.added:
-            _pendingRequestIds.add(requestId);
-            // Only trigger notification if driver is online
-            if (_isOnline && mounted) {
-              _notifyNewRideRequest(requestId, data);
-            }
-            break;
-          case DocumentChangeType.removed:
-            _pendingRequestIds.remove(requestId);
-            _notificationService.dismissRequest(requestId);
-            break;
-          case DocumentChangeType.modified:
-            final status = data['status'] as String?;
-            if (status != 'pending') {
+          switch (change.type) {
+            case DocumentChangeType.added:
+              _pendingRequestIds.add(requestId);
+              if (_isOnline && mounted) {
+                _notifyNewRideRequest(requestId, data);
+              }
+              break;
+            case DocumentChangeType.removed:
               _pendingRequestIds.remove(requestId);
               _notificationService.dismissRequest(requestId);
-            }
-            break;
+              break;
+            case DocumentChangeType.modified:
+              final status = data['status'] as String?;
+              if (status != 'pending') {
+                _pendingRequestIds.remove(requestId);
+                _notificationService.dismissRequest(requestId);
+              }
+              break;
+          }
         }
-      }
-    });
+      },
+      onError: (error) {
+        // This fires when Firestore rules block access or network fails.
+        // Most common cause: Firebase Auth not initialized (anonymous sign-in needed).
+        debugPrint('❌ Ride request stream error: $error');
+      },
+    );
   }
 
   /// Show notification and full-screen call UI for a new ride request (only if nearby)
@@ -389,7 +406,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
           ),
         IconButton(
           icon: const Icon(Icons.notifications_none),
-          onPressed: () {},
+          onPressed: () => Get.to(() => const NotificationsScreen()),
         ),
         if (widget.role == 'admin')
           IconButton(icon: const Icon(Icons.settings), onPressed: () {}),
@@ -620,30 +637,32 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
   Widget _buildStatsGrid() {
     List<Map<String, dynamic>> stats = [];
     if (widget.role == 'driver') {
+      final earn = (_driverStats['today_earnings'] as num? ?? 0).toDouble();
+      final earnStr = earn >= 1000 ? '৳${(earn / 1000).toStringAsFixed(1)}k' : '৳${earn.toStringAsFixed(0)}';
       stats = [
         {
           'label': localeController.get('Today Trips', 'আজকের ট্রিপ'),
-          'value': '5',
+          'value': '${_driverStats['today_trips'] ?? '—'}',
           'icon': Icons.directions_car,
           'color': Colors.blue,
         },
         {
           'label': localeController.get('Rating', 'রেটিং'),
-          'value': '4.9',
+          'value': '${_driverStats['avg_rating'] ?? '—'}',
           'icon': Icons.star,
           'color': Colors.orange,
         },
         {
-          'label': localeController.get('Total Earn', 'মোট আয়'),
-          'value': '৳ 2.5k',
+          'label': localeController.get('Today Earn', 'আজকের আয়'),
+          'value': _driverStats.isEmpty ? '—' : earnStr,
           'icon': Icons.payments,
           'color': Colors.green,
         },
         {
-          'label': localeController.get('Cancelled', 'বাতিল'),
-          'value': '0',
-          'icon': Icons.cancel,
-          'color': Colors.red,
+          'label': localeController.get('Accept %', 'গ্রহণ হার'),
+          'value': '${_driverStats['acceptance_rate'] ?? '—'}%',
+          'icon': Icons.percent,
+          'color': Colors.teal,
         },
       ];
     } else if (widget.role == 'owner') {

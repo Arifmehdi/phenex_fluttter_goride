@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import '../services/api_service.dart';
 import '../pages/home_page.dart';
 import '../pages/dashboard_details_pages.dart';
+import '../pages/settings_screen.dart';
 
 class SidebarMenu extends StatelessWidget {
   final String role;
@@ -62,7 +63,7 @@ class SidebarMenu extends StatelessWidget {
             title: const Text('Settings'),
             onTap: () {
               Navigator.pop(context);
-              // Handle Settings navigation
+              Get.to(() => const SettingsScreen());
             },
           ),
           ListTile(
