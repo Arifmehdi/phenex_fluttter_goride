@@ -12,6 +12,7 @@ import '../services/notification_service.dart';
 import '../widgets/sidebar_menu.dart';
 import 'ride_request_call_screen.dart';
 import 'profile_completion_screen.dart';
+import 'driver_verification_screen.dart';
 import 'ride_history_screen.dart';
 
 import 'dart:async';
@@ -21,6 +22,18 @@ import '../services/firebase_service.dart';
 import '../services/ride_service.dart';
 import 'live_tracking_screen.dart';
 import 'notifications_screen.dart';
+import '../widgets/ongoing_ride_banner.dart';
+
+/// Safely parse a value from a Laravel API response into a double.
+/// Laravel's `decimal:N` model casts serialize to JSON STRINGS (e.g. "150.00"),
+/// not JSON numbers — so a plain `as num?` cast throws on those fields.
+/// This accepts num, String, or null and never throws.
+double parseApiDouble(dynamic value, {double fallback = 0}) {
+  if (value == null) return fallback;
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value) ?? fallback;
+  return fallback;
+}
 
 class UnifiedDashboard extends StatefulWidget {
   final String role; // 'driver', 'owner', 'corporate', 'admin'
@@ -52,10 +65,20 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
   final Set<String> _pendingRequestIds = {};
   final Set<String> _declinedRequestIds = {}; // Track declined requests locally
 
-  @override
   // Driver live stats
   Map<String, dynamic> _driverStats = {};
 
+  // Wallet (all roles)
+  double _walletBalance = 0;
+  bool _walletLoading = true;
+  List<Map<String, dynamic>> _walletTransactions = [];
+
+  // Earnings summary (driver role only)
+  Map<String, dynamic> _weekEarnings = {};
+  Map<String, dynamic> _monthEarnings = {};
+  bool _earningsLoading = true;
+
+  @override
   void initState() {
     super.initState();
     if (widget.role == 'driver' && !_locationService.isTracking.value) {
@@ -64,10 +87,12 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
     if (widget.role == 'driver') {
       _setupRideRequestListener();
       _loadDriverStats();
+      _loadEarningsSummary();
     }
     if (widget.role != 'admin') {
       _loadProfileCompletion();
     }
+    _loadWalletData();
   }
 
   Future<void> _loadDriverStats() async {
@@ -79,8 +104,135 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
     } catch (_) {}
   }
 
+  Future<void> _loadEarningsSummary() async {
+    try {
+      final results = await Future.wait([
+        _apiService.getDriverEarnings('week'),
+        _apiService.getDriverEarnings('month'),
+      ]);
+      final weekRes = results[0];
+      final monthRes = results[1];
+      if (mounted) {
+        setState(() {
+          if (weekRes.statusCode == 200 && weekRes.data['success'] == true) {
+            _weekEarnings = Map<String, dynamic>.from(weekRes.data['summary'] ?? {});
+          }
+          if (monthRes.statusCode == 200 && monthRes.data['success'] == true) {
+            _monthEarnings = Map<String, dynamic>.from(monthRes.data['summary'] ?? {});
+          }
+          _earningsLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _earningsLoading = false);
+    }
+  }
+
+  Future<void> _loadWalletData() async {
+    setState(() => _walletLoading = true);
+    try {
+      final results = await Future.wait([
+        _apiService.getWalletBalance(),
+        _apiService.getWalletTransactions(),
+      ]);
+      final balRes = results[0];
+      final txnRes = results[1];
+      if (mounted) {
+        setState(() {
+          if (balRes.statusCode == 200 && balRes.data['success'] == true) {
+            _walletBalance = parseApiDouble(balRes.data['balance']);
+          }
+          if (txnRes.statusCode == 200 && txnRes.data['success'] == true) {
+            final raw = txnRes.data['transactions'];
+            final list = (raw is Map ? raw['data'] : raw) as List? ?? [];
+            _walletTransactions = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          }
+          _walletLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _walletLoading = false);
+    }
+  }
+
+  Future<void> _showTopUpDialog() async {
+    final controller = TextEditingController();
+    final amount = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(localeController.get('Top Up Wallet', 'ওয়ালেট রিচার্জ')),
+        content: TextField(
+          controller: controller,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          autofocus: true,
+          decoration: InputDecoration(
+            prefixText: '৳ ',
+            hintText: localeController.get('Enter amount', 'পরিমাণ লিখুন'),
+            border: const OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(localeController.get('Cancel', 'বাতিল')),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10713C)),
+            onPressed: () {
+              final val = double.tryParse(controller.text.trim());
+              Navigator.pop(ctx, val);
+            },
+            child: Text(localeController.get('Continue', 'চালিয়ে যান'),
+                style: const TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (amount == null || amount < 10) {
+      if (amount != null) {
+        Get.snackbar('Error', 'Minimum top-up amount is ৳10',
+            backgroundColor: Colors.red, colorText: Colors.white);
+      }
+      return;
+    }
+
+    setState(() => _walletLoading = true);
+    try {
+      final res = await _apiService.topUpWallet(amount);
+      if (res.statusCode == 200 && res.data['success'] == true) {
+        Get.snackbar('Success', 'Wallet topped up with ৳${amount.toStringAsFixed(0)}',
+            backgroundColor: const Color(0xFF10713C), colorText: Colors.white);
+        await _loadWalletData();
+      } else {
+        Get.snackbar('Error', res.data['message'] ?? 'Top-up failed',
+            backgroundColor: Colors.red, colorText: Colors.white);
+        setState(() => _walletLoading = false);
+      }
+    } catch (_) {
+      Get.snackbar('Error', 'Could not connect to server',
+          backgroundColor: Colors.red, colorText: Colors.white);
+      setState(() => _walletLoading = false);
+    }
+  }
+
   Future<void> _loadProfileCompletion() async {
     try {
+      // Drivers/riders have a dedicated verification completion %
+      if (widget.role == 'driver') {
+        final res = await _apiService.getDriverProfileStatus();
+        if (res.statusCode == 200 && res.data['success'] == true) {
+          final pct = res.data['profile_completion'] ?? 0;
+          if (mounted) {
+            setState(() {
+              _profileCompletionPercent = pct is int ? pct : (pct as num).toInt();
+              _isProfileLoading = false;
+            });
+          }
+          return;
+        }
+      }
+
       final response = await _apiService.getProfileCompletion();
       if (response.statusCode == 200 && response.data['success'] == true) {
         final pct = response.data['profile_completion']['percentage'] ?? 0;
@@ -177,6 +329,10 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
 
   /// Navigate to the full-screen incoming call UI
   void _showIncomingCallScreen(String requestId, Map<String, dynamic> data) {
+    // Shared dedup with the FCM handler — don't open the call twice
+    if (NotificationService.shownCallRequestIds.contains(requestId)) return;
+    NotificationService.shownCallRequestIds.add(requestId);
+
     final riderName = data['riderName'] as String? ?? 'Passenger';
     final pickupAddress = data['pickupAddress'] as String? ?? 'Unknown';
     final destAddress = data['destAddress'] as String? ?? 'Unknown';
@@ -259,6 +415,10 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
     }
 
     setState(() => _isOnline = online);
+
+    // Persist so the FCM call handler can respect online/offline even when
+    // the app is in the background or just reopened.
+    GetStorage().write('driver_online', online);
 
     final vehicleType = user?['vehicle_type']?.toString().toLowerCase();
 
@@ -420,6 +580,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const OngoingRideBanner(),
           _buildWelcomeHeader(),
           const SizedBox(height: 20),
           if (widget.role != 'admin') _buildProgressTracker(),
@@ -631,13 +792,18 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
   }
 
   void _navigateToProfileCompletion() {
-    Get.to(() => ProfileCompletionScreen(role: widget.role));
+    // Drivers/riders use the dedicated multi-step verification flow
+    if (widget.role == 'driver') {
+      Get.to(() => const DriverVerificationScreen())?.then((_) => _loadProfileCompletion());
+    } else {
+      Get.to(() => ProfileCompletionScreen(role: widget.role));
+    }
   }
 
   Widget _buildStatsGrid() {
     List<Map<String, dynamic>> stats = [];
     if (widget.role == 'driver') {
-      final earn = (_driverStats['today_earnings'] as num? ?? 0).toDouble();
+      final earn = parseApiDouble(_driverStats['today_earnings']);
       final earnStr = earn >= 1000 ? '৳${(earn / 1000).toStringAsFixed(1)}k' : '৳${earn.toStringAsFixed(0)}';
       stats = [
         {
@@ -1146,67 +1312,302 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
   }
 
   Widget _buildEarningsTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+    final isDriver = widget.role == 'driver';
+    return RefreshIndicator(
+      color: const Color(0xFF10713C),
+      onRefresh: () async {
+        await _loadWalletData();
+        if (isDriver) {
+          await Future.wait([_loadDriverStats(), _loadEarningsSummary()]);
+        }
+      },
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildWalletBalanceCard(),
+            if (isDriver) ...[
+              const SizedBox(height: 24),
+              _buildEarningsSummarySection(),
+              const SizedBox(height: 24),
+              _buildDriverPerformanceSection(),
+            ],
+            const SizedBox(height: 24),
+            Text(
+              localeController.get('Recent Transactions', 'সাম্প্রতিক লেনদেন'),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            _buildTransactionsList(),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWalletBalanceCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF10713C), Color(0xFF0D5A30)],
+        ),
+        borderRadius: BorderRadius.circular(20),
+      ),
       child: Column(
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF10713C), Color(0xFF0D5A30)],
+          Text(
+            localeController.get('Wallet Balance', 'ওয়ালেট ব্যালেন্স'),
+            style: const TextStyle(color: Colors.white70),
+          ),
+          const SizedBox(height: 8),
+          _walletLoading
+              ? const SizedBox(
+                  height: 38,
+                  child: Center(child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+                )
+              : Text(
+                  '৳ ${_walletBalance.toStringAsFixed(2)}',
+                  style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
+                ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton.icon(
+                onPressed: _walletLoading ? null : _showTopUpDialog,
+                icon: const Icon(Icons.add, size: 18),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF10713C),
+                ),
+                label: Text(localeController.get('Top Up', 'টপ আপ')),
               ),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              children: [
-                Text(
-                  localeController.get('Balance', 'ব্যালেন্স'),
-                  style: const TextStyle(color: Colors.white70),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  '৳ 14,250.00',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: () {},
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFF10713C),
-                  ),
-                  child: Text(
-                    localeController.get('Withdraw to bKash', 'বিকাশে উত্তোলন'),
-                  ),
+              if (widget.role == 'driver') ...[
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Get.snackbar(
+                      localeController.get('Coming Soon', 'শীঘ্রই আসছে'),
+                      localeController.get('Withdrawal to bKash will be available soon.', 'বিকাশে উত্তোলন শীঘ্রই আসছে।'),
+                      backgroundColor: Colors.black87,
+                      colorText: Colors.white,
+                    );
+                  },
+                  icon: const Icon(Icons.account_balance_wallet_outlined, size: 18, color: Colors.white),
+                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.white70)),
+                  label: Text(localeController.get('Withdraw', 'উত্তোলন'), style: const TextStyle(color: Colors.white)),
                 ),
               ],
-            ),
+            ],
           ),
-          const SizedBox(height: 24),
-          _buildTransactionItem('Trip #4521', '৳ 450', 'Success'),
-          _buildTransactionItem('Withdrawal', '-৳ 2000', 'Pending'),
-          _buildTransactionItem('Trip #4518', '৳ 320', 'Success'),
         ],
       ),
     );
   }
 
-  Widget _buildTransactionItem(String title, String amt, String status) {
-    return ListTile(
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-      subtitle: Text(status),
-      trailing: Text(
-        amt,
-        style: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: amt.startsWith('-') ? Colors.red : Colors.green,
+  Widget _buildEarningsSummarySection() {
+    if (_earningsLoading) {
+      return const Center(child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: CircularProgressIndicator(color: Color(0xFF10713C)),
+      ));
+    }
+
+    final todayEarn = parseApiDouble(_driverStats['today_earnings']);
+    final weekEarn = parseApiDouble(_weekEarnings['total_earnings']);
+    final monthEarn = parseApiDouble(_monthEarnings['total_earnings']);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          localeController.get('Earnings', 'আয়'),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: _earningsPeriodCard(localeController.get('Today', 'আজ'), todayEarn, Colors.blue)),
+            const SizedBox(width: 10),
+            Expanded(child: _earningsPeriodCard(localeController.get('This Week', 'এই সপ্তাহ'), weekEarn, Colors.orange)),
+            const SizedBox(width: 10),
+            Expanded(child: _earningsPeriodCard(localeController.get('This Month', 'এই মাস'), monthEarn, const Color(0xFF10713C))),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _earningsPeriodCard(String label, double amount, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        children: [
+          Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[700])),
+          const SizedBox(height: 6),
+          Text(
+            '৳${amount.toStringAsFixed(0)}',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDriverPerformanceSection() {
+    final todayTrips = _driverStats['today_trips'] ?? '—';
+    final allTimeTrips = _monthEarnings['all_time_trips'] ?? '—';
+    final acceptanceRate = _driverStats['acceptance_rate'];
+    final avgRating = _driverStats['avg_rating'];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          localeController.get('Performance', 'কর্মক্ষমতা'),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: _performanceStatCard(Icons.route, localeController.get('Today Trips', 'আজকের ট্রিপ'), '$todayTrips', Colors.blue)),
+            const SizedBox(width: 10),
+            Expanded(child: _performanceStatCard(Icons.checklist, localeController.get('Total Trips', 'মোট ট্রিপ'), '$allTimeTrips', Colors.purple)),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(child: _performanceStatCard(Icons.percent, localeController.get('Acceptance Rate', 'গ্রহণের হার'), acceptanceRate != null ? '$acceptanceRate%' : '—', Colors.teal)),
+            const SizedBox(width: 10),
+            Expanded(child: _performanceStatCard(Icons.star, localeController.get('Rating', 'রেটিং'), avgRating != null ? '$avgRating' : '—', Colors.amber)),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _performanceStatCard(IconData icon, String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTransactionsList() {
+    if (_walletLoading) {
+      return const Center(child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: CircularProgressIndicator(color: Color(0xFF10713C)),
+      ));
+    }
+    if (_walletTransactions.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 32),
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          children: [
+            Icon(Icons.receipt_long_outlined, size: 40, color: Colors.grey[350]),
+            const SizedBox(height: 8),
+            Text(
+              localeController.get('No transactions yet', 'কোনো লেনদেন নেই'),
+              style: TextStyle(color: Colors.grey[500]),
+            ),
+          ],
+        ),
+      );
+    }
+    return Column(
+      children: _walletTransactions.map((txn) => _buildTransactionItem(txn)).toList(),
+    );
+  }
+
+  Widget _buildTransactionItem(Map<String, dynamic> txn) {
+    final isCredit = txn['type'] == 'credit';
+    final amount = parseApiDouble(txn['amount']);
+    final description = txn['description'] as String? ?? (isCredit ? 'Credit' : 'Debit');
+    final createdAt = txn['created_at'] as String?;
+    String dateLabel = '';
+    if (createdAt != null) {
+      final dt = DateTime.tryParse(createdAt);
+      if (dt != null) {
+        dateLabel = '${dt.day}/${dt.month}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      }
+    }
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade100),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: (isCredit ? const Color(0xFF10713C) : Colors.red).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              isCredit ? Icons.arrow_downward : Icons.arrow_upward,
+              color: isCredit ? const Color(0xFF10713C) : Colors.red,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(description, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                if (dateLabel.isNotEmpty)
+                  Text(dateLabel, style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+              ],
+            ),
+          ),
+          Text(
+            '${isCredit ? '+' : '-'}৳${amount.toStringAsFixed(0)}',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: isCredit ? const Color(0xFF10713C) : Colors.red,
+            ),
+          ),
+        ],
       ),
     );
   }

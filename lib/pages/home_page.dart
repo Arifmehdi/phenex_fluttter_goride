@@ -14,6 +14,7 @@ import 'dashboard_page.dart';
 import '../main.dart' show GoRideApp, SplashScreen;
 import 'register_screen.dart';
 import 'login_page.dart';
+import '../widgets/ongoing_ride_banner.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -209,6 +210,7 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const OngoingRideBanner(),
             _buildSearchBar(context),
             const SizedBox(height: 20),
             _buildForYouSection(context),

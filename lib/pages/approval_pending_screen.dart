@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import '../services/api_service.dart';
 import '../main.dart';
 import 'login_page.dart';
+import 'driver_verification_screen.dart';
 
 class ApprovalPendingScreen extends StatelessWidget {
   final String role;
@@ -141,35 +142,59 @@ class ApprovalPendingScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      _buildStep('1', 'Admin reviews your application'),
-                      _buildStep('2', 'You receive an approval notification'),
-                      _buildStep('3', 'Full dashboard access is granted'),
+                      _buildStep('1', 'Complete your verification profile'),
+                      _buildStep('2', 'Admin reviews your documents'),
+                      _buildStep('3', 'You receive an approval notification'),
+                      _buildStep('4', 'Full dashboard access is granted'),
                     ],
                   ),
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 32),
+
+                // Complete Verification button (drivers only)
+                if (!isCorporate)
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => Get.to(() => const DriverVerificationScreen()),
+                      icon: const Icon(Icons.badge_outlined),
+                      label: const Text(
+                        'Complete Your Verification',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF10713C),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (!isCorporate) const SizedBox(height: 12),
 
                 // Logout button
                 SizedBox(
                   width: double.infinity,
-                  child: ElevatedButton.icon(
+                  child: OutlinedButton.icon(
                     onPressed: () async {
                       final apiService = Get.find<ApiService>();
                       await apiService.logout();
                       Get.offAll(() => const LoginPage());
                     },
-                    icon: const Icon(Icons.logout_rounded),
+                    icon: const Icon(Icons.logout_rounded, color: Color(0xFF10713C)),
                     label: const Text(
                       'Back to Login',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
+                        color: Color(0xFF10713C),
                       ),
                     ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF10713C),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF10713C)),
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),

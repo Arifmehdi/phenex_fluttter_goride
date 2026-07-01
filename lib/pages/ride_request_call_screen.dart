@@ -5,6 +5,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:get/get.dart';
 import '../services/ride_service.dart';
 import '../services/firebase_service.dart';
+import '../services/api_service.dart';
 import 'live_tracking_screen.dart';
 
 /// Full-screen incoming call screen for ride requests.
@@ -58,10 +59,16 @@ class _RideRequestCallScreenState extends State<RideRequestCallScreen>
   late Animation<Offset> _slideAnim;
   Timer? _autoDismissTimer;
   int _secondsRemaining = 10;
+  StreamSubscription? _docSub;
+  bool _closing = false;
 
   @override
   void initState() {
     super.initState();
+
+    // Watch the ride request doc — if ANOTHER driver takes it (or it's
+    // cancelled), dismiss this call instantly (real-time "ride taken").
+    _listenForRideTaken();
 
     // Keep screen on and in full-screen immersive mode
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -127,6 +134,10 @@ class _RideRequestCallScreenState extends State<RideRequestCallScreen>
 
   Future<void> _acceptRide() async {
     _autoDismissTimer?.cancel();
+    // Mark as closing so the "ride taken" listener doesn't fire for our own accept.
+    _closing = true;
+    _docSub?.cancel();
+    await _stopRingtone();
 
     // Re-read the Firestore document to get the latest mysqlRideId.
     // The rider's app writes this ~1 second after the document is created
@@ -159,7 +170,10 @@ class _RideRequestCallScreenState extends State<RideRequestCallScreen>
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
       if (success) {
-        Get.offAll(() => LiveTrackingScreen(
+        // Pop the call screen back to the dashboard, then open tracking on top
+        // so "minimize" returns to the dashboard (ongoing-ride bar shows there).
+        Get.until((route) => route.isFirst);
+        Get.to(() => LiveTrackingScreen(
               role: 'driver',
               rideType: widget.rideType,
               pickupAddress: widget.pickupAddress,
@@ -172,12 +186,14 @@ class _RideRequestCallScreenState extends State<RideRequestCallScreen>
               tripId: widget.tripId ?? widget.requestId,
             ));
       } else {
+        // Another driver claimed it first (atomic claim lost).
         Get.back();
         Get.snackbar(
-          'Error',
-          'Failed to accept ride. Please try again.',
-          backgroundColor: Colors.red,
+          'Ride Taken',
+          'Another rider accepted this trip first.',
+          backgroundColor: Colors.black87,
           colorText: Colors.white,
+          duration: const Duration(seconds: 2),
         );
       }
     }
@@ -205,22 +221,56 @@ class _RideRequestCallScreenState extends State<RideRequestCallScreen>
     }
   }
 
+  /// Auto-dismiss the moment the ride is no longer pending
+  /// (another driver accepted it, or the rider cancelled).
+  void _listenForRideTaken() {
+    final stream = Get.find<FirebaseService>().streamRideRequestDoc(widget.requestId);
+    if (stream == null) return;
+    _docSub = stream.listen((doc) {
+      if (!doc.exists) return;
+      final data = doc.data() as Map<String, dynamic>?;
+      final status = data?['status'] as String?;
+      if (status != null && status != 'pending' && !_closing) {
+        // Someone else took it / cancelled — close this call now.
+        _autoDismissTimer?.cancel();
+        _dismissCall(takenByOther: true);
+      }
+    });
+  }
+
   void _declineRide() {
     _autoDismissTimer?.cancel();
+    // Tell the backend to transfer this call to the next nearest driver.
+    final rideId = widget.mysqlRideId ?? 0;
+    if (rideId > 0) {
+      Get.find<ApiService>().declineRide(rideId);
+    }
     _dismissCall();
   }
 
-  void _dismissCall() {
+  void _dismissCall({bool takenByOther = false}) {
+    if (_closing) return;
+    _closing = true;
     _stopRingtone();
     if (mounted) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      // Pass false to indicate the ride was declined/timed out (not accepted)
       Get.back(result: false);
+      if (takenByOther) {
+        Get.snackbar(
+          'Ride Taken',
+          'This ride was accepted by another rider.',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.black87,
+          colorText: Colors.white,
+          duration: const Duration(seconds: 2),
+        );
+      }
     }
   }
 
   @override
   void dispose() {
+    _docSub?.cancel();
     _autoDismissTimer?.cancel();
     _audioPlayer.dispose();
     _pulseController.dispose();

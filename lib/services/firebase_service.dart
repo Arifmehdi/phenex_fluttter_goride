@@ -36,15 +36,19 @@ class FirebaseService extends GetxService {
         cacheSizeBytes: 100_000_000, // 100MB
       );
 
-      // Mark Firestore as ready BEFORE attempting auth
-      // so a failed auth never breaks the ride request stream.
-      _initialized = true;
-      debugPrint('Firebase initialized successfully');
+      // CRITICAL: sign in anonymously and WAIT for it BEFORE marking Firestore
+      // ready. Our security rules require `request.auth != null`, so any write
+      // that happens before auth is established would be DENIED (empty data).
+      await _signInAnonymouslySafe();
 
-      // Try anonymous sign-in so Firestore rules (request.auth != null) pass.
-      // This is optional — if Anonymous Auth is not enabled in Firebase Console
-      // the sign-in fails silently and Firestore still works with open rules.
-      _signInAnonymouslySafe();
+      _initialized = true;
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) {
+        debugPrint('⚠️ Firebase ready BUT NOT signed in. '
+            'Enable Anonymous Auth in Firebase Console — Firestore writes will be denied.');
+      } else {
+        debugPrint('Firebase initialized + signed in (uid: $uid)');
+      }
     } catch (e) {
       _initialized = false;
       _firestore = null;
@@ -53,21 +57,27 @@ class FirebaseService extends GetxService {
     }
   }
 
-  /// Sign in anonymously so Firestore security rules that check
-  /// `request.auth != null` pass. Fails silently if Anonymous Auth
-  /// is not enabled in the Firebase Console — Firestore still works.
+  /// Ensure there is a signed-in Firebase user so security rules that check
+  /// `request.auth != null` pass. Retries briefly; logs clearly if Anonymous
+  /// Auth is not enabled in the Firebase Console.
   Future<void> _signInAnonymouslySafe() async {
     try {
-      if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance.signInAnonymously();
-        debugPrint('Firebase anonymous auth OK: ${FirebaseAuth.instance.currentUser?.uid}');
-      }
+      if (FirebaseAuth.instance.currentUser != null) return;
+      final cred = await FirebaseAuth.instance.signInAnonymously();
+      debugPrint('Firebase anonymous auth OK: ${cred.user?.uid}');
     } catch (e) {
-      // Anonymous Auth not enabled in Firebase Console — that's fine.
-      // Set Firestore rules to "allow read, write: if true" for dev,
-      // or enable Anonymous Auth in Firebase Console → Authentication.
-      debugPrint('Firebase anonymous auth skipped: $e');
+      // Most common cause: Anonymous Auth is DISABLED in the Firebase Console.
+      // Console → Build → Authentication → Sign-in method → Anonymous → Enable.
+      debugPrint('❌ Firebase anonymous sign-in FAILED: $e');
     }
+  }
+
+  /// Public guard: make sure we are signed in before a Firestore write.
+  /// Call this defensively from write paths so a dropped session re-auths.
+  Future<bool> ensureSignedIn() async {
+    if (FirebaseAuth.instance.currentUser != null) return true;
+    await _signInAnonymouslySafe();
+    return FirebaseAuth.instance.currentUser != null;
   }
 
   // Driver locations collection
@@ -93,9 +103,10 @@ class FirebaseService extends GetxService {
     String? vehicleType,
     String? currentTripId,
   }) async {
+    await ensureSignedIn(); // rules require an auth'd session
     final coll = driverLocations;
     if (coll == null) return;
-    
+
     await coll.doc(driverId).set({
       'latitude': latitude,
       'longitude': longitude,
@@ -129,6 +140,7 @@ class FirebaseService extends GetxService {
     required double fare,
     String? riderPhone,
   }) async {
+    await ensureSignedIn(); // rules require an auth'd session
     final coll = activeTrips;
     if (coll == null) return null;
 
@@ -208,6 +220,7 @@ class FirebaseService extends GetxService {
     required double fare,
     String? riderPhone,
   }) async {
+    await ensureSignedIn(); // rules require an auth'd session
     final coll = rideRequests;
     if (coll == null) return null;
 
@@ -240,7 +253,47 @@ class FirebaseService extends GetxService {
         .snapshots();
   }
 
-  /// Accept a ride request (driver)
+  /// Listen to a single ride request document (used by the incoming-call
+  /// screen so it can auto-dismiss the moment another driver takes the ride).
+  Stream<DocumentSnapshot>? streamRideRequestDoc(String requestId) {
+    final coll = rideRequests;
+    if (coll == null) return null;
+    return coll.doc(requestId).snapshots();
+  }
+
+  /// Atomically claim a ride request. Only the FIRST driver to claim wins —
+  /// the transaction only succeeds if the ride is still 'pending'.
+  /// Returns true if this driver got it, false if someone else already did.
+  Future<bool> claimRideRequest(String requestId, String driverId) async {
+    final db = firestore;
+    final coll = rideRequests;
+    if (db == null || coll == null) return false;
+
+    final docRef = coll.doc(requestId);
+    try {
+      final claimed = await db.runTransaction<bool>((txn) async {
+        final snap = await txn.get(docRef);
+        if (!snap.exists) return false;
+        final data = snap.data() as Map<String, dynamic>?;
+        final status = data?['status'] as String?;
+        // Already taken / cancelled → cannot claim
+        if (status != 'pending') return false;
+
+        txn.update(docRef, {
+          'status': 'accepted',
+          'driverId': driverId,
+          'acceptedAt': FieldValue.serverTimestamp(),
+        });
+        return true;
+      });
+      return claimed;
+    } catch (e) {
+      debugPrint('claimRideRequest error: $e');
+      return false;
+    }
+  }
+
+  /// Accept a ride request (driver) — non-atomic legacy path.
   Future<void> acceptRideRequest(String requestId, String driverId) async {
     final coll = rideRequests;
     if (coll == null) return;

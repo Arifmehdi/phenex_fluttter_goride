@@ -49,6 +49,11 @@ class _RideStatusScreenState extends State<RideStatusScreen>
   Position? _currentPosition;
   StreamSubscription<Position>? _positionStreamSubscription;
   Worker? _statusWorker;
+  Timer? _searchTimeout;
+  bool _leaving = false;
+
+  // How long to keep searching before giving up (like Pathao/InDrive)
+  static const int _searchTimeoutSeconds = 60;
 
   final RideService _rideService = Get.find<RideService>();
   BitmapDescriptor? _vehicleIcon;
@@ -64,6 +69,7 @@ class _RideStatusScreenState extends State<RideStatusScreen>
     _loadIcons();
     _startPositionTracking();
     _submitRideRequest();
+    _startSearchTimeout();
 
     // Listen to real tripStatus from RideService
     _statusWorker = ever(_rideService.tripStatus, (String status) {
@@ -72,18 +78,42 @@ class _RideStatusScreenState extends State<RideStatusScreen>
         if (!_isDriverFound) {
           setState(() => _isDriverFound = true);
           _pulseController.stop();
+          _searchTimeout?.cancel(); // driver found — stop the countdown
         }
       } else if (status == 'cancelled') {
-        // Ride was cancelled — go back
+        _searchTimeout?.cancel();
+        if (!_leaving) {
+          _leaving = true;
+          Get.back();
+          Get.snackbar('Cancelled', 'This ride was cancelled.',
+              backgroundColor: Colors.red, colorText: Colors.white);
+        }
+      }
+    });
+  }
+
+  /// Auto-cancel the search if no driver accepts within the timeout window.
+  void _startSearchTimeout() {
+    _searchTimeout = Timer(const Duration(seconds: _searchTimeoutSeconds), () async {
+      if (!mounted || _isDriverFound || _leaving) return;
+      _leaving = true;
+      await _rideService.cancelTrip(reason: 'No driver found in time');
+      if (mounted) {
         Get.back();
-        Get.snackbar('Cancelled', 'Could not find a driver. Please try again.',
-            backgroundColor: Colors.red, colorText: Colors.white);
+        Get.snackbar(
+          'No Drivers Available',
+          'We couldn\'t find a driver nearby. Please try again.',
+          backgroundColor: Colors.orange,
+          colorText: Colors.white,
+          duration: const Duration(seconds: 4),
+        );
       }
     });
   }
 
   @override
   void dispose() {
+    _searchTimeout?.cancel();
     _positionStreamSubscription?.cancel();
     _mapController?.dispose();
     _pulseController.dispose();
@@ -162,7 +192,7 @@ class _RideStatusScreenState extends State<RideStatusScreen>
     ));
   }
 
-  void _cancelRide() async {
+  Future<void> _cancelRide() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -181,14 +211,31 @@ class _RideStatusScreenState extends State<RideStatusScreen>
       ),
     );
     if (confirm == true) {
+      _leaving = true;
+      _searchTimeout?.cancel();
       await _rideService.cancelTrip(reason: 'Rider cancelled while searching');
       if (mounted) Get.back();
     }
   }
 
+  /// Intercept leaving the screen. While still searching, leaving must
+  /// cancel the request so drivers stop ringing. After a driver is found,
+  /// leaving is allowed (the trip continues in Live Tracking).
+  Future<bool> _onWillLeave() async {
+    if (_isDriverFound || _leaving) return true;
+    await _cancelRide();
+    return false; // _cancelRide handles navigation itself
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: _isDriverFound,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        await _onWillLeave();
+      },
+      child: Scaffold(
       backgroundColor: Colors.white,
       body: Stack(
         children: [
@@ -204,7 +251,7 @@ class _RideStatusScreenState extends State<RideStatusScreen>
                     backgroundColor: Colors.white,
                     child: IconButton(
                       icon: const Icon(Icons.arrow_back, color: Colors.black),
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: _onWillLeave,
                     ),
                   ),
                   SosPillButton(
@@ -236,6 +283,7 @@ class _RideStatusScreenState extends State<RideStatusScreen>
           ),
         ],
       ),
+    ),
     );
   }
 
@@ -520,7 +568,12 @@ class _RideStatusScreenState extends State<RideStatusScreen>
                 height: 54,
                 child: ElevatedButton.icon(
                   onPressed: () {
+                    _leaving = true;
+                    // Collapse the booking flow to the home root, then open
+                    // tracking so "minimize" returns to home (ongoing bar shows).
+                    Get.until((route) => route.isFirst);
                     Get.to(() => LiveTrackingScreen(
+                          role: 'rider',
                           rideType: widget.rideType,
                           pickupAddress: widget.pickup,
                           destinationAddress: widget.destination,

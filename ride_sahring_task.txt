@@ -220,6 +220,22 @@ PLATFORM TAGS:
     - WEB: admin/approvals exists
     - Status: Working
 
+34b. Driver Multi-Step Verification & % Completion       ✅ [BOTH]
+    - DB: drivers table + father_name, dob, blood_group, addresses,
+      emergency contact, nid/license images, license_expiry, vehicle details,
+      profile_completion (int), verification_status, rejection_reason
+      (migration 2026_06_26_000001 — RUN AFTER STARTING MYSQL)
+    - WEB: DriverProfileController — GET /api/driver/profile-status,
+      POST /api/driver/profile/update (multipart text + images)
+    - WEB: auto-computes completion %, sets status=pending at 100%
+    - WEB: Admin GET /api/admin/drivers/verification (list with %),
+      GET /api/admin/drivers/{id}/verification, POST .../verify (approve/reject)
+    - WEB: Fixed instanceof namespace bug in ProfileCompletionController
+    - APP: driver_verification_screen.dart — 5-step wizard
+      (Personal → NID → License → Vehicle → Photo) with image uploads,
+      live % progress bar, step indicator, verification status badge
+    - APP: dashboard routes drivers here; shows real % on dashboard card
+
 35. OTP / Phone Verification                            ✅ [BOTH]
     - WEB: POST /api/auth/send-otp — generates 6-digit OTP, logs it (wire SMS gateway)
     - WEB: POST /api/auth/verify-otp — validates OTP (5 min TTL, single-use)

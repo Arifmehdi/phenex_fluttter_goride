@@ -688,6 +688,33 @@ class ApiService extends g.GetxController {
 
   // ── Phase 3 API Methods ──
 
+  // ── Driver Verification / Profile Completion ──
+
+  Future<Response> getDriverProfileStatus() async {
+    try { return await _dio.get('/driver/profile-status'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  /// Save a step. [fields] are text values; [images] map field -> file path.
+  Future<Response> updateDriverProfile({
+    required Map<String, dynamic> fields,
+    Map<String, String> images = const {},
+  }) async {
+    try {
+      final formMap = <String, dynamic>{...fields};
+      for (final entry in images.entries) {
+        formMap[entry.key] = await MultipartFile.fromFile(
+          entry.value,
+          filename: entry.value.split('/').last,
+        );
+      }
+      final formData = FormData.fromMap(formMap);
+      return await _dio.post('/driver/profile/update', data: formData);
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500);
+    }
+  }
+
   // ── Phase 6: Safety ──
   Future<Response> triggerSos({int? rideRequestId, double? lat, double? lng}) async {
     try {
@@ -699,6 +726,12 @@ class ApiService extends g.GetxController {
     } on DioException catch (e) {
       return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500);
     }
+  }
+
+  /// Driver declines a ride → backend transfers the call to the next driver.
+  Future<Response> declineRide(int rideId) async {
+    try { return await _dio.post('/ride-requests/$rideId/decline'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
   }
 
   Future<Response> generateTrackingToken(int rideId) async {

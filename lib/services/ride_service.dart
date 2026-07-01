@@ -38,6 +38,36 @@ class RideService extends GetxService {
   final RxDouble currentPickupLng = 0.0.obs;
   final RxDouble currentDestLat = 0.0.obs;
   final RxDouble currentDestLng = 0.0.obs;
+  // 'rider' (customer) or 'driver' — who is viewing the active ride
+  final RxString currentRole = 'rider'.obs;
+
+  /// True while a ride is live (accepted → in_progress). Used by the
+  /// dashboard "ongoing ride" banner to know whether to show.
+  bool get hasActiveRide =>
+      const ['accepted', 'arriving', 'in_progress'].contains(tripStatus.value);
+
+  /// Cache the ride details so the trip can be reopened from the dashboard.
+  void cacheActiveRide({
+    required String role,
+    required String rideType,
+    required String pickupAddress,
+    required String destAddress,
+    required double fare,
+    required double pickupLat,
+    required double pickupLng,
+    required double destLat,
+    required double destLng,
+  }) {
+    currentRole.value = role;
+    currentRideType.value = rideType;
+    currentPickupAddress.value = pickupAddress;
+    currentDestAddress.value = destAddress;
+    currentFare.value = fare;
+    currentPickupLat.value = pickupLat;
+    currentPickupLng.value = pickupLng;
+    currentDestLat.value = destLat;
+    currentDestLng.value = destLng;
+  }
 
   String _currentRideRequestId = '';
   StreamSubscription<DocumentSnapshot>? _tripStream;
@@ -299,8 +329,13 @@ class RideService extends GetxService {
     }
 
     try {
-      // 1. Update the ride request status
-      await _firebaseService.acceptRideRequest(requestId, driverId);
+      // 1. ATOMIC claim — only the first driver to accept wins.
+      final claimed = await _firebaseService.claimRideRequest(requestId, driverId);
+      if (!claimed) {
+        // Another driver already took this ride.
+        debugPrint('Ride $requestId already taken by another driver.');
+        return false;
+      }
 
       // 2. Update the active trip (assign driver)
       String finalTripId = tripId ?? '';
@@ -373,7 +408,7 @@ class RideService extends GetxService {
       );
     }
 
-    // Update Firestore
+    // Update Firestore ride_requests doc (dismisses all ringing drivers)
     if (_currentRideRequestId.isNotEmpty) {
       try {
         final coll = _firebaseService.rideRequests;
@@ -386,6 +421,15 @@ class RideService extends GetxService {
         }
       } catch (e) {
         debugPrint('Warning: could not cancel ride request: $e');
+      }
+    }
+
+    // Also cancel the active_trips doc so an assigned driver stops tracking
+    if (currentTripId.value.isNotEmpty) {
+      try {
+        await _firebaseService.updateTripStatus(currentTripId.value, 'cancelled');
+      } catch (e) {
+        debugPrint('Warning: could not cancel active trip: $e');
       }
     }
 

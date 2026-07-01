@@ -14,6 +14,8 @@ import '../utils/marker_utils.dart';
 import '../widgets/sos_helper.dart';
 import 'package:goride/pages/chat_conversation_list_screen.dart';
 import 'post_trip_rating_sheet.dart';
+import 'dashboard_page.dart';
+import 'home_page.dart';
 
 class LiveTrackingScreen extends StatefulWidget {
   final String rideType;
@@ -65,6 +67,13 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   bool _routeLoaded = false;
   bool _isCompleting = false;
 
+  // Live ETA + distance to the current target (pickup or destination)
+  double _etaMinutes = 0;
+  double _distanceKm = 0;
+  DateTime _lastRouteFetch = DateTime.fromMillisecondsSinceEpoch(0);
+  Worker? _statusWorker;
+  Timer? _etaTimer;
+
   // Announced distance thresholds (metres)
   final Set<int> _announcedThresholds = {};
   String _lastKnownStatus = '';
@@ -75,18 +84,57 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     _loadIcons();
     _fetchRoute();
     _startPositionTracking();
+
+    // Cache the ride AFTER the current frame — this mutates Rx values that the
+    // dashboard's "ongoing ride" Obx watches, and doing it during build throws
+    // "setState/markNeedsBuild called during build".
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _rideService.cacheActiveRide(
+        role: widget.role,
+        rideType: widget.rideType,
+        pickupAddress: widget.pickupAddress,
+        destAddress: widget.destinationAddress,
+        fare: widget.price,
+        pickupLat: widget.pickupLat,
+        pickupLng: widget.pickupLng,
+        destLat: widget.destLat,
+        destLng: widget.destLng,
+      );
+    });
+
     // Re-fetch route whenever trip status changes phase
-    ever(_rideService.tripStatus, (String status) {
+    _statusWorker = ever(_rideService.tripStatus, (String status) {
       if (status != _lastKnownStatus) {
         _lastKnownStatus = status;
         _onStatusChanged(status);
       }
     });
+
+    // Live ETA: refresh the route on a timer (not a reactive ever, which could
+    // fire mid-build). Keeps the pickup/destination ETA current as the driver moves.
+    _etaTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted && _rideService.tripStatus.value != 'completed') {
+        _fetchRoute();
+      }
+    });
+  }
+
+  /// Minimize the trip — return to the correct home for this role. The ride
+  /// stays live (RideService), and the "ongoing ride" bar there reopens it.
+  void _minimizeToDashboard() {
+    if (widget.role == 'driver') {
+      Get.offAll(() => const UnifiedDashboard(role: 'driver'));
+    } else {
+      Get.offAll(() => const HomePage());
+    }
   }
 
   @override
   void dispose() {
     _positionSub?.cancel();
+    _statusWorker?.dispose();
+    _etaTimer?.cancel();
     _mapController?.dispose();
     super.dispose();
   }
@@ -162,7 +210,10 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         _polylines = newPolylines;
         _navSteps = result.route!.steps;
         _routeLoaded = true;
+        _etaMinutes = result.route!.duration;   // minutes
+        _distanceKm = result.route!.distance;    // km
       });
+      _lastRouteFetch = DateTime.now();
 
       if (_navSteps.isNotEmpty) {
         _voiceService.announceInstruction(_navSteps[0].cleanInstruction);
@@ -706,8 +757,9 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
             CircleAvatar(
               backgroundColor: Colors.white,
               child: IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.black87),
-                onPressed: () => Get.back(),
+                icon: const Icon(Icons.keyboard_arrow_down, color: Colors.black87),
+                tooltip: 'Minimize',
+                onPressed: _minimizeToDashboard,
               ),
             ),
             const Spacer(),
@@ -875,7 +927,11 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                   ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
+
+            // ── ETA + distance + status card (live) ──
+            _buildEtaCard(),
+            const SizedBox(height: 14),
 
             // Route summary
             Container(
@@ -1058,13 +1114,90 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     );
   }
 
+  /// Live ETA + distance + status banner (like Pathao/Uber pickup card).
+  Widget _buildEtaCard() {
+    final status = _rideService.tripStatus.value;
+    final arrived = status == 'arriving';
+    final bg = arrived ? const Color(0xFFE8F5E9) : const Color(0xFF10713C).withValues(alpha: 0.06);
+    final accent = arrived ? const Color(0xFF16A34A) : const Color(0xFF10713C);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accent.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: accent.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+            child: Icon(
+              arrived ? Icons.check_circle : Icons.access_time_filled,
+              color: accent, size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _statusLabel(status),
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: accent),
+                ),
+                const SizedBox(height: 2),
+                if (arrived)
+                  Text(
+                    widget.role == 'driver' ? 'Waiting for passenger' : 'Your driver is at the pickup point',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  )
+                else if (_routeLoaded && _etaMinutes > 0)
+                  Text(
+                    '${_etaMinutes.ceil()} min · ${_distanceKm.toStringAsFixed(1)} km ${_etaTargetLabel()}',
+                    style: TextStyle(fontSize: 13, color: Colors.grey[700], fontWeight: FontWeight.w500),
+                  )
+                else
+                  Text('Calculating route…', style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+              ],
+            ),
+          ),
+          // Big ETA number
+          if (!arrived && _routeLoaded && _etaMinutes > 0)
+            Column(
+              children: [
+                Text('${_etaMinutes.ceil()}',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: accent, height: 1)),
+                Text('min', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
   String _statusLabel(String status) {
+    final isDriver = widget.role == 'driver';
     switch (status) {
-      case 'accepted': return 'Driver Accepted';
-      case 'arriving': return 'Driver Arriving';
-      case 'in_progress': return 'On the Way';
-      case 'completed': return 'Completed';
-      default: return 'Live Tracking';
+      case 'accepted':
+        return isDriver ? 'Head to pickup' : 'Driver is on the way';
+      case 'arriving':
+        return isDriver ? 'You have arrived' : 'Driver has arrived';
+      case 'in_progress':
+        return 'On the way to destination';
+      case 'completed':
+        return 'Trip completed';
+      default:
+        return 'Live Tracking';
     }
+  }
+
+  /// Short label for the ETA card target.
+  String _etaTargetLabel() {
+    final status = _rideService.tripStatus.value;
+    if (status == 'in_progress') return 'to destination';
+    if (status == 'arriving') return 'at pickup';
+    return 'to pickup';
   }
 }

@@ -111,7 +111,7 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
   void _recenterToInitial() {
     _mapController?.animateCamera(
       CameraUpdate.newLatLngZoom(
-          LatLng(widget.initialLat, widget.initialLng), 17),
+          LatLng(widget.initialLat, widget.initialLng), 19.5),
     );
   }
 
@@ -133,9 +133,13 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
           GoogleMap(
             initialCameraPosition: CameraPosition(
               target: _centerLatLng,
-              zoom: 17,
+              zoom: 19.5, // very close building-level view; blue location dot appears large
             ),
-            onMapCreated: (c) => _mapController = c,
+            onMapCreated: (c) {
+              _mapController = c;
+              // Force the close-up zoom once the map is ready
+              c.animateCamera(CameraUpdate.newLatLngZoom(_centerLatLng, 19.5));
+            },
             onCameraMoveStarted: _onCameraMoveStarted,
             onCameraMove: _onCameraMove,
             onCameraIdle: _onCameraIdle,
@@ -184,10 +188,10 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
             ),
           ),
 
-          // Recenter button (above the bottom card)
+          // Recenter button (above the bottom card; clears the nav-bar inset)
           Positioned(
             right: 16,
-            bottom: 200,
+            bottom: 210 + MediaQuery.of(context).padding.bottom,
             child: _circleButton(
               icon: Icons.my_location,
               iconColor: const Color(0xFF10713C),
@@ -239,11 +243,13 @@ class _ConfirmPickupScreenState extends State<ConfirmPickupScreen>
   }
 
   Widget _buildBottomCard() {
+    // Add the system navigation-bar inset so the Confirm button is never hidden
+    final bottomInset = MediaQuery.of(context).padding.bottom;
     return Align(
       alignment: Alignment.bottomCenter,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+        padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottomInset),
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
