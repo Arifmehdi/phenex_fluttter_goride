@@ -23,17 +23,7 @@ import '../services/ride_service.dart';
 import 'live_tracking_screen.dart';
 import 'notifications_screen.dart';
 import '../widgets/ongoing_ride_banner.dart';
-
-/// Safely parse a value from a Laravel API response into a double.
-/// Laravel's `decimal:N` model casts serialize to JSON STRINGS (e.g. "150.00"),
-/// not JSON numbers — so a plain `as num?` cast throws on those fields.
-/// This accepts num, String, or null and never throws.
-double parseApiDouble(dynamic value, {double fallback = 0}) {
-  if (value == null) return fallback;
-  if (value is num) return value.toDouble();
-  if (value is String) return double.tryParse(value) ?? fallback;
-  return fallback;
-}
+import '../utils/num_utils.dart';
 
 class UnifiedDashboard extends StatefulWidget {
   final String role; // 'driver', 'owner', 'corporate', 'admin'
@@ -78,6 +68,14 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
   Map<String, dynamic> _monthEarnings = {};
   bool _earningsLoading = true;
 
+  // Owner fleet (owner role only)
+  List<Map<String, dynamic>> _ownerFleet = [];
+  bool _ownerFleetLoading = true;
+
+  // Corporate billing (corporate role only)
+  Map<String, dynamic> _corporateBilling = {};
+  bool _corporateBillingLoading = true;
+
   @override
   void initState() {
     super.initState();
@@ -89,10 +87,51 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
       _loadDriverStats();
       _loadEarningsSummary();
     }
+    if (widget.role == 'owner') {
+      _loadOwnerFleet();
+    }
+    if (widget.role == 'corporate') {
+      _loadCorporateBilling();
+    }
     if (widget.role != 'admin') {
       _loadProfileCompletion();
     }
     _loadWalletData();
+  }
+
+  Future<void> _loadOwnerFleet() async {
+    setState(() => _ownerFleetLoading = true);
+    try {
+      final res = await _apiService.getOwnerFleet();
+      if (mounted && res.statusCode == 200 && res.data['success'] == true) {
+        final list = (res.data['fleet'] as List? ?? []);
+        setState(() {
+          _ownerFleet = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          _ownerFleetLoading = false;
+        });
+      } else if (mounted) {
+        setState(() => _ownerFleetLoading = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _ownerFleetLoading = false);
+    }
+  }
+
+  Future<void> _loadCorporateBilling() async {
+    setState(() => _corporateBillingLoading = true);
+    try {
+      final res = await _apiService.getCorporateBilling();
+      if (mounted && res.statusCode == 200 && res.data['success'] == true) {
+        setState(() {
+          _corporateBilling = Map<String, dynamic>.from(res.data);
+          _corporateBillingLoading = false;
+        });
+      } else if (mounted) {
+        setState(() => _corporateBillingLoading = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _corporateBillingLoading = false);
+    }
   }
 
   Future<void> _loadDriverStats() async {
@@ -1142,30 +1181,58 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              localeController.get('My Fleet Status', 'গাড়ির অবস্থা'),
+              localeController.get('My Fleet Status', 'গাড়ির অবস্থা'),
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             TextButton(
-              onPressed: () {},
-              child: Text(localeController.get('Add Car', 'গাড়ি যোগ করুন')),
+              onPressed: _loadOwnerFleet,
+              child: Text(localeController.get('Refresh', 'রিফ্রেশ')),
             ),
           ],
         ),
-        const ListTile(
-          leading: Icon(Icons.directions_car, color: Colors.green),
-          title: Text('Toyota Prius (DH-1234)'),
-          subtitle: Text('On Trip - Dhaka City'),
-        ),
-        const ListTile(
-          leading: Icon(Icons.directions_car, color: Colors.orange),
-          title: Text('Honda Civic (DH-5678)'),
-          subtitle: Text('Idle - Waiting for trip'),
-        ),
+        if (_ownerFleetLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator(color: Color(0xFF10713C))),
+          )
+        else if (_ownerFleet.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Text(
+              localeController.get('No vehicles added yet.', 'এখনো কোনো গাড়ি যোগ করা হয়নি।'),
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
+          )
+        else
+          ..._ownerFleet.map((v) {
+            final isActive = v['status'] == 'active';
+            final driver = v['driver'] as Map?;
+            final subtitle = driver != null
+                ? '${driver['name']} • ${v['today_trips'] ?? 0} trips today'
+                : localeController.get('No driver assigned', 'কোনো ড্রাইভার নিয়োগ করা হয়নি');
+            return ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.directions_car, color: isActive ? Colors.green : Colors.orange),
+              title: Text('${v['vehicle_type'] ?? ''} (${v['plate_number'] ?? '-'})'),
+              subtitle: Text(subtitle),
+            );
+          }),
       ],
     );
   }
 
   Widget _buildCorporateAlerts() {
+    if (_corporateBillingLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(child: CircularProgressIndicator(color: Color(0xFF10713C))),
+      );
+    }
+
+    final unpaidAmount = parseApiDouble(_corporateBilling['unpaid_amount'] ?? 0);
+    final month = _corporateBilling['month']?.toString() ?? '';
+    final hasUnpaid = unpaidAmount > 0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1177,25 +1244,85 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.red.shade100),
+            border: Border.all(color: hasUnpaid ? Colors.red.shade100 : Colors.green.shade100),
             borderRadius: BorderRadius.circular(12),
-            color: Colors.red.shade50,
+            color: hasUnpaid ? Colors.red.shade50 : Colors.green.shade50,
           ),
           child: Row(
             children: [
-              const Icon(Icons.warning_amber_rounded, color: Colors.red),
+              Icon(
+                hasUnpaid ? Icons.warning_amber_rounded : Icons.check_circle_outline,
+                color: hasUnpaid ? Colors.red : Colors.green,
+              ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'March 2026 invoice is pending. Please pay to avoid service interruption.',
-                  style: TextStyle(fontSize: 12, color: Colors.red),
+                  hasUnpaid
+                      ? '$month invoice of ৳${unpaidAmount.toStringAsFixed(0)} is pending. Please pay to avoid service interruption.'
+                      : localeController.get('All invoices are paid up to date.', 'সকল বিল পরিশোধ করা হয়েছে।'),
+                  style: TextStyle(fontSize: 12, color: hasUnpaid ? Colors.red : Colors.green.shade800),
                 ),
               ),
-              TextButton(onPressed: () {}, child: const Text('Pay Now')),
+              if (hasUnpaid)
+                TextButton(
+                  onPressed: () => _showCorporateBillingDetails(month, unpaidAmount),
+                  child: const Text('Pay Now'),
+                ),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  void _showCorporateBillingDetails(String month, double unpaidAmount) {
+    final rides = (_corporateBilling['rides'] as List? ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .where((r) => r['payment_status'] != 'paid')
+        .toList();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        minChildSize: 0.4,
+        expand: false,
+        builder: (context, scrollController) => Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Unpaid rides — $month', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text('Total due: ৳${unpaidAmount.toStringAsFixed(0)}', style: const TextStyle(color: Colors.red)),
+              const SizedBox(height: 12),
+              Expanded(
+                child: rides.isEmpty
+                    ? const Center(child: Text('No unpaid rides found.'))
+                    : ListView.builder(
+                        controller: scrollController,
+                        itemCount: rides.length,
+                        itemBuilder: (context, i) {
+                          final r = rides[i];
+                          return ListTile(
+                            leading: const Icon(Icons.directions_car),
+                            title: Text(r['booked_for_name']?.toString() ?? 'Employee'),
+                            subtitle: Text('${r['pickup_address'] ?? ''} → ${r['destination_address'] ?? ''}'),
+                            trailing: Text('৳${parseApiDouble(r['fare'] ?? 0).toStringAsFixed(0)}'),
+                          );
+                        },
+                      ),
+              ),
+              const Text(
+                'Contact GoRide support to arrange payment for this invoice.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

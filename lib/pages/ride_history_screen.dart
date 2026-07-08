@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../services/api_service.dart';
+import '../utils/num_utils.dart';
 
 class RideHistoryScreen extends StatefulWidget {
   const RideHistoryScreen({super.key});
@@ -131,9 +132,9 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
     final formattedDate = _formatDate(ride['created_at']);
     final driver = ride['driver'];
     final driverName = driver != null ? (driver['name'] ?? 'N/A') : 'N/A';
-    final fare = ride['fare'] ?? 0;
+    final fare = parseApiDouble(ride['fare']);
     final actualFare = ride['actual_fare'];
-    final displayFare = actualFare ?? fare;
+    final displayFare = actualFare != null ? parseApiDouble(actualFare) : fare;
     final pickup = ride['pickup_address'] ?? '';
     final destination = ride['destination_address'] ?? '';
     final cancelledBy = ride['cancelled_by'];
@@ -196,7 +197,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
           _detailRow('Status', ride['status'] ?? ''),
           _detailRow('Pickup', ride['pickup_address'] ?? ''),
           _detailRow('Destination', ride['destination_address'] ?? ''),
-          _detailRow('Fare', '\u09F3' + (ride['actual_fare'] ?? ride['fare'] ?? 0).toStringAsFixed(0)),
+          _detailRow('Fare', '\u09F3' + parseApiDouble(ride['actual_fare'] ?? ride['fare']).toStringAsFixed(0)),
           _detailRow('Payment', ride['payment_status'] ?? 'N/A'),
           if (ride['distance_km'] != null) _detailRow('Distance', ride['distance_km'].toString() + ' km'),
           if (ride['duration_minutes'] != null) _detailRow('Duration', ride['duration_minutes'].toString() + ' min'),

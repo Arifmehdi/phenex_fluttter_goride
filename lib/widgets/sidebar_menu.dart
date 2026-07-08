@@ -4,6 +4,7 @@ import '../services/api_service.dart';
 import '../pages/home_page.dart';
 import '../pages/dashboard_details_pages.dart';
 import '../pages/settings_screen.dart';
+import '../pages/my_support_tickets_screen.dart';
 
 class SidebarMenu extends StatelessWidget {
   final String role;
@@ -71,7 +72,7 @@ class SidebarMenu extends StatelessWidget {
             title: const Text('Help & Support'),
             onTap: () {
               Navigator.pop(context);
-              // Handle Help navigation
+              Get.to(() => const MySupportTicketsScreen());
             },
           ),
           ListTile(

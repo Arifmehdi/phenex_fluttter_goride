@@ -803,4 +803,266 @@ class ApiService extends g.GetxController {
       });
     } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
   }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  new_api.txt feature set
+  // ══════════════════════════════════════════════════════════════════
+
+  // ── Admin: dashboard, live map, reports ──
+
+  Future<Response> getAdminDashboardStats() async {
+    try { return await _dio.get('/admin/dashboard-stats'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> getAdminActiveRides() async {
+    try { return await _dio.get('/admin/active-rides'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> getAdminRevenueReport({String? from, String? to, String groupBy = 'day'}) async {
+    try {
+      return await _dio.get('/admin/reports/revenue', queryParameters: {
+        if (from != null) 'from': from,
+        if (to != null) 'to': to,
+        'group_by': groupBy,
+      });
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> getAdminRidesReport({String? from, String? to, String? rideType, String? status}) async {
+    try {
+      return await _dio.get('/admin/reports/rides', queryParameters: {
+        if (from != null) 'from': from,
+        if (to != null) 'to': to,
+        if (rideType != null) 'ride_type': rideType,
+        if (status != null) 'status': status,
+      });
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> getAdminDriversReport({String? from, String? to}) async {
+    try {
+      return await _dio.get('/admin/reports/drivers', queryParameters: {
+        if (from != null) 'from': from,
+        if (to != null) 'to': to,
+      });
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  /// target: all_users|all_drivers|all_corporates|all_admins|everyone
+  Future<Response> broadcastAdminNotification({required String target, required String title, String? message}) async {
+    try {
+      return await _dio.post('/admin/notifications/broadcast', data: {
+        'target': target,
+        'title': title,
+        if (message != null) 'message': message,
+      });
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  // ── Support Tickets ──
+
+  Future<Response> createSupportTicket({
+    required String subject,
+    required String message,
+    String? category,
+    int? rideRequestId,
+  }) async {
+    try {
+      return await _dio.post('/support-tickets', data: {
+        'subject': subject,
+        'message': message,
+        if (category != null) 'category': category,
+        if (rideRequestId != null) 'ride_request_id': rideRequestId,
+      });
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> getMySupportTickets() async {
+    try { return await _dio.get('/support-tickets'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> getSupportTicketDetail(int ticketId) async {
+    try { return await _dio.get('/support-tickets/$ticketId'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> replySupportTicket(int ticketId, String message) async {
+    try { return await _dio.post('/support-tickets/$ticketId/reply', data: {'message': message}); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> getAdminSupportTickets({String? status, String? priority}) async {
+    try {
+      return await _dio.get('/admin/support-tickets', queryParameters: {
+        if (status != null) 'status': status,
+        if (priority != null) 'priority': priority,
+      });
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> updateSupportTicketStatus(int ticketId, {String? status, String? priority}) async {
+    try {
+      return await _dio.patch('/admin/support-tickets/$ticketId', data: {
+        if (status != null) 'status': status,
+        if (priority != null) 'priority': priority,
+      });
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  // ── Payments: ShurjoPay (bKash/Nagad) ──
+
+  Future<Response> initiateShurjopayPayment({required int rideId, required double amount}) async {
+    try {
+      return await _dio.post('/payment/shurjopay/initiate', data: {
+        'ride_id': rideId,
+        'amount': amount,
+      });
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> confirmShurjopayPayment(String orderId) async {
+    try { return await _dio.post('/payment/shurjopay/callback', data: {'order_id': orderId}); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  // ── Owner ──
+
+  Future<Response> getOwnerDashboard() async {
+    try { return await _dio.get('/owner/dashboard'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> getOwnerFleet() async {
+    try { return await _dio.get('/owner/fleet'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> getOwnerEarnings({String? period}) async {
+    try {
+      return await _dio.get('/owner/earnings', queryParameters: {
+        if (period != null) 'period': period,
+      });
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  // ── Corporate ──
+
+  Future<Response> getCorporateDashboard() async {
+    try { return await _dio.get('/corporate/dashboard'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> createCorporateRideRequest(Map<String, dynamic> data) async {
+    try { return await _dio.post('/corporate/ride-request', data: data); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> getCorporateBilling({String? month}) async {
+    try {
+      return await _dio.get('/corporate/billing', queryParameters: {
+        if (month != null) 'month': month,
+      });
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  /// Downloads the invoice PDF bytes for [month] (format YYYY-MM).
+  Future<Response> getCorporateInvoicePdf(String month) async {
+    try {
+      return await _dio.get(
+        '/corporate/billing/$month/pdf',
+        options: Options(responseType: ResponseType.bytes),
+      );
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  // ── Ride Pooling ──
+
+  Future<Response> getAvailablePoolRides({
+    required double pickupLat,
+    required double pickupLng,
+    required double destLat,
+    required double destLng,
+  }) async {
+    try {
+      return await _dio.get('/ride-requests/pool/available', queryParameters: {
+        'pickup_lat': pickupLat,
+        'pickup_lng': pickupLng,
+        'dest_lat': destLat,
+        'dest_lng': destLng,
+      });
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  // ── Referrals ──
+
+  Future<Response> getReferralStats() async {
+    try { return await _dio.get('/referrals'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  // ── Surge Pricing (admin) ──
+
+  Future<Response> getSurgeZones() async {
+    try { return await _dio.get('/admin/surge'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> createSurgeZone({
+    required String name,
+    required double centerLat,
+    required double centerLng,
+    int radiusKm = 3,
+    required double multiplier,
+    String? expiresAt,
+  }) async {
+    try {
+      return await _dio.post('/admin/surge', data: {
+        'name': name,
+        'center_lat': centerLat,
+        'center_lng': centerLng,
+        'radius_km': radiusKm,
+        'multiplier': multiplier,
+        if (expiresAt != null) 'expires_at': expiresAt,
+      });
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> updateSurgeZone(int zoneId, {bool? isActive, double? multiplier}) async {
+    try {
+      return await _dio.patch('/admin/surge/$zoneId', data: {
+        if (isActive != null) 'is_active': isActive,
+        if (multiplier != null) 'multiplier': multiplier,
+      });
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  // ── Driver Payouts (admin) ──
+
+  Future<Response> getPendingPayouts() async {
+    try { return await _dio.get('/admin/payouts/pending'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> processPayout(int payoutId, {String? payoutMethod}) async {
+    try {
+      return await _dio.post('/admin/payouts/process', data: {
+        'payout_id': payoutId,
+        if (payoutMethod != null) 'payout_method': payoutMethod,
+      });
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  /// Downloads the payouts CSV bytes (optionally filtered by [status]).
+  Future<Response> exportPayouts({String? status}) async {
+    try {
+      return await _dio.get(
+        '/admin/payouts/export',
+        queryParameters: {if (status != null) 'status': status},
+        options: Options(responseType: ResponseType.bytes),
+      );
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
 }
