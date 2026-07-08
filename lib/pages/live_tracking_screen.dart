@@ -7,7 +7,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/ride_service.dart';
 import '../services/routing_service.dart';
-import '../services/voice_guidance_service.dart';
 import '../services/sslcommerz_service.dart';
 import '../services/api_service.dart';
 import '../utils/marker_utils.dart';
@@ -51,7 +50,6 @@ class LiveTrackingScreen extends StatefulWidget {
 class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   final RideService _rideService = Get.find<RideService>();
   final RoutingService _routingService = RoutingService();
-  final VoiceGuidanceService _voiceService = Get.find<VoiceGuidanceService>();
 
   GoogleMapController? _mapController;
   StreamSubscription<Position>? _positionSub;
@@ -67,6 +65,10 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   bool _routeLoaded = false;
   bool _isCompleting = false;
 
+  /// Driver-only: while heading to pickup, the bottom panel starts collapsed
+  /// (pickup address + status pill) and expands to full details on tap.
+  bool _pickupPanelExpanded = false;
+
   // Live ETA + distance to the current target (pickup or destination)
   double _etaMinutes = 0;
   double _distanceKm = 0;
@@ -74,8 +76,6 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   Worker? _statusWorker;
   Timer? _etaTimer;
 
-  // Announced distance thresholds (metres)
-  final Set<int> _announcedThresholds = {};
   String _lastKnownStatus = '';
 
   @override
@@ -153,7 +153,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         assetPath = 'assets/car.png';
     }
     _driverIcon = await MarkerUtils.getBytesFromAsset(assetPath, 52);
-    _pickupIcon = await MarkerUtils.getBytesFromAsset('assets/pickup_pin.png', 48)
+    // The pickup marker represents the waiting passenger — use the passenger icon.
+    _pickupIcon = await MarkerUtils.getBytesFromAsset('assets/passenger.png', 56)
         .catchError((_) => BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen));
     _destIcon = await MarkerUtils.getBytesFromAsset('assets/dest_pin.png', 48)
         .catchError((_) => BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed));
@@ -214,10 +215,6 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         _distanceKm = result.route!.distance;    // km
       });
       _lastRouteFetch = DateTime.now();
-
-      if (_navSteps.isNotEmpty) {
-        _voiceService.announceInstruction(_navSteps[0].cleanInstruction);
-      }
       _fitBounds(result.route!.points);
     }
   }
@@ -225,7 +222,6 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   /// Called when trip status changes to re-draw the correct route.
   void _onStatusChanged(String status) {
     _currentStepIndex = 0;
-    _announcedThresholds.clear();
     _fetchRoute();
   }
 
@@ -256,7 +252,6 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
       if (!mounted) return;
       setState(() => _myPosition = pos);
       _checkStepAdvancement(pos);
-      _checkDistanceAlerts(pos);
     });
   }
 
@@ -269,31 +264,6 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     );
     if (distToEnd < 25) {
       setState(() => _currentStepIndex++);
-      if (_currentStepIndex < _navSteps.length) {
-        _voiceService.announceInstruction(_navSteps[_currentStepIndex].cleanInstruction);
-      }
-    }
-  }
-
-  void _checkDistanceAlerts(Position pos) {
-    final distToDest = Geolocator.distanceBetween(
-      pos.latitude, pos.longitude,
-      widget.destLat, widget.destLng,
-    );
-    for (final threshold in [500, 200, 100]) {
-      if (distToDest <= threshold && !_announcedThresholds.contains(threshold)) {
-        _announcedThresholds.add(threshold);
-        _voiceService.announceDistanceUpdate(
-          instruction: _currentStepIndex < _navSteps.length
-              ? _navSteps[_currentStepIndex].cleanInstruction
-              : 'Destination ahead',
-          distanceText: '${threshold} metres',
-        );
-      }
-    }
-    if (distToDest < 30 && !_announcedThresholds.contains(0)) {
-      _announcedThresholds.add(0);
-      _voiceService.announceArrival();
     }
   }
 
@@ -350,6 +320,26 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
             'To: ${widget.destinationAddress}\n'
             'Fare: ৳${widget.price.toStringAsFixed(0)}',
     ));
+  }
+
+  /// Opens the phone's Google Maps app (or web fallback) for turn-by-turn
+  /// navigation to the current target — pickup while heading there, else destination.
+  Future<void> _launchExternalNavigation() async {
+    final isPickupPhase = _rideService.tripStatus.value == 'accepted' ||
+        _rideService.tripStatus.value == 'arriving';
+    final lat = isPickupPhase ? widget.pickupLat : widget.destLat;
+    final lng = isPickupPhase ? widget.pickupLng : widget.destLng;
+
+    final nativeUri = Uri.parse('google.navigation:q=$lat,$lng&mode=d');
+    final webUri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=driving',
+    );
+
+    if (await canLaunchUrl(nativeUri)) {
+      await launchUrl(nativeUri);
+    } else {
+      await launchUrl(webUri, mode: LaunchMode.externalApplication);
+    }
   }
 
   // Task 49 — SOS Emergency Button (shared helper)
@@ -752,7 +742,89 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
+        child: Obx(() {
+          final isDriverPickup = widget.role == 'driver' &&
+              (_rideService.tripStatus.value == 'accepted' ||
+                  _rideService.tripStatus.value == 'arriving');
+          return isDriverPickup ? _buildDriverPickupTopBar() : _buildDefaultTopBar();
+        }),
+      ),
+    );
+  }
+
+  /// "Go to the passenger" bar + NAVIGATE button — shown to the driver while
+  /// heading to (or waiting at) the pickup point.
+  Widget _buildDriverPickupTopBar() {
+    final arrived = _rideService.tripStatus.value == 'arriving';
+    return Row(
+      children: [
+        Expanded(
+          child: GestureDetector(
+            onTap: _minimizeToDashboard,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black87,
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircleAvatar(
+                    radius: 16,
+                    backgroundColor: Colors.white,
+                    backgroundImage: AssetImage('assets/passenger.png'),
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      arrived ? 'Waiting for passenger' : 'Go to the passenger',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        GestureDetector(
+          onTap: _launchExternalNavigation,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.black87,
+              borderRadius: BorderRadius.circular(28),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.navigation, color: Colors.white, size: 16),
+                SizedBox(width: 6),
+                Text(
+                  'NAVIGATE',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDefaultTopBar() {
+    return Row(
           children: [
             CircleAvatar(
               backgroundColor: Colors.white,
@@ -789,32 +861,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                 ],
               ),
             )),
-            const SizedBox(width: 8),
-            // Voice navigation control — only shown when enabled in Settings.
-            Obx(() => _voiceService.isVoiceEnabled.value
-                ? CircleAvatar(
-                    backgroundColor: Colors.white,
-                    child: IconButton(
-                      icon: const Icon(Icons.volume_up, color: Color(0xFF10713C)),
-                      tooltip: 'Voice navigation on',
-                      onPressed: () {
-                        _voiceService.setVoiceEnabled(false);
-                        Get.snackbar(
-                          'Voice Off',
-                          'Re-enable voice navigation in Settings.',
-                          snackPosition: SnackPosition.BOTTOM,
-                          backgroundColor: Colors.black87,
-                          colorText: Colors.white,
-                          duration: const Duration(seconds: 3),
-                        );
-                      },
-                    ),
-                  )
-                : const SizedBox.shrink()),
           ],
-        ),
-      ),
-    );
+        );
   }
 
   Widget _buildNavBanner() {
@@ -863,6 +911,115 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   }
 
   Widget _buildBottomPanel() {
+    return Obx(() {
+      final isDriverPickup = widget.role == 'driver' &&
+          (_rideService.tripStatus.value == 'accepted' ||
+              _rideService.tripStatus.value == 'arriving');
+
+      if (isDriverPickup && !_pickupPanelExpanded) {
+        return _buildCollapsedPickupPanel();
+      }
+      return _buildExpandedPanel(showCollapseHandle: isDriverPickup);
+    });
+  }
+
+  /// Minimal "pickup point + status button" panel matching the driver
+  /// navigation reference design — tap the arrow to see full trip details.
+  Widget _buildCollapsedPickupPanel() {
+    final arrived = _rideService.tripStatus.value == 'arriving';
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Container(
+        margin: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 20)],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _pickupPanelExpanded = true),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Icon(Icons.keyboard_arrow_up, color: Colors.grey[400]),
+              ),
+            ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 5),
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'PICKUP LOCATION',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey[500],
+                          letterSpacing: 0.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        widget.pickupAddress,
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: arrived ? null : (_isCompleting ? null : _driverAdvanceStatus),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _driverButtonColor(),
+                  disabledBackgroundColor: _driverButtonColor(),
+                  disabledForegroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: _isCompleting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      )
+                    : Text(
+                        arrived ? 'WAITING FOR PASSENGER' : _driverButtonLabel().toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Full trip-details panel (driver/passenger card, ETA, route, fare, actions).
+  /// [showCollapseHandle] adds a down-arrow to collapse back to the pickup-only view.
+  Widget _buildExpandedPanel({required bool showCollapseHandle}) {
     return Align(
       alignment: Alignment.bottomCenter,
       child: Container(
@@ -876,6 +1033,15 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         child: Obx(() => Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (showCollapseHandle)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => setState(() => _pickupPanelExpanded = false),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Icon(Icons.keyboard_arrow_down, color: Colors.grey[400]),
+                ),
+              ),
             // Driver info row
             Row(
               children: [

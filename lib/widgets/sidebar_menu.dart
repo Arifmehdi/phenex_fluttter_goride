@@ -3,7 +3,6 @@ import 'package:get/get.dart';
 import '../services/api_service.dart';
 import '../pages/home_page.dart';
 import '../pages/dashboard_details_pages.dart';
-import '../pages/settings_screen.dart';
 import '../pages/my_support_tickets_screen.dart';
 
 class SidebarMenu extends StatelessWidget {
@@ -57,14 +56,6 @@ class SidebarMenu extends StatelessWidget {
             onTap: () {
               Navigator.pop(context);
               Get.toNamed('/change-password');
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.settings, color: Colors.grey),
-            title: const Text('Settings'),
-            onTap: () {
-              Navigator.pop(context);
-              Get.to(() => const SettingsScreen());
             },
           ),
           ListTile(

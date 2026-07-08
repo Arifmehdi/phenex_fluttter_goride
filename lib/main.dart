@@ -19,7 +19,6 @@ import 'package:goride/services/ride_service.dart';
 import 'package:goride/services/routing_service.dart';
 import 'package:goride/services/saved_addresses_service.dart';
 import 'package:goride/services/sslcommerz_service.dart';
-import 'package:goride/services/voice_guidance_service.dart';
 import 'package:goride/services/deep_link_service.dart';
 import 'package:goride/pages/login_page.dart';
 import 'package:goride/pages/register_screen.dart';
@@ -55,7 +54,6 @@ void main() async {
   
   Get.put(RideService());
   Get.put(RoutingService());
-  Get.put(VoiceGuidanceService());
 
   // Initialize notification service for ride request alerts
   final notificationService = NotificationService();
