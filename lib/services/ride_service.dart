@@ -29,6 +29,12 @@ class RideService extends GetxService {
   final RxDouble tripProgress = 0.0.obs; // 0.0 to 1.0
   final RxBool isDriverOnline = false.obs;
 
+  // Post-trip payment — the shared signal that lets the driver's app know
+  // the rider has paid (they're on separate devices; this is the only
+  // real-time channel between them once the trip ends).
+  final RxString paymentStatus = 'pending'.obs; // pending, paid
+  final RxString paymentMethod = ''.obs; // cash, wallet, sslcommerz
+
   // Active trip details caching to support perfect session resumption
   final RxString currentRideType = 'car'.obs;
   final RxString currentPickupAddress = ''.obs;
@@ -252,7 +258,14 @@ class RideService extends GetxService {
       currentDestLat.value = (data['destLatitude'] as num?)?.toDouble() ?? 0.0;
       currentDestLng.value = (data['destLongitude'] as num?)?.toDouble() ?? 0.0;
 
-      if (status == 'completed' || status == 'cancelled') {
+      final newPaymentStatus = data['paymentStatus'] as String? ?? 'pending';
+      paymentStatus.value = newPaymentStatus;
+      paymentMethod.value = data['paymentMethod'] as String? ?? '';
+
+      // Keep listening past 'completed' until payment is also confirmed —
+      // that's the driver's only real-time signal that the rider has paid.
+      if (status == 'cancelled' ||
+          (status == 'completed' && newPaymentStatus == 'paid')) {
         _tripStream?.cancel();
         _driverLocationStream?.cancel();
       }
@@ -386,8 +399,39 @@ class RideService extends GetxService {
     if (finalLaravelId > 0) {
       await _apiService.updateRideStatus(finalLaravelId, status);
     }
-    
+
     tripStatus.value = status;
+  }
+
+  /// Rider marks the trip as paid (cash/wallet/card). Writes to Firestore
+  /// only — the driver-authorized Laravel payment record is written
+  /// separately, since the rider isn't allowed to call that endpoint.
+  /// This is what unblocks the driver's "rate the passenger" prompt.
+  Future<void> markPaymentPaid(String method) async {
+    paymentStatus.value = 'paid';
+    paymentMethod.value = method;
+    if (currentTripId.value.isNotEmpty) {
+      try {
+        await _firebaseService.updateTripPaymentStatus(currentTripId.value, 'paid', method);
+      } catch (e) {
+        debugPrint('Warning: could not sync payment status: $e');
+      }
+    }
+  }
+
+  /// Driver-side: once the rider has confirmed a CASH payment (seen via the
+  /// Firestore signal above), persist it to Laravel — only the assigned
+  /// driver is authorized to record a cash payment as received.
+  Future<void> persistCashPaymentAsDriver() async {
+    if (laravelRideId.value <= 0) return;
+    try {
+      await _apiService.updateRidePayment(laravelRideId.value, {
+        'payment_status': 'paid',
+        'payment_method': 'cash',
+      });
+    } catch (e) {
+      debugPrint('Warning: could not persist cash payment: $e');
+    }
   }
 
   /// Cancel the current trip. Returns the cancellation fee (0 if free).
@@ -401,11 +445,17 @@ class RideService extends GetxService {
 
     // Update Laravel with reason
     if (laravelRideId.value > 0) {
-      await _apiService.cancelRide(
-        laravelRideId.value,
-        reason: reason,
-        cancelledBy: 'rider',
-      );
+      try {
+        await _apiService.cancelRide(
+          laravelRideId.value,
+          reason: reason,
+          cancelledBy: currentRole.value == 'driver' ? 'driver' : 'rider',
+        );
+      } catch (e) {
+        // Timed out or unreachable — still fall through to reset local state
+        // below so the UI never gets stuck on a permanent loading spinner.
+        debugPrint('Warning: could not update ride status on server: $e');
+      }
     }
 
     // Update Firestore ride_requests doc (dismisses all ringing drivers)
@@ -457,6 +507,8 @@ class RideService extends GetxService {
     driverETA.value = 0;
     tripProgress.value = 0;
     isDriverOnline.value = false;
+    paymentStatus.value = 'pending';
+    paymentMethod.value = '';
   }
 
   // ── Laravel IDs for rating submission ──

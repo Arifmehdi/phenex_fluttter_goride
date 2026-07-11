@@ -2,14 +2,11 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:get/get.dart';
 import 'live_tracking_screen.dart';
 import '../services/ride_service.dart';
 import '../utils/marker_utils.dart';
 import '../widgets/sos_helper.dart';
-import 'chat_conversation_list_screen.dart';
 
 class RideStatusScreen extends StatefulWidget {
   final String rideType;
@@ -76,9 +73,25 @@ class _RideStatusScreenState extends State<RideStatusScreen>
       if (!mounted) return;
       if (status == 'accepted' || status == 'arriving' || status == 'in_progress') {
         if (!_isDriverFound) {
-          setState(() => _isDriverFound = true);
+          _isDriverFound = true;
           _pulseController.stop();
           _searchTimeout?.cancel(); // driver found — stop the countdown
+          _leaving = true;
+
+          // Go straight into live tracking the moment a driver accepts —
+          // no "Driver Found" popup step, matching Uber/Pathao/inDrive/Obhai.
+          Get.until((route) => route.isFirst);
+          Get.to(() => LiveTrackingScreen(
+                role: 'rider',
+                rideType: widget.rideType,
+                pickupAddress: widget.pickup,
+                destinationAddress: widget.destination,
+                price: widget.price,
+                pickupLat: widget.pickupLat,
+                pickupLng: widget.pickupLng,
+                destLat: widget.destLat,
+                destLng: widget.destLng,
+              ));
         }
       } else if (status == 'cancelled') {
         _searchTimeout?.cancel();
@@ -173,25 +186,6 @@ class _RideStatusScreenState extends State<RideStatusScreen>
     );
   }
 
-  void _handleChat() {
-    Get.to(() => const ChatConversationListScreen());
-  }
-
-  void _handleCall() async {
-    final phone = _rideService.assignedDriverPhone.value;
-    final uri = Uri(scheme: 'tel', path: phone.isNotEmpty ? phone : '+8801234567890');
-    if (await canLaunchUrl(uri)) await launchUrl(uri);
-  }
-
-  void _handleShare() {
-    SharePlus.instance.share(ShareParams(
-      text: 'I\'m on a GoRide trip!\n'
-            'From: ${widget.pickup}\n'
-            'To: ${widget.destination}\n'
-            'Fare: ৳${widget.price.toStringAsFixed(0)}',
-    ));
-  }
-
   Future<void> _cancelRide() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -213,7 +207,13 @@ class _RideStatusScreenState extends State<RideStatusScreen>
     if (confirm == true) {
       _leaving = true;
       _searchTimeout?.cancel();
-      await _rideService.cancelTrip(reason: 'Rider cancelled while searching');
+      try {
+        await _rideService.cancelTrip(reason: 'Rider cancelled while searching');
+      } catch (e) {
+        // Fall through and leave anyway — never leave the rider stuck on
+        // this screen because the cancel request timed out.
+        debugPrint('Warning: cancel request failed: $e');
+      }
       if (mounted) Get.back();
     }
   }
@@ -266,18 +266,14 @@ class _RideStatusScreenState extends State<RideStatusScreen>
               ),
             ),
           ),
-          // Bottom panel
+          // Bottom panel — stays on the searching state; the moment a driver
+          // accepts we navigate straight into Live Tracking (see initState).
           Align(
             alignment: Alignment.bottomCenter,
             child: SafeArea(
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 16),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 500),
-                  child: _isDriverFound
-                      ? _buildDriverFoundPanel()
-                      : _buildSearchingPanel(),
-                ),
+                child: _buildSearchingPanel(),
               ),
             ),
           ),
@@ -464,146 +460,6 @@ class _RideStatusScreenState extends State<RideStatusScreen>
     );
   }
 
-  Widget _buildDriverFoundPanel() {
-    return Container(
-      key: const ValueKey('found'),
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 20,
-              spreadRadius: 5),
-        ],
-      ),
-      child: Obx(() => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Driver found badge
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10713C).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.check_circle, color: Color(0xFF10713C), size: 16),
-                    SizedBox(width: 6),
-                    Text('Driver Found!',
-                        style: TextStyle(
-                            color: Color(0xFF10713C),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Driver info row
-              Row(
-                children: [
-                  const CircleAvatar(
-                    radius: 30,
-                    backgroundColor: Color(0xFFE8F5E9),
-                    child: Icon(Icons.person, color: Color(0xFF10713C), size: 30),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _rideService.assignedDriverName.value.isNotEmpty
-                              ? _rideService.assignedDriverName.value
-                              : 'Your Driver',
-                          style: const TextStyle(
-                              fontSize: 17, fontWeight: FontWeight.bold),
-                        ),
-                        Text(
-                          widget.rideType,
-                          style: TextStyle(
-                              color: Colors.grey[500], fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF10713C).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.star, color: Colors.amber, size: 16),
-                        Text(
-                          ' ${_rideService.assignedDriverRating.value.toStringAsFixed(1)}',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // Action buttons
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _actionBtn(Icons.chat, 'Message', _handleChat),
-                  _actionBtn(Icons.call, 'Call', _handleCall),
-                  _actionBtn(Icons.share, 'Share', _handleShare),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // View Live Tracking button
-              SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    _leaving = true;
-                    // Collapse the booking flow to the home root, then open
-                    // tracking so "minimize" returns to home (ongoing bar shows).
-                    Get.until((route) => route.isFirst);
-                    Get.to(() => LiveTrackingScreen(
-                          role: 'rider',
-                          rideType: widget.rideType,
-                          pickupAddress: widget.pickup,
-                          destinationAddress: widget.destination,
-                          price: widget.price,
-                          pickupLat: widget.pickupLat,
-                          pickupLng: widget.pickupLng,
-                          destLat: widget.destLat,
-                          destLng: widget.destLng,
-                        ));
-                  },
-                  icon: const Icon(Icons.navigation, color: Colors.white),
-                  label: const Text(
-                    'View Live Tracking',
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF10713C),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                  ),
-                ),
-              ),
-            ],
-          )),
-    );
-  }
-
   Widget _chip(IconData icon, String label, Color color) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -633,19 +489,4 @@ class _RideStatusScreenState extends State<RideStatusScreen>
     );
   }
 
-  Widget _actionBtn(IconData icon, String label, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          CircleAvatar(
-            backgroundColor: Colors.grey[100],
-            child: Icon(icon, color: Colors.black87),
-          ),
-          const SizedBox(height: 4),
-          Text(label, style: const TextStyle(fontSize: 12)),
-        ],
-      ),
-    );
-  }
 }

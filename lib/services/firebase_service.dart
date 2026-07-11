@@ -184,6 +184,20 @@ class FirebaseService extends GetxService {
     });
   }
 
+  /// Mark the trip's payment as settled — this is the signal the driver's
+  /// app watches for to know the rider has paid and it's safe to show the
+  /// "rate the passenger" prompt (real-time, since driver and rider are on
+  /// separate devices with no other shared channel once the trip ends).
+  Future<void> updateTripPaymentStatus(String tripId, String paymentStatus, String paymentMethod) async {
+    final coll = activeTrips;
+    if (coll == null) return;
+
+    await coll.doc(tripId).update({
+      'paymentStatus': paymentStatus,
+      'paymentMethod': paymentMethod,
+    });
+  }
+
   /// Assign driver to trip
   Future<void> assignDriverToTrip(
     String tripId,

@@ -48,6 +48,11 @@ class ApiService extends g.GetxController {
     validateStatus: (status) {
       return status != null && status < 500;
     },
+    // Without these, a slow/unreachable server leaves requests hanging
+    // forever — e.g. a stuck loading spinner on Cancel that never resolves.
+    connectTimeout: const Duration(seconds: 15),
+    receiveTimeout: const Duration(seconds: 20),
+    sendTimeout: const Duration(seconds: 20),
   ));
 
   final GetStorage _storage = GetStorage();

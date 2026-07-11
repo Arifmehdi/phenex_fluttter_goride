@@ -75,6 +75,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   DateTime _lastRouteFetch = DateTime.fromMillisecondsSinceEpoch(0);
   Worker? _statusWorker;
   Timer? _etaTimer;
+  Worker? _paymentWorker;
+  bool _ratingShownForPayment = false;
 
   String _lastKnownStatus = '';
 
@@ -118,6 +120,24 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         _fetchRoute();
       }
     });
+
+    // Driver only: the moment the rider confirms payment (signalled via
+    // Firestore — see RideService.markPaymentPaid), persist a cash payment
+    // to Laravel if that's how they paid, then show the "rate the
+    // passenger" prompt and close the screen — matching Uber/Pathao/
+    // Obhai/InDrive, where the driver only rates after payment settles.
+    if (widget.role == 'driver') {
+      _paymentWorker = ever(_rideService.paymentStatus, (String status) async {
+        if (status == 'paid' && !_ratingShownForPayment && mounted) {
+          _ratingShownForPayment = true;
+          if (_rideService.paymentMethod.value == 'cash') {
+            await _rideService.persistCashPaymentAsDriver();
+          }
+          if (mounted) await _showRatingSheet();
+          if (mounted) Get.back();
+        }
+      });
+    }
   }
 
   /// Minimize the trip — return to the correct home for this role. The ride
@@ -134,6 +154,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   void dispose() {
     _positionSub?.cancel();
     _statusWorker?.dispose();
+    _paymentWorker?.dispose();
     _etaTimer?.cancel();
     _mapController?.dispose();
     super.dispose();
@@ -286,6 +307,154 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     Get.to(() => const ChatConversationListScreen());
   }
 
+  /// "Customer Details" (for the driver) / "Driver Details" (for the rider) —
+  /// same popup UI on both sides, just filled with whichever party is relevant.
+  void _showPartyDetailsSheet() {
+    final isDriver = widget.role == 'driver';
+    final name = isDriver
+        ? (_rideService.assignedRiderName.value.isNotEmpty
+            ? _rideService.assignedRiderName.value
+            : 'Passenger')
+        : (_rideService.assignedDriverName.value.isNotEmpty
+            ? _rideService.assignedDriverName.value
+            : 'Your Driver');
+    final phone = isDriver
+        ? _rideService.assignedRiderPhone.value
+        : _rideService.assignedDriverPhone.value;
+    final rating = _rideService.assignedDriverRating.value;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        padding: EdgeInsets.fromLTRB(
+          20, 10, 20, 24 + MediaQuery.of(ctx).padding.bottom,
+        ),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(child: _sheetGrabHandle()),
+            const SizedBox(height: 8),
+            Text(isDriver ? 'Customer Details' : 'Driver Details',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 32,
+                  backgroundColor: const Color(0xFFE8F5E9),
+                  backgroundImage:
+                      isDriver ? const AssetImage('assets/passenger.png') : null,
+                  child: isDriver
+                      ? null
+                      : const Icon(Icons.person, color: Color(0xFF10713C), size: 34),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name,
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 4),
+                      if (!isDriver)
+                        Row(
+                          children: [
+                            const Icon(Icons.star, color: Colors.amber, size: 16),
+                            const SizedBox(width: 4),
+                            Text(rating.toStringAsFixed(1),
+                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                            const SizedBox(width: 10),
+                            Text(widget.rideType,
+                                style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                          ],
+                        )
+                      else
+                        Text(widget.rideType,
+                            style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                      if (phone.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(Icons.phone, size: 14, color: Colors.grey[500]),
+                            const SizedBox(width: 6),
+                            Text(phone,
+                                style: TextStyle(fontSize: 13, color: Colors.grey[700])),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  _routeRow(Icons.trip_origin, const Color(0xFF10713C), widget.pickupAddress),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 10),
+                    child: Container(height: 16, width: 2, color: Colors.grey[300]),
+                  ),
+                  _routeRow(Icons.location_on, Colors.red, widget.destinationAddress),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _handleChat();
+                    },
+                    icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                    label: const Text('Chat'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF10713C),
+                      side: const BorderSide(color: Color(0xFF10713C)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _handleCall();
+                    },
+                    icon: const Icon(Icons.call, size: 18, color: Colors.white),
+                    label: const Text('Call', style: TextStyle(color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10713C),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _handleCall() async {
     // Driver calls the customer; passenger calls the driver.
     final phone = widget.role == 'driver'
@@ -363,16 +532,56 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         return 'Start Trip';
       case 'in_progress':
         return 'Complete Trip';
+      case 'completed':
+        return 'Waiting for Payment';
       default:
         return 'Complete Trip';
     }
   }
 
-  /// Button color per stage — blue for "arrived", green for go/complete.
+  /// Button color per stage — blue for "arrived", grey while waiting for
+  /// the rider to pay, green otherwise.
   Color _driverButtonColor() {
-    return _rideService.tripStatus.value == 'accepted'
-        ? const Color(0xFF1565C0)
-        : const Color(0xFF10713C);
+    final status = _rideService.tripStatus.value;
+    if (status == 'accepted') return const Color(0xFF1565C0);
+    if (status == 'completed') return Colors.grey.shade400;
+    return const Color(0xFF10713C);
+  }
+
+  /// Driver taps the primary trip button — inserts a "Start the trip?"
+  /// Yes/No confirmation only for the arriving → in_progress step; every
+  /// other stage advances immediately as before.
+  Future<void> _handleDriverPrimaryTap() async {
+    if (_rideService.tripStatus.value == 'arriving') {
+      final confirmed = await _showStartTripConfirmation();
+      if (confirmed != true) return;
+    }
+    await _driverAdvanceStatus();
+  }
+
+  Future<bool?> _showStartTripConfirmation() {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Start the trip?'),
+        content: const Text('Make sure the passenger is in the vehicle before you begin.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10713C),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Yes, Start', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Advance the trip one stage forward (driver only).
@@ -387,30 +596,15 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
       // Passenger is in — start the trip
       await _rideService.updateStatus('in_progress');
     } else if (status == 'in_progress') {
-      // Trip finished
+      // Trip finished — the rider now sees a payment prompt, and this
+      // screen waits (see the paymentStatus worker in initState) before
+      // showing the driver's own rating prompt and closing.
       await _rideService.updateStatus('completed');
-      if (mounted) await _showRatingSheet();
-      if (mounted) Get.back();
-      return;
     } else {
-      await _rideService.updateStatus('completed');
-      if (mounted) Get.back();
       return;
     }
 
     if (mounted) setState(() => _isCompleting = false);
-  }
-
-  Future<void> _completeTripAsCash() async {
-    // If rider role, show payment method picker first
-    if (widget.role == 'rider') {
-      await _showPaymentPicker();
-    } else {
-      // Driver just marks complete
-      setState(() => _isCompleting = true);
-      await _rideService.updateStatus('completed');
-      if (mounted) Get.back();
-    }
   }
 
   Future<void> _showPaymentPicker() async {
@@ -418,7 +612,9 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        padding: EdgeInsets.fromLTRB(
+          20, 8, 20, 24 + MediaQuery.of(ctx).padding.bottom,
+        ),
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -449,8 +645,13 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     if (choice == null || !mounted) return;
 
     if (choice == 'cash') {
+      // Rider hands over cash directly — this signals the driver (who is
+      // waiting on the previous screen) that payment is settled, so their
+      // app can show the "rate the passenger" prompt. The driver's own app
+      // persists the actual Laravel payment record, since only the
+      // assigned driver is authorized to confirm cash was received.
       setState(() => _isCompleting = true);
-      await _rideService.updateStatus('completed');
+      await _rideService.markPaymentPaid('cash');
       if (mounted) await _showRatingSheet();
       if (mounted) Get.back();
     } else if (choice == 'sslcommerz') {
@@ -510,7 +711,9 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     if (url != null && mounted) {
       final launched = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       if (launched) {
-        await _rideService.updateStatus('completed');
+        // Card payment IPN settles the Laravel record server-to-server;
+        // this signal is what unblocks the driver's rating prompt.
+        await _rideService.markPaymentPaid('sslcommerz');
         if (mounted) await _showRatingSheet();
         if (mounted) Get.back();
       } else {
@@ -564,7 +767,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => Container(
           padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom +
+                MediaQuery.of(ctx).padding.bottom + 16,
             top: 8, left: 20, right: 20,
           ),
           decoration: const BoxDecoration(
@@ -652,18 +856,32 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
 
     if (confirmed == true && selectedReason != null && mounted) {
       setState(() => _isCompleting = true);
-      final fee = await _rideService.cancelTrip(reason: selectedReason!);
-      if (mounted) {
-        if (fee > 0) {
+      try {
+        final fee = await _rideService.cancelTrip(reason: selectedReason!);
+        if (mounted) {
+          if (fee > 0) {
+            Get.snackbar(
+              'Ride Cancelled',
+              '৳${fee.toStringAsFixed(0)} cancellation fee has been applied.',
+              backgroundColor: Colors.orange,
+              colorText: Colors.white,
+              duration: const Duration(seconds: 4),
+            );
+          }
+          Get.back();
+        }
+      } catch (e) {
+        // Never leave the button stuck on a spinner — surface the failure
+        // and let the driver/rider try again.
+        if (mounted) {
+          setState(() => _isCompleting = false);
           Get.snackbar(
-            'Ride Cancelled',
-            '৳${fee.toStringAsFixed(0)} cancellation fee has been applied.',
-            backgroundColor: Colors.orange,
+            'Could Not Cancel',
+            'Please check your connection and try again.',
+            backgroundColor: Colors.red,
             colorText: Colors.white,
-            duration: const Duration(seconds: 4),
           );
         }
-        Get.back();
       }
     }
   }
@@ -675,7 +893,6 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         children: [
           _buildMap(),
           _buildTopBar(),
-          _buildNavBanner(),
           _buildBottomPanel(),
           _buildRecenterButton(),
         ],
@@ -743,24 +960,60 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Obx(() {
-          final isDriverPickup = widget.role == 'driver' &&
-              (_rideService.tripStatus.value == 'accepted' ||
-                  _rideService.tripStatus.value == 'arriving');
-          return isDriverPickup ? _buildDriverPickupTopBar() : _buildDefaultTopBar();
+          final status = _rideService.tripStatus.value;
+          final isTripPhase = status == 'accepted' || status == 'arriving' ||
+          status == 'in_progress' || status == 'completed';
+          return isTripPhase ? _buildTripTopBar() : _buildDefaultTopBar();
         }),
       ),
     );
   }
 
-  /// "Go to the passenger" bar + NAVIGATE button — shown to the driver while
-  /// heading to (or waiting at) the pickup point.
-  Widget _buildDriverPickupTopBar() {
-    final arrived = _rideService.tripStatus.value == 'arriving';
+  /// Vehicle icon matching the ride type — used as the rider's "your driver"
+  /// avatar, same logic as the driver marker icon on the map.
+  String _vehicleAssetPath() {
+    switch (widget.rideType.toLowerCase()) {
+      case 'motor':
+      case 'bike':
+        return 'assets/motor.png';
+      case 'ambulance':
+        return 'assets/ambulance.png';
+      default:
+        return 'assets/car.png';
+    }
+  }
+
+  /// "Go to the passenger" → "Go to destination" bar + NAVIGATE button —
+  /// shown to BOTH the driver and the rider through the whole trip (heading
+  /// to pickup, waiting at pickup, and heading to destination), so both
+  /// sides get the same look and feel throughout.
+  Widget _buildTripTopBar() {
+    final isDriver = widget.role == 'driver';
+    final status = _rideService.tripStatus.value;
+    final String label;
+    if (status == 'completed') {
+      label = isDriver ? 'Waiting for payment' : 'Trip completed';
+    } else if (status == 'in_progress') {
+      label = isDriver ? 'Go to destination' : 'Heading to destination';
+    } else if (status == 'arriving') {
+      label = isDriver ? 'Waiting for passenger' : 'Driver has arrived';
+    } else {
+      label = isDriver ? 'Go to the passenger' : 'Driver is on the way';
+    }
     return Row(
       children: [
+        GestureDetector(
+          onTap: _minimizeToDashboard,
+          child: Container(
+            padding: const EdgeInsets.all(9),
+            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+            child: const Icon(Icons.keyboard_arrow_down, color: Colors.black87, size: 20),
+          ),
+        ),
+        const SizedBox(width: 8),
         Expanded(
           child: GestureDetector(
-            onTap: _minimizeToDashboard,
+            onTap: _showPartyDetailsSheet,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               decoration: BoxDecoration(
@@ -770,15 +1023,16 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const CircleAvatar(
+                  CircleAvatar(
                     radius: 16,
                     backgroundColor: Colors.white,
-                    backgroundImage: AssetImage('assets/passenger.png'),
+                    backgroundImage: AssetImage(
+                        isDriver ? 'assets/passenger.png' : _vehicleAssetPath()),
                   ),
                   const SizedBox(width: 10),
                   Flexible(
                     child: Text(
-                      arrived ? 'Waiting for passenger' : 'Go to the passenger',
+                      label,
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 13,
@@ -787,6 +1041,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.info_outline, color: Colors.white70, size: 15),
                 ],
               ),
             ),
@@ -865,153 +1121,188 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         );
   }
 
-  Widget _buildNavBanner() {
-    if (_navSteps.isEmpty || _currentStepIndex >= _navSteps.length) return const SizedBox.shrink();
-    final step = _navSteps[_currentStepIndex];
-    return Positioned(
-      top: 90,
-      left: 12,
-      right: 12,
+  Widget _buildBottomPanel() {
+    return Obx(() {
+      final status = _rideService.tripStatus.value;
+      final isTripPhase = status == 'accepted' || status == 'arriving' ||
+          status == 'in_progress' || status == 'completed';
+
+      if (isTripPhase && !_pickupPanelExpanded) {
+        return _buildCollapsedTripPanel();
+      }
+      return _buildExpandedPanel(showCollapseHandle: isTripPhase);
+    });
+  }
+
+  /// A small rounded "grab handle" bar shown at the top of the draggable
+  /// pickup sheet — the modern bottom-sheet affordance for tap / swipe.
+  Widget _sheetGrabHandle() {
+    return Center(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        width: 44,
+        height: 5,
+        margin: const EdgeInsets.only(bottom: 6),
         decoration: BoxDecoration(
-          color: const Color(0xFF10713C),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 12)],
-        ),
-        child: Row(
-          children: [
-            Icon(step.maneuverIcon, color: Colors.white, size: 28),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    step.cleanInstruction,
-                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    '${step.distance.toStringAsFixed(1)} km · ${step.duration.toStringAsFixed(0)} min',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-            Text(
-              '${_currentStepIndex + 1}/${_navSteps.length}',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
-            ),
-          ],
+          color: Colors.grey[300],
+          borderRadius: BorderRadius.circular(3),
         ),
       ),
     );
   }
 
-  Widget _buildBottomPanel() {
-    return Obx(() {
-      final isDriverPickup = widget.role == 'driver' &&
-          (_rideService.tripStatus.value == 'accepted' ||
-              _rideService.tripStatus.value == 'arriving');
-
-      if (isDriverPickup && !_pickupPanelExpanded) {
-        return _buildCollapsedPickupPanel();
-      }
-      return _buildExpandedPanel(showCollapseHandle: isDriverPickup);
-    });
+  /// Interprets a vertical swipe on the pickup sheet: swipe up expands the
+  /// full popup, swipe down collapses it back to the pickup-only view.
+  void _handlePickupSheetDrag(DragEndDetails details) {
+    final v = details.primaryVelocity ?? 0;
+    if (v < -100) {
+      setState(() => _pickupPanelExpanded = true);
+    } else if (v > 100) {
+      setState(() => _pickupPanelExpanded = false);
+    }
   }
 
-  /// Minimal "pickup point + status button" panel matching the driver
-  /// navigation reference design — tap the arrow to see full trip details.
-  Widget _buildCollapsedPickupPanel() {
-    final arrived = _rideService.tripStatus.value == 'arriving';
+  /// Minimal "location + status button" panel matching the driver navigation
+  /// reference design — shown to BOTH driver and rider for the whole trip
+  /// (pickup phase AND the drive to destination). Tap the handle/card OR
+  /// swipe up to open the full trip-details popup.
+  Widget _buildCollapsedTripPanel() {
+    final isDriver = widget.role == 'driver';
+    final status = _rideService.tripStatus.value;
+    final bool completed = status == 'completed';
+    final bool tripStarted = status == 'in_progress';
+    final bool arrived = status == 'arriving';
+
+    final String locationLabel = completed
+        ? 'TRIP FARE'
+        : (tripStarted ? 'DESTINATION' : 'PICKUP LOCATION');
+    final String address = completed
+        ? '৳ ${widget.price.toStringAsFixed(0)}'
+        : (tripStarted ? widget.destinationAddress : widget.pickupAddress);
+    final IconData locationIcon =
+        completed ? Icons.payments : (tripStarted ? Icons.flag : Icons.my_location);
+    final Color locationAccent = completed
+        ? const Color(0xFF10713C)
+        : (tripStarted ? Colors.red : const Color(0xFF10713C));
+
+    // Status button: the driver always gets an actionable progression
+    // button (tapping "Start Trip" now asks for confirmation — see
+    // _handleDriverPrimaryTap) until the trip is complete, at which point
+    // they just wait for payment. The rider's button is informational
+    // throughout — except once the trip is complete, when "Pay Now" becomes
+    // their one and only action (only the driver can advance the trip itself).
+    final Color statusColor = isDriver
+        ? _driverButtonColor()
+        : (completed
+            ? const Color(0xFF10713C)
+            : (tripStarted || arrived ? const Color(0xFF10713C) : const Color(0xFF1565C0)));
+    final String statusLabel = isDriver
+        ? _driverButtonLabel().toUpperCase()
+        : (completed
+            ? 'PAY NOW'
+            : (tripStarted
+                ? 'ON THE WAY TO DESTINATION'
+                : (arrived ? 'DRIVER HAS ARRIVED' : 'DRIVER IS ON THE WAY')));
+    final bool statusTappable = isDriver ? !completed : completed;
+    final VoidCallback statusAction = isDriver ? _handleDriverPrimaryTap : _showPaymentPicker;
+
     return Align(
       alignment: Alignment.bottomCenter,
-      child: Container(
-        margin: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 20)],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => _pickupPanelExpanded = true),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Icon(Icons.keyboard_arrow_up, color: Colors.grey[400]),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => setState(() => _pickupPanelExpanded = true),
+        onVerticalDragEnd: _handlePickupSheetDrag,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+          margin: EdgeInsets.only(
+            left: 12, right: 12,
+            bottom: 16 + MediaQuery.of(context).padding.bottom,
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
               ),
-            ),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  margin: const EdgeInsets.only(top: 5),
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'PICKUP LOCATION',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey[500],
-                          letterSpacing: 0.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        widget.pickupAddress,
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _sheetGrabHandle(),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: locationAccent.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(locationIcon, color: locationAccent, size: 20),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: arrived ? null : (_isCompleting ? null : _driverAdvanceStatus),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _driverButtonColor(),
-                  disabledBackgroundColor: _driverButtonColor(),
-                  disabledForegroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-                child: _isCompleting
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                      )
-                    : Text(
-                        arrived ? 'WAITING FOR PASSENGER' : _driverButtonLabel().toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          locationLabel,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[500],
+                            letterSpacing: 0.5,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 3),
+                        Text(
+                          address,
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(Icons.keyboard_arrow_up_rounded, color: Colors.grey[400]),
+                ],
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: statusTappable ? (_isCompleting ? null : statusAction) : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: statusColor,
+                    disabledBackgroundColor: statusColor,
+                    disabledForegroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: _isCompleting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        )
+                      : Text(
+                          statusLabel,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1022,76 +1313,94 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   Widget _buildExpandedPanel({required bool showCollapseHandle}) {
     return Align(
       alignment: Alignment.bottomCenter,
-      child: Container(
-        margin: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 20)],
-        ),
-        child: Obx(() => Column(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        // Only the driver-pickup sheet is collapsible; ignore drags otherwise.
+        onVerticalDragEnd: showCollapseHandle ? _handlePickupSheetDrag : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+          margin: EdgeInsets.only(
+            left: 12, right: 12,
+            bottom: 16 + MediaQuery.of(context).padding.bottom,
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Obx(() => Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (showCollapseHandle)
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () => setState(() => _pickupPanelExpanded = false),
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Icon(Icons.keyboard_arrow_down, color: Colors.grey[400]),
-                ),
+                child: _sheetGrabHandle(),
               ),
-            // Driver info row
-            Row(
-              children: [
-                const CircleAvatar(
-                  radius: 26,
-                  backgroundColor: Color(0xFFE8F5E9),
-                  child: Icon(Icons.person, color: Color(0xFF10713C), size: 28),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Driver sees the CUSTOMER (passenger); passenger sees the driver.
-                      Text(
-                        widget.role == 'driver'
-                            ? (_rideService.assignedRiderName.value.isNotEmpty
-                                ? _rideService.assignedRiderName.value
-                                : 'Passenger')
-                            : (_rideService.assignedDriverName.value.isNotEmpty
-                                ? _rideService.assignedDriverName.value
-                                : 'Your Driver'),
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        widget.role == 'driver' ? 'Passenger • ${widget.rideType}' : widget.rideType,
-                        style: TextStyle(color: Colors.grey[500], fontSize: 13),
-                      ),
-                    ],
+            // Driver/passenger info row — tap to open the full details popup.
+            GestureDetector(
+              onTap: _showPartyDetailsSheet,
+              behavior: HitTestBehavior.opaque,
+              child: Row(
+                children: [
+                  const CircleAvatar(
+                    radius: 26,
+                    backgroundColor: Color(0xFFE8F5E9),
+                    child: Icon(Icons.person, color: Color(0xFF10713C), size: 28),
                   ),
-                ),
-                // Show rating badge only to the passenger (driver's rating).
-                if (widget.role != 'driver')
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF10713C).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.star, color: Colors.amber, size: 16),
+                        // Driver sees the CUSTOMER (passenger); passenger sees the driver.
                         Text(
-                          ' ${_rideService.assignedDriverRating.value.toStringAsFixed(1)}',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          widget.role == 'driver'
+                              ? (_rideService.assignedRiderName.value.isNotEmpty
+                                  ? _rideService.assignedRiderName.value
+                                  : 'Passenger')
+                              : (_rideService.assignedDriverName.value.isNotEmpty
+                                  ? _rideService.assignedDriverName.value
+                                  : 'Your Driver'),
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          widget.role == 'driver' ? 'Passenger • ${widget.rideType}' : widget.rideType,
+                          style: TextStyle(color: Colors.grey[500], fontSize: 13),
                         ),
                       ],
                     ),
                   ),
-              ],
+                  // Show rating badge only to the passenger (driver's rating).
+                  if (widget.role != 'driver')
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10713C).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.star, color: Colors.amber, size: 16),
+                          Text(
+                            ' ${_rideService.assignedDriverRating.value.toStringAsFixed(1)}',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(width: 6),
+                  Icon(Icons.chevron_right, color: Colors.grey[400]),
+                ],
+              ),
             ),
             const SizedBox(height: 14),
 
@@ -1172,17 +1481,30 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
             Builder(builder: (_) {
               final status = _rideService.tripStatus.value;
               final isDriver = widget.role == 'driver';
+              final completed = status == 'completed';
               // Cancel allowed before the trip starts (not once in_progress/completed)
               final canCancel = status == 'accepted' || status == 'arriving';
 
-              final primaryLabel = isDriver
-                  ? _driverButtonLabel()
-                  : 'Complete Trip (Cash)';
-              final primaryColor = isDriver
-                  ? _driverButtonColor()
-                  : const Color(0xFF10713C);
-              final primaryAction =
-                  isDriver ? _driverAdvanceStatus : _completeTripAsCash;
+              final String primaryLabel;
+              final Color primaryColor;
+              final VoidCallback? primaryAction;
+
+              if (isDriver) {
+                // Only the driver advances the trip; once complete they just
+                // wait for the rider to pay (see the paymentStatus worker).
+                primaryLabel = _driverButtonLabel();
+                primaryColor = _driverButtonColor();
+                primaryAction = completed ? null : _handleDriverPrimaryTap;
+              } else if (completed) {
+                primaryLabel = 'Pay Now';
+                primaryColor = const Color(0xFF10713C);
+                primaryAction = _showPaymentPicker;
+              } else {
+                // The rider can't end the trip — only the driver can.
+                primaryLabel = 'Trip in Progress';
+                primaryColor = Colors.grey.shade400;
+                primaryAction = null;
+              }
 
               return Row(
                 children: [
@@ -1204,10 +1526,11 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                   Expanded(
                     flex: 3,
                     child: ElevatedButton(
-                      onPressed: _isCompleting ? null : primaryAction,
+                      onPressed: (_isCompleting || primaryAction == null) ? null : primaryAction,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: primaryColor,
-                        disabledBackgroundColor: Colors.grey[300],
+                        disabledBackgroundColor: primaryColor,
+                        disabledForegroundColor: Colors.white,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
@@ -1227,6 +1550,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
             }),
           ],
         )),
+        ),
       ),
     );
   }
