@@ -437,11 +437,13 @@ class RideService extends GetxService {
   /// Cancel the current trip. Returns the cancellation fee (0 if free).
   Future<double> cancelTrip({String reason = 'Cancelled by rider'}) async {
     double fee = 0;
-    // Charge ৳50 if driver has already been assigned (accepted phase or later)
+    // Rider pays a fixed ৳50 fee once a driver is already assigned; a driver
+    // cancelling at the same stage pays no fee but takes a reliability hit
+    // on the backend (cancelled_rides_count + acceptance_rate) instead.
     final chargeable = tripStatus.value == 'accepted' ||
         tripStatus.value == 'arriving' ||
         tripStatus.value == 'in_progress';
-    if (chargeable) fee = 50;
+    if (chargeable && currentRole.value != 'driver') fee = 50;
 
     // Update Laravel with reason
     if (laravelRideId.value > 0) {

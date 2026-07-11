@@ -29,6 +29,12 @@ import 'package:goride/pages/saved_addresses_screen.dart';
 import 'package:goride/pages/chat_conversation_list_screen.dart';
 import 'package:goride/widgets/sidebar_menu.dart';
 
+/// Lets any screen (e.g. the dashboard) reliably detect "I've become visible
+/// again" regardless of which route was pushed on top or how it got popped —
+/// used to refresh wallet/earnings figures the moment a ride flow finishes
+/// and control returns to the dashboard underneath.
+final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await GetStorage.init();
@@ -89,6 +95,7 @@ class GoRideApp extends StatelessWidget {
         ),
       ),
       initialRoute: splashRoute,
+      navigatorObservers: [routeObserver],
       getPages: [
         GetPage(name: splashRoute, page: () => const SplashScreen()),
         GetPage(name: '/home', page: () => const HomePage()),

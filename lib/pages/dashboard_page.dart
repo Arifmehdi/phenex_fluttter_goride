@@ -24,6 +24,7 @@ import 'live_tracking_screen.dart';
 import 'notifications_screen.dart';
 import '../widgets/ongoing_ride_banner.dart';
 import '../utils/num_utils.dart';
+import '../utils/notification_permission_prompt.dart';
 
 class UnifiedDashboard extends StatefulWidget {
   final String role; // 'driver', 'owner', 'corporate', 'admin'
@@ -33,7 +34,7 @@ class UnifiedDashboard extends StatefulWidget {
   State<UnifiedDashboard> createState() => _UnifiedDashboardState();
 }
 
-class _UnifiedDashboardState extends State<UnifiedDashboard> {
+class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
   final LocaleController localeController = Get.find<LocaleController>();
   final LocationService _locationService = Get.find<LocationService>();
   final ApiService _apiService = Get.find<ApiService>();
@@ -52,6 +53,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
   // Nearby ride request tracking
   static const double _nearbyRadiusKm = 5.0; // 5km radius
   StreamSubscription<QuerySnapshot>? _requestSubscription;
+  Worker? _tripResetWorker;
   final Set<String> _pendingRequestIds = {};
   final Set<String> _declinedRequestIds = {}; // Track declined requests locally
 
@@ -97,6 +99,28 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
       _loadProfileCompletion();
     }
     _loadWalletData();
+
+    // The wallet/earnings figures above are only fetched once, here. If a
+    // ride finishes (payment settles, RideService.resetTrip() runs and
+    // tripStatus falls back to 'idle') while this same dashboard instance
+    // is still alive underneath, nothing else would ever tell it to
+    // re-fetch — so it kept showing pre-ride numbers until some other
+    // screen happened to reload fresh data. Re-fetch right when that happens.
+    _tripResetWorker = ever(_rideService.tripStatus, (String status) {
+      if (status == 'idle') {
+        _loadWalletData();
+        if (widget.role == 'driver') {
+          _loadDriverStats();
+          _loadEarningsSummary();
+        }
+        if (widget.role == 'owner') _loadOwnerFleet();
+        if (widget.role == 'corporate') _loadCorporateBilling();
+      }
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) primeNotificationPermissions(context);
+    });
   }
 
   Future<void> _loadOwnerFleet() async {
@@ -290,9 +314,36 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeObserver.subscribe(this, ModalRoute.of(context) as PageRoute);
+  }
+
+  @override
   void dispose() {
+    routeObserver.unsubscribe(this);
     _requestSubscription?.cancel();
+    _tripResetWorker?.dispose();
     super.dispose();
+  }
+
+  /// Fires every time a screen pushed on top of this dashboard is popped and
+  /// this one becomes visible again — regardless of which screen it was or
+  /// how the trip flow finished. This is the reliable, Flutter-idiomatic
+  /// counterpart to the RideService listener above: that one refreshes as
+  /// soon as the ride state resets, this one refreshes as soon as the
+  /// driver's eyes are actually back on the dashboard, so stale earnings/
+  /// wallet figures can't linger no matter which path the ride flow took.
+  @override
+  void didPopNext() {
+    super.didPopNext();
+    _loadWalletData();
+    if (widget.role == 'driver') {
+      _loadDriverStats();
+      _loadEarningsSummary();
+    }
+    if (widget.role == 'owner') _loadOwnerFleet();
+    if (widget.role == 'corporate') _loadCorporateBilling();
   }
 
   /// Set up a listener for new ride requests to trigger notifications
@@ -1761,11 +1812,6 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> {
         _profileMenuItem(
           Icons.history,
           localeController.get('Trip History', 'ট্রিপ হিস্ট্রি'),
-          onTap: () => Get.to(() => const TripHistoryScreen()),
-        ),
-        _profileMenuItem(
-          Icons.history_toggle_off,
-          localeController.get('Ride History', 'Trip History'),
           onTap: () => Get.to(() => const RideHistoryScreen()),
         ),
         _profileMenuItem(

@@ -92,6 +92,37 @@ class FirebaseService extends GetxService {
   CollectionReference? get rideRequests =>
       firestore?.collection('ride_requests');
 
+  /// Per-trip rider↔driver chat, stored under the shared trip document —
+  /// both parties already know the tripId, and Firestore gives true
+  /// real-time delivery (unlike the Laravel polling chat, which is also
+  /// users-table-only and can't pair a Driver with a User).
+  CollectionReference? tripMessages(String tripId) =>
+      activeTrips?.doc(tripId).collection('messages');
+
+  Future<void> sendTripMessage(
+    String tripId, {
+    required String senderRole, // 'driver' | 'rider'
+    required String senderName,
+    required String text,
+  }) async {
+    final coll = tripMessages(tripId);
+    if (coll == null) return;
+    await coll.add({
+      'senderRole': senderRole,
+      'senderName': senderName,
+      'text': text,
+      'sentAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Newest-first so the chat screen can use a reversed ListView that
+  /// stays pinned to the bottom as messages arrive.
+  Stream<QuerySnapshot> streamTripMessages(String tripId) {
+    final coll = tripMessages(tripId);
+    if (coll == null) return const Stream.empty();
+    return coll.orderBy('sentAt', descending: true).snapshots();
+  }
+
   /// Update driver's current location in Firestore
   Future<void> updateDriverLocation({
     required String driverId,

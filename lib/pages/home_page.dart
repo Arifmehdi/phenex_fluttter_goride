@@ -15,6 +15,7 @@ import '../main.dart' show GoRideApp, SplashScreen;
 import 'register_screen.dart';
 import 'login_page.dart';
 import '../widgets/ongoing_ride_banner.dart';
+import '../utils/notification_permission_prompt.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -76,6 +77,9 @@ class _HomePageState extends State<HomePage> {
     _startAutoScroll();
     _detectCurrentLocation();
     _loadBanners();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) primeNotificationPermissions(context);
+    });
 
     // Listen for location service status changes (enabled/disabled)
     _serviceStatusSubscription = Geolocator.getServiceStatusStream().listen((ServiceStatus status) {

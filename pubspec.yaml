@@ -54,6 +54,10 @@ dependencies:
   flutter_local_notifications: ^22.0.1
   audioplayers: ^6.7.1
 
+  # Battery-optimization exemption prompt, so ride-call notifications keep
+  # working reliably in the background (same reason WhatsApp asks for this).
+  permission_handler: ^11.3.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

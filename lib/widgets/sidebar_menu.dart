@@ -4,6 +4,7 @@ import '../services/api_service.dart';
 import '../pages/home_page.dart';
 import '../pages/dashboard_details_pages.dart';
 import '../pages/my_support_tickets_screen.dart';
+import '../pages/ride_history_screen.dart';
 
 class SidebarMenu extends StatelessWidget {
   final String role;
@@ -101,7 +102,7 @@ class SidebarMenu extends StatelessWidget {
           }),
           _menuItem(Icons.history, 'Trip History', () {
             Navigator.pop(context);
-            Get.to(() => const TripHistoryScreen());
+            Get.to(() => const RideHistoryScreen());
           }),
         ];
       case 'owner':

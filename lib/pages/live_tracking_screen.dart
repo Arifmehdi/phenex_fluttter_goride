@@ -12,6 +12,7 @@ import '../services/api_service.dart';
 import '../utils/marker_utils.dart';
 import '../widgets/sos_helper.dart';
 import 'package:goride/pages/chat_conversation_list_screen.dart';
+import 'trip_chat_screen.dart';
 import 'post_trip_rating_sheet.dart';
 import 'dashboard_page.dart';
 import 'home_page.dart';
@@ -134,6 +135,9 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
             await _rideService.persistCashPaymentAsDriver();
           }
           if (mounted) await _showRatingSheet();
+          // Clear the finished ride's cached state so the dashboard's
+          // wallet/earnings refresh (and the next ride starts clean).
+          _rideService.resetTrip();
           if (mounted) Get.back();
         }
       });
@@ -243,6 +247,28 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   /// Called when trip status changes to re-draw the correct route.
   void _onStatusChanged(String status) {
     _currentStepIndex = 0;
+
+    // The OTHER party cancelled (synced via the shared Firestore trip doc) —
+    // end the trip on this side too: notify, clear state, return home.
+    // _isCompleting is true when WE initiated the cancel; that flow already
+    // handles its own navigation, so skip to avoid a double pop.
+    if (status == 'cancelled') {
+      if (!_isCompleting && mounted) {
+        _rideService.resetTrip();
+        _minimizeToDashboard();
+        Get.snackbar(
+          'Trip Cancelled',
+          widget.role == 'driver'
+              ? 'The passenger has cancelled this trip.'
+              : 'Your driver has cancelled this trip.',
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+          duration: const Duration(seconds: 4),
+        );
+      }
+      return;
+    }
+
     _fetchRoute();
   }
 
@@ -304,7 +330,34 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   }
 
   void _handleChat() {
-    Get.to(() => const ChatConversationListScreen());
+    final tripId = _rideService.currentTripId.value;
+    if (tripId.isEmpty) {
+      // No live trip context — fall back to the general inbox.
+      Get.to(() => const ChatConversationListScreen());
+      return;
+    }
+
+    final isDriver = widget.role == 'driver';
+    final myName = Get.find<ApiService>().getUser()?['name']?.toString() ??
+        (isDriver ? 'Driver' : 'Passenger');
+    final otherName = isDriver
+        ? (_rideService.assignedRiderName.value.isNotEmpty
+            ? _rideService.assignedRiderName.value
+            : 'Passenger')
+        : (_rideService.assignedDriverName.value.isNotEmpty
+            ? _rideService.assignedDriverName.value
+            : 'Your Driver');
+    final otherPhone = isDriver
+        ? _rideService.assignedRiderPhone.value
+        : _rideService.assignedDriverPhone.value;
+
+    Get.to(() => TripChatScreen(
+          tripId: tripId,
+          myRole: isDriver ? 'driver' : 'rider',
+          myName: myName,
+          otherName: otherName,
+          otherPhone: otherPhone,
+        ));
   }
 
   /// "Customer Details" (for the driver) / "Driver Details" (for the rider) —
@@ -449,6 +502,39 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                 ),
               ],
             ),
+            // Cancel Trip — available to BOTH passenger and driver while the
+            // trip hasn't started yet. Opens the same reason/confirm dialog
+            // (rider sees the ৳50 fee warning, driver the reliability warning).
+            if (_rideService.tripStatus.value == 'accepted' ||
+                _rideService.tripStatus.value == 'arriving') ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _showCancelDialog();
+                  },
+                  icon: const Icon(Icons.close_rounded, color: Colors.red, size: 20),
+                  label: const Text(
+                    'Cancel This Trip',
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
+                  style: TextButton.styleFrom(
+                    backgroundColor: Colors.red.shade50,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      side: BorderSide(color: Colors.red.shade200),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -653,6 +739,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
       setState(() => _isCompleting = true);
       await _rideService.markPaymentPaid('cash');
       if (mounted) await _showRatingSheet();
+      _rideService.resetTrip();
       if (mounted) Get.back();
     } else if (choice == 'sslcommerz') {
       await _payWithSSLCommerz();
@@ -715,6 +802,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         // this signal is what unblocks the driver's rating prompt.
         await _rideService.markPaymentPaid('sslcommerz');
         if (mounted) await _showRatingSheet();
+        _rideService.resetTrip();
         if (mounted) Get.back();
       } else {
         setState(() => _isCompleting = false);
@@ -746,7 +834,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     );
   }
 
-  static const List<String> _cancelReasons = [
+  static const List<String> _riderCancelReasons = [
     'Driver taking too long',
     'Found another ride',
     'Changed my plans',
@@ -755,9 +843,20 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     'Other',
   ];
 
+  static const List<String> _driverCancelReasons = [
+    'Passenger not responding',
+    'Passenger not at pickup location',
+    'Vehicle problem',
+    'Personal emergency',
+    'Unsafe or uncomfortable situation',
+    'Other',
+  ];
+
   Future<void> _showCancelDialog() async {
     final status = _rideService.tripStatus.value;
+    final isDriver = widget.role == 'driver';
     final isChargeable = status == 'accepted' || status == 'arriving' || status == 'in_progress';
+    final cancelReasons = isDriver ? _driverCancelReasons : _riderCancelReasons;
     String? selectedReason;
 
     final confirmed = await showModalBottomSheet<bool>(
@@ -775,7 +874,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
             color: Colors.white,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
-          child: Column(
+          child: SingleChildScrollView(
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
@@ -783,9 +883,26 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                 decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
               ),
               const SizedBox(height: 16),
-              const Text('Cancel Ride', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              // Icon header
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.close_rounded, color: Colors.red.shade600, size: 30),
+              ),
+              const SizedBox(height: 10),
+              const Text('Cancel this trip?',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text(
+                'The trip will end for both you and the ${isDriver ? 'passenger' : 'driver'}.',
+                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                textAlign: TextAlign.center,
+              ),
               if (isChargeable) ...[
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
@@ -799,7 +916,9 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'A ৳50 cancellation fee applies because your driver is already on the way.',
+                          isDriver
+                              ? 'Cancelling now will count against your reliability score and be visible on your driver profile.'
+                              : 'A ৳50 cancellation fee applies because your driver is already on the way.',
                           style: TextStyle(color: Colors.red.shade700, fontSize: 13),
                         ),
                       ),
@@ -812,25 +931,59 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                 alignment: Alignment.centerLeft,
                 child: Text('Why are you cancelling?', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
               ),
-              const SizedBox(height: 8),
-              ..._cancelReasons.map((r) => RadioListTile<String>(
-                value: r,
-                groupValue: selectedReason,
-                title: Text(r, style: const TextStyle(fontSize: 14)),
-                activeColor: const Color(0xFF10713C),
-                dense: true,
-                onChanged: (v) => setS(() => selectedReason = v),
-              )),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
+              // Tappable reason tiles — nicer than dense radio rows
+              ...cancelReasons.map((r) {
+                final selected = selectedReason == r;
+                return GestureDetector(
+                  onTap: () => setS(() => selectedReason = r),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? const Color(0xFF10713C).withValues(alpha: 0.08)
+                          : Colors.grey[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: selected ? const Color(0xFF10713C) : Colors.grey.shade200,
+                        width: selected ? 1.6 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          selected ? Icons.check_circle : Icons.circle_outlined,
+                          size: 20,
+                          color: selected ? const Color(0xFF10713C) : Colors.grey[400],
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            r,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+              const SizedBox(height: 10),
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () => Navigator.pop(ctx, false),
                       style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      child: const Text('Keep Ride'),
+                      child: const Text('Keep Ride', style: TextStyle(fontWeight: FontWeight.w600)),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -840,15 +993,18 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.red,
                         disabledBackgroundColor: Colors.grey[300],
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      child: const Text('Cancel Ride', style: TextStyle(color: Colors.white)),
+                      child: const Text('Cancel Trip',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 8),
             ],
+          ),
           ),
         ),
       ),
@@ -863,6 +1019,14 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
             Get.snackbar(
               'Ride Cancelled',
               '৳${fee.toStringAsFixed(0)} cancellation fee has been applied.',
+              backgroundColor: Colors.orange,
+              colorText: Colors.white,
+              duration: const Duration(seconds: 4),
+            );
+          } else if (isDriver && isChargeable) {
+            Get.snackbar(
+              'Ride Cancelled',
+              'This cancellation has been recorded on your driver profile.',
               backgroundColor: Colors.orange,
               colorText: Colors.white,
               duration: const Duration(seconds: 4),
@@ -1204,6 +1368,9 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                 : (arrived ? 'DRIVER HAS ARRIVED' : 'DRIVER IS ON THE WAY')));
     final bool statusTappable = isDriver ? !completed : completed;
     final VoidCallback statusAction = isDriver ? _handleDriverPrimaryTap : _showPaymentPicker;
+    // Cancel is available to both roles right up until the trip starts —
+    // shown directly here so it's never hidden behind "expand for details".
+    final bool canCancel = status == 'accepted' || status == 'arriving';
 
     return Align(
       alignment: Alignment.bottomCenter,
@@ -1274,32 +1441,52 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: statusTappable ? (_isCompleting ? null : statusAction) : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: statusColor,
-                    disabledBackgroundColor: statusColor,
-                    disabledForegroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: _isCompleting
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                        )
-                      : Text(
-                          statusLabel,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.5,
-                          ),
+              Row(
+                children: [
+                  if (canCancel) ...[
+                    Expanded(
+                      flex: 2,
+                      child: OutlinedButton(
+                        onPressed: _isCompleting ? null : _showCancelDialog,
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Colors.red),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
-                ),
+                        child: const Text('Cancel',
+                            style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  Expanded(
+                    flex: 3,
+                    child: ElevatedButton(
+                      onPressed: statusTappable ? (_isCompleting ? null : statusAction) : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: statusColor,
+                        disabledBackgroundColor: statusColor,
+                        disabledForegroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: _isCompleting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : Text(
+                              statusLabel,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

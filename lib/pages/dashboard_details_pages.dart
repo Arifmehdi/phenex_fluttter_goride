@@ -313,69 +313,6 @@ class DocumentsScreen extends StatelessWidget {
   }
 }
 
-// ============== TRIP HISTORY SCREEN ==============
-class TripHistoryScreen extends StatelessWidget {
-  const TripHistoryScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final localeController = Get.find<LocaleController>();
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(localeController.get('Trip History', 'ট্রিপ হিস্ট্রি')),
-      ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: 5,
-        itemBuilder: (context, index) => Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Trip #102$index',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const Text(
-                      '৳ 450',
-                      style: TextStyle(
-                        color: Color(0xFF10713C),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                const Divider(),
-                const Text(
-                  'From: Dhaka Airport',
-                  style: TextStyle(fontSize: 13),
-                ),
-                const Text('To: Gulshan 2', style: TextStyle(fontSize: 13)),
-                const SizedBox(height: 8),
-                const Row(
-                  children: [
-                    Icon(Icons.calendar_today, size: 14, color: Colors.grey),
-                    SizedBox(width: 4),
-                    Text(
-                      '12 April 2026',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ============== MY VEHICLES SCREEN ==============
 class MyVehiclesScreen extends StatelessWidget {
   const MyVehiclesScreen({super.key});
