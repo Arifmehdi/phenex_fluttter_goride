@@ -1,0 +1,199 @@
+================================================================================
+ TODO.TXT — LINE-BY-LINE VERIFIED AGAINST ACTUAL CODE (not trusting checkmarks)
+ Checked: 2026-07-10
+ Same ✅ / empty as todo.txt — this file just explains WHY each one is
+ checked or not.
+================================================================================
+
+
+--------------------------------------------------------------------------------
+ PHASE 1
+--------------------------------------------------------------------------------
+ 01. Driver Online/Offline Toggle ✅
+ 02. Incoming Ride Requests ✅
+ 03. Active Ride Screen ✅
+ 04. Navigation to Rider ✅
+     Driver gets a "Go to the passenger" screen with a NAVIGATE button that
+     opens Google Maps turn-by-turn navigation to the pickup point.
+ 05. Ride Status Update ✅
+ 06. Firebase Push Notification Setup
+     Code is written correctly, but the required key file (Firebase
+     service-account.json) was never installed on the server, so no push
+     notification can actually be sent right now. Will work the moment the
+     key file is added (see WHATS_MISSING.txt).
+ 07. Ride Request Push
+     Same missing-key issue as #6. NOTE: while the app is OPEN, ride
+     requests still arrive fine via a separate real-time connection
+     (Firestore) — only the "notify while phone is locked/app closed"
+     part is broken.
+ 08. Ride Status Push
+     Same as #6/#7.
+ 09. Payment Method Selection ✅
+     Cash, Wallet, and Card all work. (bKash/Nagad is a separate, planned
+     addition — not part of what this item asked for.)
+ 10. set all taken api
+     Too vague a task name to verify meaningfully — skipped either way.
+ 11. SSLCommerz Flutter Integration ( Dummy account) ✅
+     Works, using the sandbox/test account as the item itself already says.
+ 12. Cash Payment Flow ✅
+ 13. Ride History API Integration ✅
+ 14. Ride Cancellation Flow ✅
+ 15. Error Handling ✅
+ 16. API Models ✅
+ 17. GetX State Management Refactor ✅
+
+--------------------------------------------------------------------------------
+ PHASE 2
+--------------------------------------------------------------------------------
+ 18. Fare Estimation ✅
+ 19. Rate Driver ✅
+ 20. Wallet ✅
+     Balance, top-up, and transaction history are all wired to the real API.
+ 21. Wallet Payment ✅
+     Paying a ride fare from wallet balance works.
+ 22. Promo Code ✅
+     For a passenger entering/applying a code. (Creating/editing codes as
+     an admin is a separate item — #50, still missing.)
+ 23. Promotions/Banners ✅
+     For a passenger seeing banners on the home screen. (Adding/removing
+     banners as an admin is a separate item — #51, still missing.)
+ 24. Driver Earnings ✅
+ 25. Driver Trip History ✅
+ 26. Payment Confirmation Push
+     Same missing FCM key-file issue as #6/#7/#8.
+ 27. Payment Receipt/Invoice ✅
+     PDF receipt generation works.
+
+--------------------------------------------------------------------------------
+ PHASE 3
+--------------------------------------------------------------------------------
+ 28. Rate Rider ✅
+ 29. Driver Document Upload ✅
+ 30. Vehicle Management
+     The admin "Vehicle Management" screen shows 3 hardcoded sample cars;
+     tapping anything does nothing.
+ 31. Driver Stats Dashboard ✅
+ 32. Driver Verification Status ✅
+ 33. Alerts ✅
+
+--------------------------------------------------------------------------------
+ PHASE 4
+--------------------------------------------------------------------------------
+ 34. Saved Addresses
+     The app screen and API code are correct, but the database table for
+     it was never created on the server — it will error the moment someone
+     tries to save an address. One migration away from working (see
+     WHATS_MISSING.txt item B1).
+ 35. Profile ✅
+ 36. Change Password ✅
+ 37. Forgot Password ✅
+ 38. Notifications Screen ✅
+ 39. Help Center , Terms & Privacy
+     "Help Center" is real now (Support Tickets screen, sidebar > Help &
+     Support). "Terms & Privacy" pages do not exist anywhere in the app.
+ 40. About Screen ✅
+
+--------------------------------------------------------------------------------
+ PHASE 5
+--------------------------------------------------------------------------------
+ 41. Driver Chat ✅
+ 42. Real-Time Chat UI ✅
+ 43. Deep Linking ✅
+
+--------------------------------------------------------------------------------
+ PHASE 6 — Admin panel (BIGGEST GAP FOUND — read this section carefully)
+--------------------------------------------------------------------------------
+ 44. User Management
+     Hardcoded 5 sample users; "Approve/Suspend/Delete" buttons are
+     literally empty and do nothing when tapped. No connection to the real
+     user database at all.
+ 45. Driver Management
+     A real driver approve/verify system exists, but ONLY on the
+     browser-based admin panel (not in the app). Inside the app, drivers
+     just show up mixed into the fake User Management screen above (its
+     "Riders" tab).
+ 46. Vehicle Management
+     Same screen as #30, duplicate entry in your list — confirmed
+     hardcoded mockup.
+ 47. Live Ride Monitoring
+     The API that gives a live feed of all ongoing rides across the whole
+     platform is built and tested, but no screen in the app displays it yet.
+ 48. Revenue Dashboard
+     A real revenue/report API exists; the admin dashboard's summary
+     numbers ("Total Users: 1,250", "Revenue: ৳45k", etc.) are hardcoded
+     sample text for Owner, Corporate, AND Admin roles. (Only the Driver's
+     own stats cards are real.)
+ 49. Support Tickets
+     The passenger/driver side (create a ticket, view my tickets, reply) is
+     real and works. The ADMIN's ticket-management screen in the app is a
+     separate, hardcoded mockup (5 fake tickets, "Reply & Resolve" button
+     does nothing) — admin can only manage tickets via a direct API call today.
+ 50. Promo Management
+     No admin screen anywhere to create/edit a promo code; someone has to
+     insert database rows directly right now.
+ 51. Banner Management
+     Same issue as #50, for banners.
+ 52. Pricing Settings
+     Base fare / per-km rate CAN be changed, but only through a generic old
+     settings form on the browser admin panel (leftover from the original
+     template this project was built on) — not a ride-share-specific
+     screen, and not in the app at all. Surge/dynamic pricing has a real
+     backend (create zones, set multipliers) but zero UI on either side to
+     manage it.
+ 53. Reports & Analytics
+     Real report APIs exist (revenue, rides, top drivers, date filters).
+     The app's screen shows 100% fake numbers ("156 daily trips", "+12%
+     growth" hardcoded) and its "Export Report" button does nothing.
+ 54. System Settings
+     "Maintenance Mode", "Registration Open", "Commission Rate: 15%" etc.
+     are local on/off switches with no save button and no server
+     connection — flipping them changes nothing real, and refreshing the
+     app resets them.
+
+--------------------------------------------------------------------------------
+ PHASE 7 — Enterprise (marked "post-launch" in your list — confirmed accurate)
+--------------------------------------------------------------------------------
+ 55. Owner Module
+     The fleet list and earnings breakdown are real and wired to the API.
+     The dashboard's TOP summary cards ("Total Cars: 3", "Revenue: ৳45k")
+     are still hardcoded.
+ 56. Corporate Module
+     The billing-due alert is real; top summary cards are fake; and there
+     is no screen in the app to actually book a ride for an employee (the
+     API for it is fully built and ready).
+ 57. Membership/Tier
+     Not built on either side.
+ 58. Rewards/Points
+     A referral program (invite a friend, both get ৳50) is fully built on
+     the backend with zero UI on either side yet. No generic points/
+     loyalty-tier system exists at all.
+ 59. Pay Later
+     Not built on either side.
+ 60. Split Payment
+     Not built on either side.
+ 61. Driver Payout System
+     Fully built and tested (auto-calculates what's owed, pays to driver
+     wallet, exports CSV), but there is no screen in the app for an admin
+     to use it. Only reachable by calling the API directly right now.
+
+
+--------------------------------------------------------------------------------
+ THE HONEST SUMMARY
+--------------------------------------------------------------------------------
+ PASSENGER + DRIVER core experience (Phases 1-5): genuinely solid. Nearly
+ everything checked is real and working — this is the part that makes it
+ an actual working ride-share app today. The only real gap here is push
+ notifications not firing yet because one config file is missing on the
+ server (quick fix once you have the Firebase key — see WHATS_MISSING.txt).
+
+ ADMIN PANEL INSIDE THE APP (Phase 6, plus the top halves of the Owner/
+ Corporate dashboards in Phase 7): mostly a VISUAL PROTOTYPE. It looks
+ complete in a screenshot — nice cards, tables, buttons — but most of it
+ is not connected to the real database. This was not obvious from
+ checkmarks alone, which is why this line-by-line check mattered.
+
+ The good news: for most of Phase 6, the hard part (the backend API) is
+ ALREADY DONE and tested. What's missing is wiring the existing screens to
+ call the existing APIs instead of showing sample data — faster to fix
+ than building from scratch.
+================================================================================

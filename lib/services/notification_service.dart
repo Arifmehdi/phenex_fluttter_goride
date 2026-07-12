@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -12,6 +13,15 @@ import 'package:goride/pages/ride_request_call_screen.dart';
 /// so the driver's phone rings even when the app is closed.
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // This runs in a separate background isolate with no Firebase context, so
+  // initialize it here (safe to call if already initialized) before doing
+  // anything Firebase-related.
+  try {
+    await Firebase.initializeApp();
+  } catch (_) {
+    // Already initialized in this isolate — ignore.
+  }
+
   final data = message.data;
   final type = data['type'] ?? '';
 
@@ -153,7 +163,11 @@ class NotificationService {
         AndroidFlutterLocalNotificationsPlugin>();
     await androidPlugin?.createNotificationChannel(rideChannel);
     await androidPlugin?.createNotificationChannel(statusChannel);
-    await androidPlugin?.requestNotificationsPermission();
+    // Notification permission is already requested once above via
+    // _fcm.requestPermission() — don't ask again here (that caused repeat
+    // popups). The Android 14+ full-screen-intent access is requested only
+    // when a driver goes online (see primeDriverPermissions), since only
+    // drivers need the lock-screen ride-call ring.
 
     // 5. Foreground FCM → show the incoming call screen directly
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);

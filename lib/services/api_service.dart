@@ -37,6 +37,16 @@ class ApiService extends g.GetxController {
         return '$_ngrokUrl/api/';
     }
   }
+
+  /// Absolute URL for a server-stored file path (e.g. 'images/profile/x.jpg').
+  /// Older API responses (login) return the raw storage path — NetworkImage
+  /// needs the full '{host}/storage/{path}' form. Full URLs pass through.
+  static String? fileUrl(String? path) {
+    if (path == null || path.isEmpty) return null;
+    if (path.startsWith('http')) return path;
+    final root = baseUrl.replaceFirst(RegExp(r'/api/?$'), '');
+    return '$root/storage/${path.replaceFirst(RegExp(r'^/'), '')}';
+  }
   
   final Dio _dio = Dio(BaseOptions(
     baseUrl: baseUrl,

@@ -510,6 +510,13 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
     // the app is in the background or just reopened.
     GetStorage().write('driver_online', online);
 
+    // Ask for the driver-only background permissions the first time they go
+    // online (background location, battery exemption, lock-screen calls) —
+    // this is why riders never see those popups.
+    if (online) {
+      await primeDriverPermissions();
+    }
+
     final vehicleType = user?['vehicle_type']?.toString().toLowerCase();
 
     // Synchronize online status to Laravel MySQL database

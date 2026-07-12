@@ -1,0 +1,84 @@
+Feature  ( Phase -1 )
+--------------------------------
+01. Driver Online/Offline Toggle  ✅
+02. Incoming Ride Requests ✅
+03. Active Ride Screen ✅
+04. Navigation to Rider ✅
+05. Ride Status Update ✅
+06. Firebase Push Notification Setup
+07. Ride Request Push
+08. Ride Status Push
+09. Payment Method Selection ✅
+10. set all taken api
+11. SSLCommerz Flutter Integration ( Dummy account) ✅
+12. Cash Payment Flow ✅
+13. Ride History API Integration ✅
+14. Ride Cancellation Flow ✅
+15. Error Handling ✅
+16. API Models ✅
+17. GetX State Management Refactor ✅
+
+Feature  ( Phase -2 )
+-----------------------
+18. Fare Estimation ✅
+19. Rate Driver ✅
+20. Wallet ✅
+21. Wallet Payment ✅
+22. Promo Code ✅
+23. Promotions/Banners ✅
+24. Driver Earnings ✅
+25. Driver Trip History ✅
+26. Payment Confirmation Push
+27. Payment Receipt/Invoice ✅
+
+
+Feature  ( Phase -3)
+-----------------------
+28. Rate Rider ✅
+29. Driver Document Upload ✅
+30. Vehicle Management
+31. Driver Stats Dashboard ✅
+32. Driver Verification Status ✅
+33. Alerts ✅
+
+
+Feature  ( Phase -4)
+------------------------------
+34. Saved Addresses
+35. Profile ✅
+36. Change Password ✅
+37. Forgot Password ✅
+38. Notifications Screen ✅
+39. Help Center , Terms & Privacy
+40. About Screen ✅
+
+Feature  ( Phase -5)
+-------------------------------
+41. Driver Chat ✅
+42. Real-Time Chat UI ✅
+43. Deep Linking ✅
+
+Feature  ( Phase -6)
+-------------------------------
+44. User Management
+45. Driver Management
+46. Vehicle Management
+47. Live Ride Monitoring
+48. Revenue Dashboard
+49. Support Tickets
+50. Promo Management
+51. Banner Management
+52. Pricing Settings
+53. Reports & Analytics
+54. System Settings
+
+Feature  ( Phase -7)
+Enterprise Features (Post Launch)
+-------- ------ --------------------
+55. Owner Module
+56. Corporate Module
+57. Membership/Tier
+58. Rewards/Points
+59. Pay Later
+60. Split Payment
+61. Driver Payout System

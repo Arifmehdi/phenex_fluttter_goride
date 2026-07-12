@@ -43,7 +43,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _bloodGroup    = TextEditingController(text: user['blood_group'] ?? '');
     _emergencyName  = TextEditingController(text: user['emergency_contact_name'] ?? '');
     _emergencyPhone = TextEditingController(text: user['emergency_contact_phone'] ?? '');
-    _existingImageUrl = user['image'] as String?;
+    // Users store their photo in 'image'; drivers in 'profile_image'.
+    // Normalize to a full URL — login responses hold the raw storage path.
+    _existingImageUrl =
+        ApiService.fileUrl((user['image'] ?? user['profile_image']) as String?);
   }
 
   @override
@@ -90,9 +93,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       }
 
       if (res.statusCode == 200) {
-        // Refresh local storage with new user data
-        final updated = res.data is Map ? res.data : res.data['data'];
-        if (updated != null) await _api.refreshUser(updated as Map<String, dynamic>);
+        // Refresh local storage with the updated user. The payload arrives
+        // wrapped ({user: {...}} / {data: {...}}) — unwrap it; merging the
+        // wrapper itself would leave the stored profile unchanged, making
+        // the save look like it silently failed.
+        final body = res.data;
+        final updated = (body is Map && body['user'] is Map)
+            ? body['user']
+            : (body is Map && body['data'] is Map)
+                ? body['data']
+                : null;
+        if (updated != null) {
+          await _api.refreshUser(Map<String, dynamic>.from(updated as Map));
+        }
         Get.back(result: true);
         Get.snackbar('Saved', 'Profile updated successfully.',
             backgroundColor: const Color(0xFF10713C), colorText: Colors.white);

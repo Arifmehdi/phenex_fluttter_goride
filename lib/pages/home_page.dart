@@ -11,6 +11,8 @@ import 'quick_action_screens.dart';
 import 'location_selection_screen.dart';
 import 'rent_car_booking_screen.dart';
 import 'dashboard_page.dart';
+import 'dashboard_details_pages.dart' show EditProfileScreen;
+import 'my_support_tickets_screen.dart';
 import '../main.dart' show GoRideApp, SplashScreen;
 import 'register_screen.dart';
 import 'login_page.dart';
@@ -567,6 +569,8 @@ class _HomePageState extends State<HomePage> {
     final user = apiService.getUser();
     final name = user?['name'] ?? 'Guest User';
     final mobile = user?['mobile'] ?? user?['email'] ?? '';
+    final photoUrl =
+        ApiService.fileUrl((user?['image'] ?? user?['profile_image']) as String?);
 
     return SingleChildScrollView(
       child: Padding(
@@ -587,18 +591,14 @@ class _HomePageState extends State<HomePage> {
               ),
               child: Row(
                 children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF10713C),
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    child: const Icon(
-                      Icons.person,
-                      color: Colors.white,
-                      size: 40,
-                    ),
+                  CircleAvatar(
+                    radius: 30,
+                    backgroundColor: const Color(0xFF10713C),
+                    backgroundImage:
+                        photoUrl != null ? NetworkImage(photoUrl) : null,
+                    child: photoUrl == null
+                        ? const Icon(Icons.person, color: Colors.white, size: 40)
+                        : null,
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -627,13 +627,18 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
             const SizedBox(height: 24),
-            _buildAccountMenuItem(Icons.edit, 'Edit Profile', () {}),
+            _buildAccountMenuItem(Icons.edit, 'Edit Profile', () async {
+              await Get.to(() => const EditProfileScreen());
+              // Re-read the stored user so the name/phone header above
+              // reflects the save immediately.
+              if (mounted) setState(() {});
+            }),
             _buildAccountMenuItem(Icons.lock_outline, 'Change Password', () {
               Get.toNamed('/change-password');
             }),
-            _buildAccountMenuItem(Icons.payment, 'Payment Methods', () {}),
-            _buildAccountMenuItem(Icons.settings, 'Settings', () {}),
-            _buildAccountMenuItem(Icons.help, 'Help & Support', () {}),
+            _buildAccountMenuItem(Icons.help, 'Help & Support', () {
+              Get.to(() => const MySupportTicketsScreen());
+            }),
             _buildAccountMenuItem(Icons.logout, 'Logout', () async {
               final apiService = Get.find<ApiService>();
               await apiService.logout();
