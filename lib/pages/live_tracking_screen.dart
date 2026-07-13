@@ -722,6 +722,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
             const SizedBox(height: 20),
             _payOption(ctx, 'cash', Icons.money, 'Cash', 'Pay driver directly'),
             const SizedBox(height: 10),
+            _payOption(ctx, 'wallet', Icons.account_balance_wallet, 'Wallet', 'Pay from your GoRide balance'),
+            const SizedBox(height: 10),
             _payOption(ctx, 'sslcommerz', Icons.credit_card, 'Card / Mobile Banking', 'SSLCommerz secure payment'),
           ],
         ),
@@ -729,6 +731,11 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     );
 
     if (choice == null || !mounted) return;
+
+    if (choice == 'wallet') {
+      await _payWithWallet();
+      return;
+    }
 
     if (choice == 'cash') {
       // Rider hands over cash directly — this signals the driver (who is
@@ -780,6 +787,47 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _payWithWallet() async {
+    setState(() => _isCompleting = true);
+    final api = Get.find<ApiService>();
+    final rideId = await _rideService.resolveRideId();
+    if (rideId <= 0) {
+      if (mounted) {
+        setState(() => _isCompleting = false);
+        Get.snackbar('Error', 'Could not identify the ride. Please use Cash or Card.',
+            backgroundColor: Colors.red, colorText: Colors.white);
+      }
+      return;
+    }
+    try {
+      final res = await api.payRideWithWallet(rideId, widget.price);
+      final ok = res.statusCode == 200 &&
+          (res.data is Map && res.data['success'] == true);
+      if (ok) {
+        // payRideWithWallet already debited the wallet, marked the ride paid,
+        // and credited the driver. Sync Firestore + reactive state, then close.
+        await _rideService.markPaymentPaid('wallet');
+        if (mounted) await _showRatingSheet();
+        _rideService.resetTrip();
+        if (mounted) Get.back();
+      } else {
+        final msg = (res.data is Map ? res.data['message'] : null) ??
+            'Wallet payment failed';
+        if (mounted) {
+          setState(() => _isCompleting = false);
+          Get.snackbar('Payment failed', msg.toString(),
+              backgroundColor: Colors.red, colorText: Colors.white);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isCompleting = false);
+        Get.snackbar('Error', 'Wallet payment failed. Please try again.',
+            backgroundColor: Colors.red, colorText: Colors.white);
+      }
+    }
   }
 
   Future<void> _payWithSSLCommerz() async {

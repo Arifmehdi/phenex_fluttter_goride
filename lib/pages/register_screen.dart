@@ -36,7 +36,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedRole = widget.selectedRole ?? 'solo';
+    // Default to the Passenger tab (its value is 'user') so it's selected AND
+    // highlighted when the screen opens. 'solo' showed the passenger form but
+    // left no tab highlighted, since the Passenger tab checks for 'user'.
+    _selectedRole = widget.selectedRole ?? 'user';
   }
 
   Future<void> _register() async {

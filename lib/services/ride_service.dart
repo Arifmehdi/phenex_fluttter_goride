@@ -368,12 +368,15 @@ class RideService extends GetxService {
         driverRating: driverRating,
       );
 
-      if (laravelRideId != null) {
-        this.laravelRideId.value = laravelRideId;
-        await _apiService.updateRideStatus(laravelRideId, 'accepted');
+      currentTripId.value = finalTripId;
+      if (laravelRideId != null) this.laravelRideId.value = laravelRideId;
+      // Resolve the ride id from the trip id if it wasn't passed, so the
+      // 'accepted' status reliably reaches Laravel (not just Firestore).
+      final acceptedRideId = await _ensureLaravelRideId();
+      if (acceptedRideId > 0) {
+        await _apiService.updateRideStatus(acceptedRideId, 'accepted');
       }
 
-      currentTripId.value = finalTripId;
       assignedDriverId.value = driverId;
       assignedDriverName.value = driverName;
       assignedDriverPhone.value = driverPhone;
@@ -390,12 +393,28 @@ class RideService extends GetxService {
     }
   }
 
+  /// Make sure we hold the Laravel ride id. If the real-time (Firestore)
+  /// accept handshake never captured it, resolve it from the trip id so
+  /// status/payment still reach Laravel (otherwise the ride stays 'pending'
+  /// forever and the driver never earns).
+  Future<int> _ensureLaravelRideId() async {
+    if (laravelRideId.value > 0) return laravelRideId.value;
+    if (currentTripId.value.isNotEmpty) {
+      final id = await _apiService.resolveLaravelRideId(currentTripId.value);
+      if (id != null && id > 0) laravelRideId.value = id;
+    }
+    return laravelRideId.value;
+  }
+
+  /// Public: resolve & return the Laravel ride id (needed for wallet payment).
+  Future<int> resolveRideId() => _ensureLaravelRideId();
+
   /// Update trip status (driver)
   Future<void> updateStatus(String status, {int? laravelRideId}) async {
     if (currentTripId.value.isEmpty) return;
     await _firebaseService.updateTripStatus(currentTripId.value, status);
-    
-    final finalLaravelId = laravelRideId ?? this.laravelRideId.value;
+
+    final finalLaravelId = laravelRideId ?? await _ensureLaravelRideId();
     if (finalLaravelId > 0) {
       await _apiService.updateRideStatus(finalLaravelId, status);
     }
@@ -410,12 +429,30 @@ class RideService extends GetxService {
   Future<void> markPaymentPaid(String method) async {
     paymentStatus.value = 'paid';
     paymentMethod.value = method;
+
+    // 1. Real-time signal to the driver's app (unblocks their rating prompt).
     if (currentTripId.value.isNotEmpty) {
       try {
         await _firebaseService.updateTripPaymentStatus(currentTripId.value, 'paid', method);
       } catch (e) {
-        debugPrint('Warning: could not sync payment status: $e');
+        debugPrint('Warning: could not sync payment status to Firestore: $e');
       }
+    }
+
+    // 2. Persist to Laravel directly from the passenger so the ride is marked
+    //    paid immediately — this is what triggers the driver's earnings, and
+    //    it no longer depends on the driver's app being open to relay it.
+    //    Resolve the ride id from the trip id first if we don't already have it.
+    try {
+      final rideId = await _ensureLaravelRideId();
+      if (rideId > 0) {
+        await _apiService.updateRidePayment(rideId, {
+          'payment_status': 'paid',
+          'payment_method': method,
+        });
+      }
+    } catch (e) {
+      debugPrint('Warning: could not persist payment to Laravel: $e');
     }
   }
 

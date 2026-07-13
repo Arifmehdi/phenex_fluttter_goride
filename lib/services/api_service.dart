@@ -436,6 +436,45 @@ class ApiService extends g.GetxController {
   }
 
   /// Get ride history for the current user
+  /// Downloads the ride receipt PDF (authenticated) and returns its bytes.
+  Future<List<int>?> downloadReceiptBytes(int rideId) async {
+    try {
+      final res = await _dio.get(
+        '/ride-requests/$rideId/receipt',
+        options: Options(responseType: ResponseType.bytes),
+      );
+      if (res.statusCode == 200 && res.data != null) {
+        return List<int>.from(res.data as List);
+      }
+    } catch (e) {
+      debugPrint('downloadReceiptBytes failed: $e');
+    }
+    return null;
+  }
+
+  /// Resolve the Laravel ride id from a Firestore trip id (used to reliably
+  /// sync status/payment even if the numeric id wasn't captured on accept).
+  Future<int?> resolveLaravelRideId(String firebaseTripId) async {
+    try {
+      final res = await _dio.get('/trips/$firebaseTripId/resolve');
+      if (res.statusCode == 200 && res.data is Map && res.data['ride_id'] != null) {
+        return (res.data['ride_id'] as num).toInt();
+      }
+    } catch (e) {
+      debugPrint('resolveLaravelRideId failed: $e');
+    }
+    return null;
+  }
+
+  /// Aggregated dashboard stats for the current passenger (trips, spend, wallet).
+  Future<Response> getRiderStats() async {
+    try {
+      return await _dio.get('/rider/stats');
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500, statusMessage: 'Unknown Error');
+    }
+  }
+
   Future<Response> getRideHistory({String? status, int perPage = 20}) async {
     try {
       final queryParams = <String, dynamic>{'per_page': perPage};

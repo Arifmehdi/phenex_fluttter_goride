@@ -5,6 +5,9 @@ import '../pages/home_page.dart';
 import '../pages/dashboard_details_pages.dart';
 import '../pages/my_support_tickets_screen.dart';
 import '../pages/ride_history_screen.dart';
+import '../pages/saved_addresses_screen.dart';
+import '../pages/legal_screen.dart';
+import '../pages/about_screen.dart';
 
 class SidebarMenu extends StatelessWidget {
   final String role;
@@ -20,60 +23,139 @@ class SidebarMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final ApiService apiService = Get.find<ApiService>();
     final user = apiService.getUser();
-    final name = user?['name'] ?? 'Guest User';
-    final mobile = user?['mobile'] ?? '';
+    final name = (user?['name'] ?? 'Guest User').toString();
+    final mobile = (user?['mobile'] ?? '').toString();
+    final photoUrl =
+        ApiService.fileUrl((user?['image'] ?? user?['profile_image']) as String?);
 
     return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
+      child: Column(
         children: [
-          UserAccountsDrawerHeader(
-            decoration: const BoxDecoration(
-              color: Color(0xFF10713C),
+          // Scrollable menu area
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                // Header: avatar on the left, name + phone stacked beside it.
+                Container(
+                  color: const Color(0xFF10713C),
+                  child: SafeArea(
+                    bottom: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 30,
+                            backgroundColor: Colors.white,
+                            backgroundImage:
+                                photoUrl != null ? NetworkImage(photoUrl) : null,
+                            child: photoUrl == null
+                                ? const Icon(Icons.person,
+                                    size: 34, color: Color(0xFF10713C))
+                                : null,
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                if (mobile.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    mobile,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        color: Colors.white70, fontSize: 13),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.public, color: Color(0xFF10713C)),
+                  title: const Text('Main Portal'),
+                  onTap: () {
+                    Get.offAll(() => HomePage());
+                  },
+                ),
+                const Divider(),
+                ..._buildRoleSpecificMenus(context),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.lock_outline, color: Color(0xFF10713C)),
+                  title: const Text('Change Password'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Get.toNamed('/change-password');
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.help, color: Colors.grey),
+                  title: const Text('Help & Support'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Get.to(() => const MySupportTicketsScreen());
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.description_outlined, color: Colors.grey),
+                  title: const Text('Terms of Service'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Get.to(() => LegalScreen.terms());
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.privacy_tip_outlined, color: Colors.grey),
+                  title: const Text('Privacy Policy'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Get.to(() => LegalScreen.privacy());
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.info_outline, color: Colors.grey),
+                  title: const Text('About'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Get.to(() => const AboutScreen());
+                  },
+                ),
+              ],
             ),
-            currentAccountPicture: const CircleAvatar(
-              backgroundColor: Colors.white,
-              child: Icon(Icons.person, size: 40, color: Color(0xFF10713C)),
+          ),
+
+          // Logout pinned to the bottom (always visible, clears the system nav bar)
+          const Divider(height: 1),
+          SafeArea(
+            top: false,
+            child: ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Logout',
+                  style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+              onTap: () async {
+                await apiService.logout();
+                Get.offAllNamed('/');
+              },
             ),
-            accountName: Text(
-              name,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            accountEmail: Text(mobile),
-          ),
-          ListTile(
-            leading: const Icon(Icons.public, color: Color(0xFF10713C)),
-            title: const Text('Main Portal'),
-            onTap: () {
-              Get.offAll(() => HomePage());
-            },
-          ),
-          const Divider(),
-          ..._buildRoleSpecificMenus(context),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.lock_outline, color: Color(0xFF10713C)),
-            title: const Text('Change Password'),
-            onTap: () {
-              Navigator.pop(context);
-              Get.toNamed('/change-password');
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.help, color: Colors.grey),
-            title: const Text('Help & Support'),
-            onTap: () {
-              Navigator.pop(context);
-              Get.to(() => const MySupportTicketsScreen());
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Logout'),
-            onTap: () async {
-              await apiService.logout();
-              Get.offAllNamed('/');
-            },
           ),
         ],
       ),
@@ -170,7 +252,8 @@ class SidebarMenu extends StatelessWidget {
             Get.to(() => const ReportsAnalyticsScreen());
           }),
         ];
-      case 'solo': // Rider
+      case 'solo': // passenger / customer
+      case 'user':
         return [
           _menuItem(Icons.home, 'Home', () {
             Navigator.pop(context);
@@ -178,15 +261,11 @@ class SidebarMenu extends StatelessWidget {
           }),
           _menuItem(Icons.history, 'My Trips', () {
             Navigator.pop(context);
-            onSelectedIndexChanged?.call(1);
+            Get.to(() => const RideHistoryScreen());
           }),
-          _menuItem(Icons.payment, 'Payments', () {
+          _menuItem(Icons.bookmark_border, 'Saved Places', () {
             Navigator.pop(context);
-            // Handle Payments
-          }),
-          _menuItem(Icons.card_giftcard, 'Promos', () {
-            Navigator.pop(context);
-            // Handle Promos
+            Get.to(() => const SavedAddressesScreen());
           }),
         ];
       default:

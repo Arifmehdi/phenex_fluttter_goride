@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:share_plus/share_plus.dart';
 import '../services/api_service.dart';
 import '../utils/num_utils.dart';
 
@@ -185,28 +187,110 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
   }
 
   void _showRideDetail(dynamic ride) {
+    final isCompleted = (ride['status'] ?? '') == 'completed';
     Get.bottomSheet(
-      Container(
-        padding: const EdgeInsets.all(20),
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)))),
-          const SizedBox(height: 20),
-          const Text('Ride Details', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          _detailRow('Status', ride['status'] ?? ''),
-          _detailRow('Pickup', ride['pickup_address'] ?? ''),
-          _detailRow('Destination', ride['destination_address'] ?? ''),
-          _detailRow('Fare', '\u09F3' + parseApiDouble(ride['actual_fare'] ?? ride['fare']).toStringAsFixed(0)),
-          _detailRow('Payment', ride['payment_status'] ?? 'N/A'),
-          if (ride['distance_km'] != null) _detailRow('Distance', ride['distance_km'].toString() + ' km'),
-          if (ride['duration_minutes'] != null) _detailRow('Duration', ride['duration_minutes'].toString() + ' min'),
-          if (ride['cancelled_by'] != null) _detailRow('Cancelled by', ride['cancelled_by']),
-          const SizedBox(height: 16),
-          SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () => Get.back(), style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white), child: const Text('Close'))),
-        ]),
+      SafeArea(
+        child: Container(
+          // Cap the height and keep the action buttons pinned so the Close
+          // button is always visible/reachable on every screen size.
+          constraints: BoxConstraints(maxHeight: Get.height * 0.85),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text('Ride Details',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              // Details scroll if they're long \u2014 never pushes the buttons off.
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _detailRow('Status', ride['status'] ?? ''),
+                      _detailRow('Pickup', ride['pickup_address'] ?? ''),
+                      _detailRow('Destination', ride['destination_address'] ?? ''),
+                      _detailRow('Fare', '\u09F3' + parseApiDouble(ride['actual_fare'] ?? ride['fare']).toStringAsFixed(0)),
+                      _detailRow('Payment', ride['payment_status'] ?? 'N/A'),
+                      if (ride['distance_km'] != null) _detailRow('Distance', ride['distance_km'].toString() + ' km'),
+                      if (ride['duration_minutes'] != null) _detailRow('Duration', ride['duration_minutes'].toString() + ' min'),
+                      if (ride['cancelled_by'] != null) _detailRow('Cancelled by', ride['cancelled_by']),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (isCompleted && ride['id'] != null) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _downloadReceipt(ride['id']),
+                    icon: const Icon(Icons.receipt_long, size: 18),
+                    label: const Text('Download Receipt (PDF)'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF10713C),
+                      side: const BorderSide(color: Color(0xFF10713C)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Get.back(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
+      isScrollControlled: true,
     );
+  }
+
+  Future<void> _downloadReceipt(dynamic rideIdRaw) async {
+    final rideId = rideIdRaw is num ? rideIdRaw.toInt() : int.tryParse('$rideIdRaw');
+    if (rideId == null) return;
+
+    Get.snackbar('Receipt', 'Preparing your receipt…',
+        duration: const Duration(seconds: 1));
+    final bytes = await _apiService.downloadReceiptBytes(rideId);
+    if (bytes == null) {
+      Get.snackbar('Receipt', 'Could not generate the receipt. Please try again.',
+          backgroundColor: Colors.red, colorText: Colors.white);
+      return;
+    }
+    try {
+      final path = '${Directory.systemTemp.path}/goride_receipt_$rideId.pdf';
+      final file = File(path);
+      await file.writeAsBytes(bytes, flush: true);
+      await Share.shareXFiles([XFile(path)], subject: 'GoRide Receipt #$rideId');
+    } catch (e) {
+      Get.snackbar('Receipt', 'Could not open the receipt.',
+          backgroundColor: Colors.red, colorText: Colors.white);
+    }
   }
 
   Widget _detailRow(String label, String value) {

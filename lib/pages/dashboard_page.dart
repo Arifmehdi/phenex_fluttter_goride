@@ -45,6 +45,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
   bool _isOnline = true;
   int _selectedIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  bool _isDrawerOpen = false;
 
   // Profile completion tracking
   int _profileCompletionPercent = 0;
@@ -554,26 +555,32 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
   Widget build(BuildContext context) {
     return Obx(
       () => Scaffold(
-        key: _scaffoldKey,
         appBar: _buildAppBar(),
-        drawer: SidebarMenu(
-          role: widget.role,
-          onSelectedIndexChanged: (index) {
-            setState(() {
-              _selectedIndex = index;
-            });
+        // The drawer lives on this INNER Scaffold so it slides in BELOW the app
+        // bar (the outer Scaffold keeps the app bar / hamburger visible on top).
+        body: Scaffold(
+          key: _scaffoldKey,
+          onDrawerChanged: (isOpen) {
+            if (mounted) setState(() => _isDrawerOpen = isOpen);
           },
-        ),
-        body: IndexedStack(
-          index: _selectedIndex,
-          children: [
-            _buildHomeTab(),
-            _buildSecondaryTab(), // 'Bids' for Rider, 'Fleet' for Owner/Corporate/Admin
-            _buildEarningsTab(),
-            _buildProfileTab(),
-          ],
-        ),
-        bottomNavigationBar: BottomNavigationBar(
+          drawer: SidebarMenu(
+            role: widget.role,
+            onSelectedIndexChanged: (index) {
+              setState(() {
+                _selectedIndex = index;
+              });
+            },
+          ),
+          body: IndexedStack(
+            index: _selectedIndex,
+            children: [
+              _buildHomeTab(),
+              _buildSecondaryTab(), // 'Bids' for Rider, 'Fleet' for Owner/Corporate/Admin
+              _buildEarningsTab(),
+              _buildProfileTab(),
+            ],
+          ),
+          bottomNavigationBar: BottomNavigationBar(
           currentIndex: _selectedIndex + 1,
           type: BottomNavigationBarType.fixed,
           selectedItemColor: const Color(0xFF10713C),
@@ -618,6 +625,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
           ],
         ),
       ),
+      ),
     );
   }
 
@@ -635,15 +643,53 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
     if (widget.role == 'admin')
       title = localeController.get('Admin Dashboard', 'অ্যাডমিন ড্যাশবোর্ড');
 
+    final user = _apiService.getUser();
+    final name = (user?['name'] ?? title).toString();
+    final photoUrl =
+        ApiService.fileUrl((user?['image'] ?? user?['profile_image']) as String?);
+
     return AppBar(
       leading: IconButton(
-        icon: const Icon(Icons.menu),
-        onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+        // Toggle: open the drawer if closed, close it if open (icon flips to X).
+        icon: Icon(_isDrawerOpen ? Icons.close : Icons.menu),
+        onPressed: () {
+          final st = _scaffoldKey.currentState;
+          if (st == null) return;
+          if (st.isDrawerOpen) {
+            st.closeDrawer();
+          } else {
+            st.openDrawer();
+          }
+        },
       ),
-      title: Text(
-        title,
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-      ),
+      titleSpacing: 0,
+      // Hide the avatar + name while the drawer is open — it already shows them
+      // in its header, so no need to duplicate on the bar.
+      title: _isDrawerOpen
+          ? const SizedBox.shrink()
+          : Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: Colors.white,
+                  backgroundImage:
+                      photoUrl != null ? NetworkImage(photoUrl) : null,
+                  child: photoUrl == null
+                      ? const Icon(Icons.person, color: Color(0xFF10713C), size: 18)
+                      : null,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
       backgroundColor: const Color(0xFF10713C),
       actions: [
         if (widget.role == 'driver')

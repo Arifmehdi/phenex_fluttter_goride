@@ -13,10 +13,14 @@ import 'rent_car_booking_screen.dart';
 import 'dashboard_page.dart';
 import 'dashboard_details_pages.dart' show EditProfileScreen;
 import 'my_support_tickets_screen.dart';
+import 'ride_history_screen.dart';
+import 'saved_addresses_screen.dart';
 import '../main.dart' show GoRideApp, SplashScreen;
 import 'register_screen.dart';
 import 'login_page.dart';
+import 'notifications_screen.dart';
 import '../widgets/ongoing_ride_banner.dart';
+import '../widgets/customer_drawer.dart';
 import '../utils/notification_permission_prompt.dart';
 
 class HomePage extends StatefulWidget {
@@ -43,6 +47,15 @@ class _HomePageState extends State<HomePage> {
   double? _currentLng;
   bool _isRefreshingLocation = false;
   StreamSubscription<ServiceStatus>? _serviceStatusSubscription;
+
+  // Opens the passenger drawer from the Account (dashboard) tab's ☰ button.
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  bool _isDrawerOpen = false;
+
+  // Customer dashboard data (Account tab)
+  Map<String, dynamic>? _riderStats;
+  List<Map<String, dynamic>> _recentTrips = [];
+  bool _statsLoading = true;
 
   final List<ServiceItem> services = [
     ServiceItem(
@@ -79,6 +92,7 @@ class _HomePageState extends State<HomePage> {
     _startAutoScroll();
     _detectCurrentLocation();
     _loadBanners();
+    _loadRiderStats();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) primeNotificationPermissions(context);
     });
@@ -125,7 +139,17 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: _buildAppBar(),
-      body: IndexedStack(
+      // Inner Scaffold hosts the drawer so it opens BELOW the app bar, keeping
+      // the hamburger/app bar visible on top for the open/close toggle.
+      body: Scaffold(
+        key: _scaffoldKey,
+        onDrawerChanged: (isOpen) {
+          if (mounted) setState(() => _isDrawerOpen = isOpen);
+        },
+        drawer: CustomerDrawer(
+          onSelectTab: (index) => setState(() => _selectedIndex = index),
+        ),
+        body: IndexedStack(
         index: _selectedIndex,
         children: [
           _buildHomeTab(context),
@@ -195,16 +219,77 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
       ),
+      ),
     );
   }
 
   AppBar _buildAppBar() {
+    // Frontend browsing tabs (Home / Services / Activity): plain header — no
+    // hamburger, no profile. Stays exactly as before.
+    if (_selectedIndex != 3) {
+      return AppBar(
+        automaticallyImplyLeading: false,
+        title: const Text('GoRide'),
+        centerTitle: false,
+        elevation: 0,
+        actions: [
+          IconButton(icon: const Icon(Icons.notifications), onPressed: () {}),
+        ],
+      );
+    }
+
+    // Passenger dashboard (Account tab): hamburger + avatar + name + notification.
+    final user = Get.find<ApiService>().getUser();
+    final name = (user?['name'] ?? 'Guest User').toString();
+    final photoUrl =
+        ApiService.fileUrl((user?['image'] ?? user?['profile_image']) as String?);
+
     return AppBar(
-      title: const Text('GoRide'),
-      centerTitle: false,
+      leading: IconButton(
+        // Toggle: open the drawer if closed, close it if open (icon flips to X).
+        icon: Icon(_isDrawerOpen ? Icons.close : Icons.menu),
+        onPressed: () {
+          final st = _scaffoldKey.currentState;
+          if (st == null) return;
+          if (st.isDrawerOpen) {
+            st.closeDrawer();
+          } else {
+            st.openDrawer();
+          }
+        },
+      ),
+      titleSpacing: 0,
       elevation: 0,
+      // Hide the avatar + name while the drawer is open — it already shows them
+      // in its header.
+      title: _isDrawerOpen
+          ? const SizedBox.shrink()
+          : Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: Colors.white,
+                  backgroundImage:
+                      photoUrl != null ? NetworkImage(photoUrl) : null,
+                  child: photoUrl == null
+                      ? const Icon(Icons.person, color: Color(0xFF10713C), size: 18)
+                      : null,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
       actions: [
-        IconButton(icon: const Icon(Icons.notifications), onPressed: () {}),
+        IconButton(
+          icon: const Icon(Icons.notifications),
+          onPressed: () => Get.to(() => const NotificationsScreen()),
+        ),
       ],
     );
   }
@@ -564,117 +649,289 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildAccountTab(BuildContext context) {
-    final apiService = Get.find<ApiService>();
-    final user = apiService.getUser();
-    final name = user?['name'] ?? 'Guest User';
-    final mobile = user?['mobile'] ?? user?['email'] ?? '';
-    final photoUrl =
-        ApiService.fileUrl((user?['image'] ?? user?['profile_image']) as String?);
+  /// Loads the passenger's dashboard data (stats + recent trips). Guarded so a
+  /// slow/failed call can never leave the dashboard stuck on its spinner.
+  Future<void> _loadRiderStats() async {
+    final api = Get.find<ApiService>();
+    try {
+      try {
+        final res = await api.getRiderStats();
+        if (res.statusCode == 200 && res.data is Map) {
+          final data = (res.data['data'] as Map?)?.cast<String, dynamic>();
+          if (data != null && mounted) setState(() => _riderStats = data);
+        }
+      } catch (_) {/* show zeros */}
+      try {
+        final res = await api.getRideHistory(perPage: 3);
+        if (res.statusCode == 200 && res.data is Map) {
+          final list = res.data['data'] as List? ?? [];
+          final trips =
+              list.map((e) => (e as Map).cast<String, dynamic>()).toList();
+          if (mounted) setState(() => _recentTrips = trips);
+        }
+      } catch (_) {/* show empty */}
+    } finally {
+      if (mounted) setState(() => _statsLoading = false);
+    }
+  }
 
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
+  Widget _buildAccountTab(BuildContext context) {
+    final s = _riderStats;
+    String money(dynamic v) => '৳${((v ?? 0) as num).toStringAsFixed(0)}';
+    String count(dynamic v) => '${v ?? 0}';
+
+    return RefreshIndicator(
+      onRefresh: _loadRiderStats,
+      color: const Color(0xFF10713C),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
+        children: [
+          // ── Balance / trips summary banner ──
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF10713C), Color(0xFF1D9755)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Wallet Balance',
+                          style: TextStyle(color: Colors.white70, fontSize: 13)),
+                      const SizedBox(height: 4),
+                      Text(
+                        _statsLoading ? '…' : money(s?['wallet_balance']),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.account_balance_wallet_rounded,
+                      color: Colors.white, size: 30),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Stat mini-cards ──
+          Row(
+            children: [
+              _miniStat('Total Trips', _statsLoading ? '…' : count(s?['total_trips']),
+                  Icons.route_rounded, const Color(0xFF10713C)),
+              const SizedBox(width: 12),
+              _miniStat('Completed', _statsLoading ? '…' : count(s?['completed_trips']),
+                  Icons.check_circle_rounded, const Color(0xFF16A34A)),
+              const SizedBox(width: 12),
+              _miniStat('Spent', _statsLoading ? '…' : money(s?['total_spent']),
+                  Icons.payments_rounded, const Color(0xFFED1C24)),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // ── Quick actions grid ──
+          const Text('Quick Actions',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          GridView.count(
+            crossAxisCount: 4,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 0.85,
+            children: [
+              _quickAction(Icons.receipt_long_rounded, 'My Trips',
+                  () => Get.to(() => const RideHistoryScreen())),
+              _quickAction(Icons.bookmark_rounded, 'Saved',
+                  () => Get.to(() => const SavedAddressesScreen())),
+              _quickAction(Icons.card_giftcard_rounded, 'Rewards',
+                  () => Get.to(() => const PointsScreen())),
+              _quickAction(Icons.workspace_premium_rounded, 'Member',
+                  () => Get.to(() => const MembershipScreen())),
+              _quickAction(Icons.person_rounded, 'Profile', () async {
+                await Get.to(() => const EditProfileScreen());
+                if (mounted) setState(() {});
+              }),
+              _quickAction(Icons.lock_rounded, 'Password',
+                  () => Get.toNamed('/change-password')),
+              _quickAction(Icons.support_agent_rounded, 'Support',
+                  () => Get.to(() => const MySupportTicketsScreen())),
+              _quickAction(Icons.logout_rounded, 'Logout', () async {
+                await Get.find<ApiService>().logout();
+                Get.offAll(() => const SplashScreen());
+              }),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // ── Recent trips ──
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Recent Trips',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              TextButton(
+                onPressed: () => Get.to(() => const RideHistoryScreen()),
+                child: const Text('See all',
+                    style: TextStyle(color: Color(0xFF10713C))),
+              ),
+            ],
+          ),
+          if (_statsLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                  child: CircularProgressIndicator(color: Color(0xFF10713C))),
+            )
+          else if (_recentTrips.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.directions_car_outlined,
+                        size: 44, color: Colors.grey[400]),
+                    const SizedBox(height: 8),
+                    Text('No trips yet',
+                        style: TextStyle(color: Colors.grey[600])),
+                  ],
+                ),
+              ),
+            )
+          else
+            ..._recentTrips.map(_recentTripTile),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniStat(String label, String value, IconData icon, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+        ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Account',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey[300]!),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 30,
-                    backgroundColor: const Color(0xFF10713C),
-                    backgroundImage:
-                        photoUrl != null ? NetworkImage(photoUrl) : null,
-                    child: photoUrl == null
-                        ? const Icon(Icons.person, color: Colors.white, size: 40)
-                        : null,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          name,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          mobile,
-                          style: const TextStyle(fontSize: 12, color: Colors.grey),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            _buildAccountMenuItem(Icons.edit, 'Edit Profile', () async {
-              await Get.to(() => const EditProfileScreen());
-              // Re-read the stored user so the name/phone header above
-              // reflects the save immediately.
-              if (mounted) setState(() {});
-            }),
-            _buildAccountMenuItem(Icons.lock_outline, 'Change Password', () {
-              Get.toNamed('/change-password');
-            }),
-            _buildAccountMenuItem(Icons.help, 'Help & Support', () {
-              Get.to(() => const MySupportTicketsScreen());
-            }),
-            _buildAccountMenuItem(Icons.logout, 'Logout', () async {
-              final apiService = Get.find<ApiService>();
-              await apiService.logout();
-              Get.offAll(() => const SplashScreen());
-            }),          ],
+            Icon(icon, color: color, size: 22),
+            const SizedBox(height: 8),
+            Text(value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.bold, color: color)),
+            const SizedBox(height: 2),
+            Text(label,
+                style: TextStyle(fontSize: 11, color: Colors.grey[700])),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildAccountMenuItem(
-    IconData icon,
-    String label,
-    VoidCallback onTap,
-  ) {
-    return GestureDetector(
+  Widget _quickAction(IconData icon, String label, VoidCallback onTap) {
+    return InkWell(
       onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey[300]!),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: const Color(0xFF10713C)),
-            const SizedBox(width: 12),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      borderRadius: BorderRadius.circular(14),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: const Color(0xFF10713C).withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(14),
             ),
-            const Spacer(),
-            const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
-          ],
-        ),
+            child: Icon(icon, color: const Color(0xFF10713C), size: 24),
+          ),
+          const SizedBox(height: 6),
+          Text(label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+
+  Widget _recentTripTile(Map<String, dynamic> trip) {
+    final status = (trip['status'] ?? '').toString();
+    final dest = (trip['destination_address'] ?? 'Trip').toString();
+    final fare = trip['actual_fare'] ?? trip['fare'] ?? 0;
+    final isCancelled = status == 'cancelled';
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: (isCancelled ? Colors.red : const Color(0xFF10713C))
+                  .withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isCancelled ? Icons.cancel_rounded : Icons.check_circle_rounded,
+              color: isCancelled ? Colors.red : const Color(0xFF10713C),
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(dest,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 14)),
+                const SizedBox(height: 2),
+                Text(
+                    status.isEmpty
+                        ? ''
+                        : status[0].toUpperCase() + status.substring(1),
+                    style: TextStyle(
+                        fontSize: 11,
+                        color:
+                            isCancelled ? Colors.red : const Color(0xFF16A34A),
+                        fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+          Text('৳${(fare as num).toStringAsFixed(0)}',
+              style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                  color: Color(0xFF10713C))),
+        ],
       ),
     );
   }
