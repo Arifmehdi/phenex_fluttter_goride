@@ -8,6 +8,7 @@ import '../pages/ride_history_screen.dart';
 import '../pages/saved_addresses_screen.dart';
 import '../pages/legal_screen.dart';
 import '../pages/about_screen.dart';
+import '../pages/rewards_screen.dart';
 
 class SidebarMenu extends StatelessWidget {
   final String role;
@@ -107,6 +108,16 @@ class SidebarMenu extends StatelessWidget {
                     Get.toNamed('/change-password');
                   },
                 ),
+                // Rewards & referral — everyone except admins earns points/invites.
+                if (role != 'admin')
+                  ListTile(
+                    leading: const Icon(Icons.card_giftcard, color: Color(0xFF10713C)),
+                    title: const Text('Rewards & Invite'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Get.to(() => const RewardsScreen());
+                    },
+                  ),
                 ListTile(
                   leading: const Icon(Icons.help, color: Colors.grey),
                   title: const Text('Help & Support'),

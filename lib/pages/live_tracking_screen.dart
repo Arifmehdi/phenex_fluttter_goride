@@ -10,6 +10,7 @@ import '../services/routing_service.dart';
 import '../services/sslcommerz_service.dart';
 import '../services/api_service.dart';
 import '../utils/marker_utils.dart';
+import '../utils/num_utils.dart';
 import '../widgets/sos_helper.dart';
 import 'package:goride/pages/chat_conversation_list_screen.dart';
 import 'trip_chat_screen.dart';
@@ -724,6 +725,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
             const SizedBox(height: 10),
             _payOption(ctx, 'wallet', Icons.account_balance_wallet, 'Wallet', 'Pay from your GoRide balance'),
             const SizedBox(height: 10),
+            _payOption(ctx, 'split', Icons.call_split, 'Split (Wallet + Cash)', 'Use your balance, pay the rest in cash'),
+            const SizedBox(height: 10),
             _payOption(ctx, 'sslcommerz', Icons.credit_card, 'Card / Mobile Banking', 'SSLCommerz secure payment'),
           ],
         ),
@@ -734,6 +737,11 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
 
     if (choice == 'wallet') {
       await _payWithWallet();
+      return;
+    }
+
+    if (choice == 'split') {
+      await _paySplit();
       return;
     }
 
@@ -829,6 +837,111 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
       }
     }
   }
+
+  /// Split payment: use whatever wallet balance is available, driver
+  /// collects the remaining fare in cash. Common in Bangladesh apps where
+  /// riders keep a small wallet balance and top up with cash.
+  Future<void> _paySplit() async {
+    final api = Get.find<ApiService>();
+
+    // How much is in the wallet right now?
+    double balance = 0;
+    try {
+      final res = await api.getWalletBalance();
+      if (res.statusCode == 200 && res.data is Map) {
+        balance = parseApiDouble(res.data['balance']);
+      }
+    } catch (_) {}
+
+    if (balance <= 0) {
+      Get.snackbar('Empty wallet', 'Nothing to split — pay by Cash or top up first.',
+          backgroundColor: Colors.orange, colorText: Colors.white);
+      return;
+    }
+
+    final walletPart = balance >= widget.price ? widget.price : balance;
+    final cashPart = widget.price - walletPart;
+
+    // Confirm the split before charging.
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Split payment'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          _splitRow('From wallet', walletPart),
+          const SizedBox(height: 6),
+          _splitRow('Cash to driver', cashPart),
+          const Divider(height: 20),
+          _splitRow('Total', widget.price, bold: true),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10713C)),
+            child: const Text('Confirm', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _isCompleting = true);
+    final rideId = await _rideService.resolveRideId();
+    if (rideId <= 0) {
+      if (mounted) {
+        setState(() => _isCompleting = false);
+        Get.snackbar('Error', 'Could not identify the ride. Please use Cash.',
+            backgroundColor: Colors.red, colorText: Colors.white);
+      }
+      return;
+    }
+
+    try {
+      // Debit only the wallet portion; the driver collects the cash remainder.
+      if (walletPart > 0) {
+        final res = await api.payRideWithWallet(rideId, walletPart);
+        final ok = res.statusCode == 200 && res.data is Map && res.data['success'] == true;
+        if (!ok) {
+          if (mounted) {
+            setState(() => _isCompleting = false);
+            Get.snackbar('Payment failed',
+                (res.data is Map ? res.data['message'] : null)?.toString() ?? 'Wallet debit failed',
+                backgroundColor: Colors.red, colorText: Colors.white);
+          }
+          return;
+        }
+      }
+      await _rideService.markPaymentPaid('split');
+      if (mounted && cashPart > 0) {
+        Get.snackbar('Collect cash',
+            'Driver collects ৳${cashPart.toStringAsFixed(0)} in cash.',
+            backgroundColor: const Color(0xFF10713C), colorText: Colors.white);
+      }
+      if (mounted) await _showRatingSheet();
+      _rideService.resetTrip();
+      if (mounted) Get.back();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isCompleting = false);
+        Get.snackbar('Error', 'Split payment failed. Please try again.',
+            backgroundColor: Colors.red, colorText: Colors.white);
+      }
+    }
+  }
+
+  Widget _splitRow(String label, double amount, {bool bold = false}) => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.normal)),
+          Text('৳${amount.toStringAsFixed(0)}',
+              style: TextStyle(
+                  fontWeight: bold ? FontWeight.bold : FontWeight.w600,
+                  color: const Color(0xFF10713C))),
+        ],
+      );
 
   Future<void> _payWithSSLCommerz() async {
     setState(() => _isCompleting = true);

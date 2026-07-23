@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import '../services/places_service.dart';
 
@@ -13,6 +14,7 @@ import 'rent_car_booking_screen.dart';
 import 'dashboard_page.dart';
 import 'dashboard_details_pages.dart' show EditProfileScreen;
 import 'my_support_tickets_screen.dart';
+import 'rewards_screen.dart';
 import 'ride_history_screen.dart';
 import 'saved_addresses_screen.dart';
 import '../main.dart' show GoRideApp, SplashScreen;
@@ -34,6 +36,12 @@ class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
   late PageController _bannerPageController;
   int _currentBannerPage = 0;
+
+  /// Number of banner slides currently shown — DB banners when present,
+  /// otherwise the fallback assets. Auto-scroll and the PageView must use
+  /// this same value, never a hardcoded count.
+  int get _bannerCount =>
+      _apiBanners.isNotEmpty ? _apiBanners.length : _fallbackBanners.length;
   List<Map<String, dynamic>> _apiBanners = [];
   static const List<String> _fallbackBanners = [
     'assets/banner/banner_01.jpg',
@@ -124,12 +132,17 @@ class _HomePageState extends State<HomePage> {
   void _startAutoScroll() {
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted && _bannerPageController.hasClients) {
-        final nextPage = (_bannerPageController.page!.toInt() + 1) % 3;
-        _bannerPageController.animateToPage(
-          nextPage,
-          duration: const Duration(milliseconds: 500),
-          curve: Curves.easeInOut,
-        );
+        final count = _bannerCount;
+        // With 0/1 slides there is nothing to scroll — just keep the loop alive
+        // so it resumes if banners load later.
+        if (count > 1) {
+          final nextPage = (_bannerPageController.page!.round() + 1) % count;
+          _bannerPageController.animateToPage(
+            nextPage,
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeInOut,
+          );
+        }
         _startAutoScroll();
       }
     });
@@ -677,8 +690,11 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildAccountTab(BuildContext context) {
     final s = _riderStats;
-    String money(dynamic v) => '৳${((v ?? 0) as num).toStringAsFixed(0)}';
-    String count(dynamic v) => '${v ?? 0}';
+    // Robust parsing: the API may return numbers as strings ("170.00"), which
+    // would crash a raw `as num` cast and blank out the whole tab.
+    double num0(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    String money(dynamic v) => '৳${num0(v).toStringAsFixed(0)}';
+    String count(dynamic v) => v is num ? '${v.toInt()}' : '${double.tryParse('$v')?.toInt() ?? 0}';
 
     return RefreshIndicator(
       onRefresh: _loadRiderStats,
@@ -761,10 +777,12 @@ class _HomePageState extends State<HomePage> {
                   () => Get.to(() => const RideHistoryScreen())),
               _quickAction(Icons.bookmark_rounded, 'Saved',
                   () => Get.to(() => const SavedAddressesScreen())),
+              // Both point at the real Rewards screen (live points + tier +
+              // referral), not the old hardcoded Points/Membership mockups.
               _quickAction(Icons.card_giftcard_rounded, 'Rewards',
-                  () => Get.to(() => const PointsScreen())),
+                  () => Get.to(() => const RewardsScreen())),
               _quickAction(Icons.workspace_premium_rounded, 'Member',
-                  () => Get.to(() => const MembershipScreen())),
+                  () => Get.to(() => const RewardsScreen())),
               _quickAction(Icons.person_rounded, 'Profile', () async {
                 await Get.to(() => const EditProfileScreen());
                 if (mounted) setState(() {});
@@ -926,7 +944,7 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
-          Text('৳${(fare as num).toStringAsFixed(0)}',
+          Text('৳${(fare is num ? fare.toDouble() : double.tryParse('$fare') ?? 0).toStringAsFixed(0)}',
               style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 15,
@@ -1394,8 +1412,22 @@ class _HomePageState extends State<HomePage> {
     } catch (_) {}
   }
 
+  /// Open a banner's link. Full URLs launch in the browser; a bare path is
+  /// ignored gracefully (no crash) so bad admin input never breaks the home.
+  Future<void> _openBannerLink(String link) async {
+    final uri = Uri.tryParse(link);
+    if (uri == null || !(uri.hasScheme && (uri.isScheme('http') || uri.isScheme('https')))) {
+      return;
+    }
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {/* ignore launch failures */}
+  }
+
   Widget _buildBannerSlider() {
-    final int count = _apiBanners.isNotEmpty ? _apiBanners.length : _fallbackBanners.length;
+    final int count = _bannerCount;
 
     return Stack(
       children: [
@@ -1410,8 +1442,11 @@ class _HomePageState extends State<HomePage> {
             pageSnapping: true,
             itemBuilder: (context, index) {
               final isApi = _apiBanners.isNotEmpty;
-              final imageUrl = isApi ? (_apiBanners[index % count]['image_url'] as String?) ?? '' : '';
-              return Container(
+              // Safe parse — never crash on an unexpected type.
+              final banner = isApi ? _apiBanners[index % count] : null;
+              final imageUrl = banner?['image_url']?.toString() ?? '';
+              final link = banner?['link']?.toString() ?? '';
+              final card = Container(
                 margin: const EdgeInsets.only(right: 12),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
@@ -1422,6 +1457,7 @@ class _HomePageState extends State<HomePage> {
                   borderRadius: BorderRadius.circular(12),
                   child: isApi
                       ? Image.network(imageUrl, fit: BoxFit.cover,
+                          width: double.infinity,
                           errorBuilder: (_, __, ___) => Image.asset(
                               _fallbackBanners[index % _fallbackBanners.length], fit: BoxFit.cover))
                       : Image.asset(
@@ -1434,6 +1470,14 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
               );
+              // Only DB banners with a link are tappable.
+              if (isApi && link.isNotEmpty) {
+                return GestureDetector(
+                  onTap: () => _openBannerLink(link),
+                  child: card,
+                );
+              }
+              return card;
             },
           ),
         ),

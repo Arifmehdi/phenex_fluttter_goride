@@ -26,6 +26,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController =
       TextEditingController();
+  final TextEditingController _referralController = TextEditingController();
   final ApiService _apiService = Get.find<ApiService>();
   String? _errorMessage;
   late String _selectedRole;
@@ -98,6 +99,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     if (_selectedRole == 'driver' || _selectedRole == 'owner') {
       data['vehicle_type'] = _selectedVehicleType;
+    }
+
+    // Passengers can enter a friend's referral code (see Rewards screen).
+    if ((_selectedRole == 'user' || _selectedRole == 'solo') &&
+        _referralController.text.trim().isNotEmpty) {
+      data['referral_code'] = _referralController.text.trim().toUpperCase();
     }
 
     try {
@@ -250,6 +257,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 // ── Confirm Password ──
                 _buildPasswordField(_confirmPasswordController, 'Confirm Password',
                     _obscureConfirmPassword, (v) => setState(() => _obscureConfirmPassword = v)),
+
+                // ── Referral code (passengers only, optional) ──
+                if (_selectedRole == 'user' || _selectedRole == 'solo') ...[
+                  const SizedBox(height: 16),
+                  _buildTextField(_referralController, 'Referral Code (optional)',
+                      Icons.card_giftcard),
+                ],
 
                 const SizedBox(height: 20),
 

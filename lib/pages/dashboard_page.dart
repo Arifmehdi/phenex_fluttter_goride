@@ -25,6 +25,8 @@ import 'notifications_screen.dart';
 import '../widgets/ongoing_ride_banner.dart';
 import '../utils/num_utils.dart';
 import '../utils/notification_permission_prompt.dart';
+import 'admin_screens.dart' show AdminPayoutsScreen;
+import 'corporate_booking_screen.dart';
 
 class UnifiedDashboard extends StatefulWidget {
   final String role; // 'driver', 'owner', 'corporate', 'admin'
@@ -77,7 +79,14 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
 
   // Corporate billing (corporate role only)
   Map<String, dynamic> _corporateBilling = {};
+
+  // Top summary cards (owner/corporate) — real numbers from their dashboards.
+  Map<String, dynamic> _ownerDash = {};
+  Map<String, dynamic> _corpDash = {};
   bool _corporateBillingLoading = true;
+
+  // Admin KPIs (admin role only)
+  Map<String, dynamic> _adminStats = {};
 
   @override
   void initState() {
@@ -92,9 +101,14 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
     }
     if (widget.role == 'owner') {
       _loadOwnerFleet();
+      _loadOwnerDashboard();
     }
     if (widget.role == 'corporate') {
       _loadCorporateBilling();
+      _loadCorporateDashboard();
+    }
+    if (widget.role == 'admin') {
+      _loadAdminStats();
     }
     if (widget.role != 'admin') {
       _loadProfileCompletion();
@@ -114,8 +128,14 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
           _loadDriverStats();
           _loadEarningsSummary();
         }
-        if (widget.role == 'owner') _loadOwnerFleet();
-        if (widget.role == 'corporate') _loadCorporateBilling();
+        if (widget.role == 'owner') {
+          _loadOwnerFleet();
+          _loadOwnerDashboard();
+        }
+        if (widget.role == 'corporate') {
+          _loadCorporateBilling();
+          _loadCorporateDashboard();
+        }
       }
     });
 
@@ -142,6 +162,24 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
     }
   }
 
+  Future<void> _loadOwnerDashboard() async {
+    try {
+      final res = await _apiService.getOwnerDashboard();
+      if (mounted && res.statusCode == 200 && res.data is Map && res.data['success'] == true) {
+        setState(() => _ownerDash = Map<String, dynamic>.from(res.data));
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadCorporateDashboard() async {
+    try {
+      final res = await _apiService.getCorporateDashboard();
+      if (mounted && res.statusCode == 200 && res.data is Map && res.data['success'] == true) {
+        setState(() => _corpDash = Map<String, dynamic>.from(res.data));
+      }
+    } catch (_) {}
+  }
+
   Future<void> _loadCorporateBilling() async {
     setState(() => _corporateBillingLoading = true);
     try {
@@ -164,6 +202,15 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
       final res = await _apiService.getDriverStats();
       if (res.statusCode == 200 && res.data['success'] == true) {
         if (mounted) setState(() => _driverStats = Map<String, dynamic>.from(res.data['stats'] ?? {}));
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadAdminStats() async {
+    try {
+      final res = await _apiService.getAdminDashboardStats();
+      if (res.statusCode == 200 && res.data is Map && res.data['success'] == true) {
+        if (mounted) setState(() => _adminStats = Map<String, dynamic>.from(res.data));
       }
     } catch (_) {}
   }
@@ -343,8 +390,14 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
       _loadDriverStats();
       _loadEarningsSummary();
     }
-    if (widget.role == 'owner') _loadOwnerFleet();
-    if (widget.role == 'corporate') _loadCorporateBilling();
+    if (widget.role == 'owner') {
+      _loadOwnerFleet();
+      _loadOwnerDashboard();
+    }
+    if (widget.role == 'corporate') {
+      _loadCorporateBilling();
+      _loadCorporateDashboard();
+    }
   }
 
   /// Set up a listener for new ride requests to trigger notifications
@@ -975,82 +1028,91 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
         },
       ];
     } else if (widget.role == 'owner') {
+      final monthEarn = parseApiDouble(_ownerDash['month_earnings']);
+      final earnStr = monthEarn >= 1000
+          ? '৳${(monthEarn / 1000).toStringAsFixed(1)}k'
+          : '৳${monthEarn.toStringAsFixed(0)}';
       stats = [
         {
           'label': localeController.get('Total Cars', 'মোট গাড়ি'),
-          'value': '3',
+          'value': '${_ownerDash['total_cars'] ?? '—'}',
           'icon': Icons.directions_car,
           'color': Colors.blue,
         },
         {
           'label': localeController.get('Active', 'সক্রিয়'),
-          'value': '2',
+          'value': '${_ownerDash['active_cars'] ?? '—'}',
           'icon': Icons.check_circle,
           'color': Colors.green,
         },
         {
           'label': localeController.get('Riders', 'রাইডার'),
-          'value': '3',
+          'value': '${_ownerDash['total_riders'] ?? '—'}',
           'icon': Icons.people,
           'color': Colors.purple,
         },
         {
-          'label': localeController.get('Revenue', 'মোট আয়'),
-          'value': '৳ 45k',
+          'label': localeController.get('Month Earnings', 'মাসের আয়'),
+          'value': _ownerDash.isEmpty ? '—' : earnStr,
           'icon': Icons.trending_up,
           'color': Colors.orange,
         },
       ];
     } else if (widget.role == 'corporate') {
+      final unpaid = parseApiDouble(_corpDash['unpaid_bill']);
+      final monthTotal = parseApiDouble(_corporateBilling['total_amount']);
       stats = [
         {
           'label': localeController.get('Active Rides', 'চলতি ট্রিপ'),
-          'value': '8',
+          'value': '${_corpDash['active_rides'] ?? '—'}',
           'icon': Icons.map,
           'color': Colors.blue,
         },
         {
           'label': localeController.get('Fleet Size', 'মোট গাড়ি'),
-          'value': '12',
+          'value': '${_corpDash['fleet_size'] ?? '—'}',
           'icon': Icons.airport_shuttle,
           'color': Colors.indigo,
         },
         {
           'label': localeController.get('Unpaid Bill', 'বকেয়া বিল'),
-          'value': '৳ 12k',
+          'value': _corpDash.isEmpty ? '—' : '৳${unpaid.toStringAsFixed(0)}',
           'icon': Icons.receipt_long,
           'color': Colors.red,
         },
         {
-          'label': localeController.get('Employees', 'কর্মচারী'),
-          'value': '150',
-          'icon': Icons.groups,
+          'label': localeController.get('This Month', 'এই মাসে'),
+          'value': _corporateBilling.isEmpty ? '—' : '৳${monthTotal.toStringAsFixed(0)}',
+          'icon': Icons.receipt,
           'color': Colors.teal,
         },
       ];
     } else if (widget.role == 'admin') {
+      final a = _adminStats;
+      final rev = parseApiDouble(a['today_revenue']);
+      final revStr = rev >= 1000 ? '৳${(rev / 1000).toStringAsFixed(1)}k' : '৳${rev.toStringAsFixed(0)}';
       stats = [
         {
-          'label': localeController.get('Total Users', 'মোট ব্যবহারকারী'),
-          'value': '1,250',
-          'icon': Icons.people,
+          'label': localeController.get('Today Rides', 'আজকের ট্রিপ'),
+          'value': a.isEmpty ? '—' : '${a['today_rides'] ?? 0}',
+          'icon': Icons.route,
           'color': Colors.blue,
         },
         {
-          'label': localeController.get('Active Riders', 'সক্রিয় রাইডার'),
-          'value': '85',
+          'label': localeController.get('Active Drivers', 'সক্রিয় ড্রাইভার'),
+          'value': a.isEmpty ? '—' : '${a['active_drivers'] ?? 0}',
           'icon': Icons.drive_eta,
           'color': Colors.green,
         },
         {
-          'label': localeController.get('Total Trips', 'মোট ট্রিপ'),
-          'value': '3,420',
-          'icon': Icons.route,
+          'label': localeController.get('New Users', 'নতুন ব্যবহারকারী'),
+          'value': a.isEmpty ? '—' : '${a['new_users_today'] ?? 0}',
+          'icon': Icons.people,
           'color': Colors.purple,
         },
         {
-          'label': localeController.get('Revenue', 'মোট আয়'),
-          'value': '৳ 1.2M',
+          'label': localeController.get("Today Revenue", 'আজকের আয়'),
+          'value': a.isEmpty ? '—' : revStr,
           'icon': Icons.account_balance,
           'color': Colors.orange,
         },
@@ -1340,6 +1402,30 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Book a ride on behalf of an employee (billed to the company).
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () async {
+              final booked = await Get.to(() => const CorporateBookingScreen());
+              if (booked == true) {
+                _loadCorporateDashboard();
+                _loadCorporateBilling();
+              }
+            },
+            icon: const Icon(Icons.add_road, color: Colors.white),
+            label: Text(
+              localeController.get('Book Ride for Employee', 'কর্মচারীর জন্য রাইড বুক করুন'),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10713C),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
         Text(
           localeController.get('Recent Monthly Bill', 'মাসিক বিল'),
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -1446,6 +1532,24 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
           Colors.blue,
         ),
         _buildAdminCard(
+          Icons.map,
+          'Live Rides',
+          'Monitor all ongoing rides',
+          Colors.indigo,
+        ),
+        _buildAdminCard(
+          Icons.bolt,
+          'Surge Pricing',
+          'Manage surge zones & multipliers',
+          Colors.amber,
+        ),
+        _buildAdminCard(
+          Icons.view_carousel,
+          'Banner Management',
+          'Home-screen banners (${'4727 x 2000'} px)',
+          Colors.pink,
+        ),
+        _buildAdminCard(
           Icons.directions_car,
           'Vehicle Management',
           'Approve & manage vehicles',
@@ -1511,11 +1615,22 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
       case 'User Management':
         screen = const UserManagementScreen();
         break;
+      case 'Live Rides':
+        screen = const LiveRideMonitorScreen();
+        break;
+      case 'Surge Pricing':
+        screen = const SurgeManagementScreen();
+        break;
+      case 'Banner Management':
+        screen = const BannerManagementScreen();
+        break;
       case 'Vehicle Management':
         screen = const VehicleManagementScreen();
         break;
       case 'Payment Management':
-        screen = const PaymentManagementScreen();
+        // Real driver payouts (dues → pay to wallet); the old
+        // PaymentManagementScreen was a hardcoded mockup.
+        screen = const AdminPayoutsScreen();
         break;
       case 'Support Tickets':
         screen = const SupportTicketsScreen();
@@ -1527,9 +1642,17 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
         screen = const SystemSettingsScreen();
         break;
       default:
+        Get.snackbar('Not available', 'No screen mapped for "$title"',
+            backgroundColor: Colors.orange, colorText: Colors.white);
         return;
     }
-    Get.to(() => screen);
+    try {
+      Get.to(() => screen);
+    } catch (e, st) {
+      debugPrint('Admin nav error for "$title": $e\n$st');
+      Get.snackbar('Could not open', '$title failed: $e',
+          backgroundColor: Colors.red, colorText: Colors.white);
+    }
   }
 
   Widget _buildSecondaryTab() {

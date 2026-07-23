@@ -692,6 +692,53 @@ class ApiService extends g.GetxController {
     on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
   }
 
+  // ── Admin banner management (same API the web admin uses) ──
+
+  /// Full banner list for admins (includes inactive/expired) plus the
+  /// recommended image size, which is owned by the backend.
+  Future<Response> getAdminBanners() async {
+    try { return await _dio.get('/admin/banners'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  /// Create or update a banner. Pass [id] to update. Provide either an
+  /// [imagePath] (uploaded as multipart) or an [imageUrl].
+  Future<Response> saveBanner({
+    int? id,
+    String? title,
+    String? link,
+    String? imagePath,
+    String? imageUrl,
+    int? sortOrder,
+    bool? isActive,
+    String? expiresAt,
+  }) async {
+    try {
+      final map = <String, dynamic>{
+        if (title != null) 'title': title,
+        if (link != null) 'link': link,
+        if (imageUrl != null && imageUrl.isNotEmpty) 'image_url': imageUrl,
+        if (sortOrder != null) 'sort_order': sortOrder,
+        if (isActive != null) 'is_active': isActive ? 1 : 0,
+        if (expiresAt != null && expiresAt.isNotEmpty) 'expires_at': expiresAt,
+      };
+      if (imagePath != null && imagePath.isNotEmpty) {
+        map['image'] = await MultipartFile.fromFile(
+          imagePath, filename: imagePath.split(RegExp(r'[\\/]')).last);
+      }
+      final formData = FormData.fromMap(map);
+      final path = id == null ? '/admin/banners' : '/admin/banners/$id';
+      return await _dio.post(path, data: formData);
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500);
+    }
+  }
+
+  Future<Response> deleteBanner(int id) async {
+    try { return await _dio.delete('/admin/banners/$id'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
   Future<Response> validatePromo(String code, double fare) async {
     try { return await _dio.post('/promo/validate', data: {'code': code, 'fare': fare}); }
     on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
@@ -874,6 +921,49 @@ class ApiService extends g.GetxController {
     on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
   }
 
+  /// Admin: list users (optionally by role + search) for User Management.
+  Future<Response> getAdminUsers({String? role, String? search}) async {
+    try {
+      final qp = <String, dynamic>{};
+      if (role != null && role.isNotEmpty) qp['role'] = role;
+      if (search != null && search.isNotEmpty) qp['search'] = search;
+      return await _dio.get('/admin/users', queryParameters: qp);
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  /// Admin: approve | reject | suspend a user.
+  Future<Response> adminUserAction(int id, String action) async {
+    try { return await _dio.post('/admin/users/$id/approve-reject', data: {'action': action}); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  /// Admin: list all vehicles.
+  Future<Response> getAdminVehicles({String? status}) async {
+    try {
+      return await _dio.get('/admin/vehicles', queryParameters: {
+        if (status != null && status.isNotEmpty) 'status': status,
+      });
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  /// Admin: set a vehicle's status.
+  Future<Response> adminVehicleStatus(int id, String status) async {
+    try { return await _dio.post('/admin/vehicles/$id/status', data: {'status': status}); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  /// Admin: read app settings (maintenance, registration, commission, per-km).
+  Future<Response> getAdminSettings() async {
+    try { return await _dio.get('/admin/settings'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  /// Admin: save app settings.
+  Future<Response> saveAdminSettings(Map<String, dynamic> data) async {
+    try { return await _dio.post('/admin/settings', data: data); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
   Future<Response> getAdminRevenueReport({String? from, String? to, String groupBy = 'day'}) async {
     try {
       return await _dio.get('/admin/reports/revenue', queryParameters: {
@@ -1050,10 +1140,16 @@ class ApiService extends g.GetxController {
     } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
   }
 
-  // ── Referrals ──
+  // ── Referrals & Rewards ──
 
   Future<Response> getReferralStats() async {
     try { return await _dio.get('/referrals'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  /// Loyalty points + tier + referral stats for the Rewards screen.
+  Future<Response> getRewards() async {
+    try { return await _dio.get('/rewards'); }
     on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
   }
 
@@ -1119,4 +1215,37 @@ class ApiService extends g.GetxController {
       );
     } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
   }
+
+  // ── Admin: approvals, driver verification, vehicles, settings ──
+
+  Future<Response> getPendingApprovals({String type = 'all'}) async {
+    try { return await _dio.get('/admin/pending-approvals', queryParameters: {'type': type}); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  /// action: approve | reject | suspend
+  Future<Response> approveRejectUser(int userId, String action) async {
+    try { return await _dio.post('/admin/users/$userId/approve-reject', data: {'action': action}); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> getDriverVerificationList({String? status}) async {
+    try {
+      return await _dio.get('/admin/drivers/verification',
+          queryParameters: {if (status != null) 'status': status});
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  /// status: verified | rejected (reason required when rejecting)
+  Future<Response> verifyDriver(int driverId, String status, {String? reason}) async {
+    try {
+      return await _dio.post('/admin/drivers/$driverId/verify', data: {
+        'status': status,
+        if (reason != null) 'reason': reason,
+      });
+    } on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  // (Admin vehicles/settings methods live earlier in this file —
+  //  getAdminVehicles, adminVehicleStatus, getAdminSettings, saveAdminSettings.)
 }
