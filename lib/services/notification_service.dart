@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -7,6 +8,20 @@ import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:goride/services/api_service.dart';
 import 'package:goride/pages/ride_request_call_screen.dart';
+
+/// Accept / Decline action button ids used by the WhatsApp-style ride call.
+const String kActionAccept = 'ride_accept';
+const String kActionDecline = 'ride_decline';
+
+/// The two action buttons shown on the incoming ride-call notification —
+/// same list used by the background handler and the foreground path so the
+/// notification looks identical however it was raised.
+final List<AndroidNotificationAction> kRideCallActions = <AndroidNotificationAction>[
+  const AndroidNotificationAction(kActionDecline, 'Decline',
+      showsUserInterface: false, cancelNotification: true),
+  const AndroidNotificationAction(kActionAccept, 'Accept',
+      showsUserInterface: true, cancelNotification: true),
+];
 
 /// Background / terminated FCM handler — MUST be a top-level function.
 /// For a ride request it shows a full-screen "incoming call" notification
@@ -68,6 +83,8 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     ongoing: true,
     autoCancel: false,
     timeoutAfter: 45000,
+    // WhatsApp-style Accept / Decline buttons right on the notification.
+    actions: kRideCallActions,
   );
 
   await plugin.show(
@@ -75,8 +92,42 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     title: '🚗 New Ride Request',
     body: '${data['rider_name'] ?? 'Passenger'} • ${data['pickup'] ?? ''} → ${data['destination'] ?? ''} • ৳${data['fare'] ?? '0'}',
     notificationDetails: NotificationDetails(android: details),
-    payload: 'ride_request',
+    // Carry the full ride payload so Accept can open the call with all details.
+    payload: jsonEncode(data),
   );
+}
+
+/// Handles Accept/Decline taps that arrive while the app is in the BACKGROUND
+/// or KILLED — must be a top-level, vm:entry-point function (separate isolate).
+/// Decline is settled here directly; Accept just stores the ride so the app,
+/// once it's brought to the foreground, opens the full-screen call.
+@pragma('vm:entry-point')
+Future<void> onRideActionBackground(NotificationResponse response) async {
+  await GetStorage.init();
+  final payload = response.payload;
+  if (payload == null || payload.isEmpty) return;
+
+  Map<String, dynamic> data;
+  try {
+    data = Map<String, dynamic>.from(jsonDecode(payload) as Map);
+  } catch (_) {
+    return;
+  }
+
+  if (response.actionId == kActionAccept) {
+    // Stash it — NotificationService.init() picks this up on next launch and
+    // opens the full-screen call screen.
+    GetStorage().write('pending_ride_accept', payload);
+  } else if (response.actionId == kActionDecline) {
+    // Tell the backend so the ride transfers to the next driver, best-effort.
+    final rideId = data['mysqlRideId']?.toString() ?? data['request_id']?.toString();
+    final token = GetStorage().read('token');
+    if (rideId != null && token != null) {
+      try {
+        await ApiService.declineRideByIdRaw(rideId, token.toString());
+      } catch (_) {}
+    }
+  }
 }
 
 /// Builds and opens the full-screen incoming call from an FCM data map.
@@ -139,11 +190,13 @@ class NotificationService {
     // 2. Request permission
     await _fcm.requestPermission(alert: true, badge: true, sound: true);
 
-    // 3. Init local notifications
+    // 3. Init local notifications — foreground taps go to _onNotificationTap,
+    //    background/killed Accept-Decline taps go to onRideActionBackground.
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _plugin.initialize(
       settings: const InitializationSettings(android: androidSettings),
       onDidReceiveNotificationResponse: _onNotificationTap,
+      onDidReceiveBackgroundNotificationResponse: onRideActionBackground,
     );
 
     // 4. Create channels
@@ -182,6 +235,17 @@ class NotificationService {
       Future.delayed(const Duration(milliseconds: 800), () {
         openRideCallFromData(initial.data);
       });
+    }
+
+    // 6c. Driver tapped "Accept" on a notification while the app was killed —
+    // onRideActionBackground stashed the ride; open the full-screen call now.
+    final pendingAccept = GetStorage().read('pending_ride_accept');
+    if (pendingAccept != null) {
+      GetStorage().remove('pending_ride_accept');
+      try {
+        final data = Map<String, dynamic>.from(jsonDecode(pendingAccept.toString()) as Map);
+        Future.delayed(const Duration(milliseconds: 900), () => openRideCallFromData(data));
+      } catch (_) {}
     }
 
     _initialized = true;
@@ -234,7 +298,30 @@ class NotificationService {
   }
 
   void _onNotificationTap(NotificationResponse response) {
-    debugPrint('Local notification tapped: ${response.payload}');
+    debugPrint('Local notification tapped: action=${response.actionId} payload=${response.payload}');
+
+    // Parse the ride payload (Accept/Decline both carry the full JSON).
+    Map<String, dynamic>? data;
+    if (response.payload != null && response.payload!.startsWith('{')) {
+      try {
+        data = Map<String, dynamic>.from(jsonDecode(response.payload!) as Map);
+      } catch (_) {}
+    }
+
+    if (response.actionId == kActionDecline && data != null) {
+      cancelRideRequestNotification();
+      final rideId = data['mysqlRideId']?.toString() ?? data['request_id']?.toString();
+      final id = int.tryParse(rideId ?? '');
+      if (id != null) {
+        try { Get.find<ApiService>().declineRide(id); } catch (_) {}
+      }
+      return;
+    }
+
+    // Accept, or a plain body tap → open the full-screen incoming call.
+    if (data != null) {
+      openRideCallFromData(data);
+    }
   }
 
   Future<void> showRideRequestNotification({
@@ -260,6 +347,7 @@ class NotificationService {
       visibility: NotificationVisibility.public,
       fullScreenIntent: true,
       autoCancel: false,
+      actions: kRideCallActions, // Accept / Decline buttons
     );
 
     await _plugin.show(
@@ -267,7 +355,16 @@ class NotificationService {
       title: '🚗 New Ride Request!',
       body: '$riderName • $pickupAddress → $destinationAddress • ৳$fare',
       notificationDetails: NotificationDetails(android: androidDetails),
-      payload: 'ride_request:$requestId',
+      // JSON payload so the tap handler can act on Accept/Decline.
+      payload: jsonEncode({
+        'type': 'ride_request',
+        'request_id': requestId,
+        'mysqlRideId': requestId,
+        'rider_name': riderName,
+        'pickup': pickupAddress,
+        'destination': destinationAddress,
+        'fare': fare,
+      }),
     );
   }
 

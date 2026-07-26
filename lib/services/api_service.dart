@@ -17,7 +17,7 @@ class ApiService extends g.GetxController {
   static const EnvType currentEnv = EnvType.production; 
   
   // Your computer's local network IP address (for testing on physical devices via Wi-Fi)
-  static const String _localMachineIp = '192.168.68.102'; 
+  static const String _localMachineIp = '103.178.191.123'; 
   
   // If sharing the API publicly with others via ngrok (e.g. 'https://xxx.ngrok-free.app')
   static const String _ngrokUrl = 'https://YOUR_NGROK_SUBDOMAIN.ngrok-free.app';
@@ -833,6 +833,20 @@ class ApiService extends g.GetxController {
   Future<Response> declineRide(int rideId) async {
     try { return await _dio.post('/ride-requests/$rideId/decline'); }
     on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  /// Decline a ride from a BACKGROUND isolate (notification "Decline" tap),
+  /// where the GetX-managed ApiService singleton isn't available. Builds a
+  /// throwaway Dio with the passed token. Best-effort — errors are ignored
+  /// by the caller.
+  static Future<void> declineRideByIdRaw(String rideId, String token) async {
+    final dio = Dio(BaseOptions(
+      baseUrl: baseUrl,
+      headers: {'Accept': 'application/json', 'Authorization': 'Bearer $token'},
+      connectTimeout: const Duration(seconds: 12),
+      receiveTimeout: const Duration(seconds: 12),
+    ));
+    await dio.post('/ride-requests/$rideId/decline');
   }
 
   Future<Response> generateTrackingToken(int rideId) async {

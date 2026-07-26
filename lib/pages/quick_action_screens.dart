@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import '../services/api_service.dart';
 import '../services/saved_addresses_service.dart';
+import '../utils/num_utils.dart';
 import 'saved_addresses_screen.dart';
 
 class PayLaterScreen extends StatefulWidget {
@@ -11,14 +13,48 @@ class PayLaterScreen extends StatefulWidget {
 }
 
 class _PayLaterScreenState extends State<PayLaterScreen> {
-  final double _creditLimit = 50000;
-  final double _usedAmount = 12500;
-  final List<Map<String, dynamic>> _transactions = [
-    {'date': '10 Apr', 'desc': 'Airport Trip', 'amount': -850.0},
-    {'date': '08 Apr', 'desc': 'Gulshan to Dhanmondi', 'amount': -450.0},
-    {'date': '05 Apr', 'desc': 'Office Commute', 'amount': -320.0},
-    {'date': '03 Apr', 'desc': 'Shopping Mall', 'amount': -280.0},
-  ];
+  final ApiService _api = Get.find<ApiService>();
+
+  bool _loading = true;
+  double _limit = 0; // admin-set PayLater ceiling (0 = feature off)
+  double _due = 0; // outstanding amount owed (negative wallet balance)
+  double _balance = 0; // current wallet balance
+  List<Map<String, dynamic>> _transactions = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final bal = await _api.getWalletBalance();
+      if (bal.statusCode == 200 && bal.data is Map) {
+        _limit = parseApiDouble(bal.data['pay_later_limit']);
+        _due = parseApiDouble(bal.data['due']);
+        _balance = parseApiDouble(bal.data['balance']);
+      }
+      final tx = await _api.getWalletTransactions();
+      if (tx.statusCode == 200 && tx.data is Map) {
+        // transactions is a paginator: { transactions: { data: [...] } }
+        final raw = tx.data['transactions'];
+        final list = (raw is Map ? raw['data'] : raw);
+        if (list is List) {
+          _transactions = list
+              .whereType<Map>()
+              .map((e) => e.cast<String, dynamic>())
+              .toList();
+        }
+      }
+    } catch (_) {
+      // leave defaults; the UI shows an empty/disabled state
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  double get _available => (_limit - _due).clamp(0, _limit);
 
   @override
   Widget build(BuildContext context) {
@@ -28,47 +64,133 @@ class _PayLaterScreenState extends State<PayLaterScreen> {
         backgroundColor: const Color(0xFF10713C),
         foregroundColor: Colors.white,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: _limit <= 0 ? _disabledView() : _activeView(),
+            ),
+    );
+  }
+
+  // Shown when the admin has not enabled PayLater (limit = 0).
+  Widget _disabledView() {
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        const SizedBox(height: 60),
+        Icon(Icons.schedule, size: 64, color: Colors.grey[400]),
+        const SizedBox(height: 16),
+        const Text("Pay Later isn't available yet",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Text(
+          "Your account doesn't have a Pay Later limit right now. "
+          'Ride and pay by wallet, bKash/Nagad or cash in the meantime.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.grey[600]),
+        ),
+      ],
+    );
+  }
+
+  Widget _activeView() {
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [Color(0xFF10713C), Color(0xFF0A5E30)]),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                const Text('Available Credit', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                const SizedBox(height: 8),
+                Text('৳${_available.toStringAsFixed(0)}',
+                    style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Text('Limit: ৳${_limit.toStringAsFixed(0)}  •  Wallet: ৳${_balance.toStringAsFixed(0)}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              ],
+            ),
+          ),
+          if (_due > 0) ...[
+            const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [Color(0xFF10713C), Color(0xFF0A5E30)]),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: Colors.red[50], borderRadius: BorderRadius.circular(12)),
+              child: Row(
                 children: [
-                  const Text('Available Credit', style: TextStyle(color: Colors.white70, fontSize: 14)),
-                  const SizedBox(height: 8),
-                  Text('\৳${(_creditLimit - _usedAmount).toStringAsFixed(0)}', style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Text('Limit: \৳${_creditLimit.toStringAsFixed(0)}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                  Icon(Icons.info_outline, color: Colors.red[700]),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text('You owe ৳${_due.toStringAsFixed(0)}. Top up your wallet to clear it.',
+                        style: TextStyle(color: Colors.red[700], fontWeight: FontWeight.w600)),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
-            const Text('Recent Transactions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            ..._transactions.map((tx) => _buildTransactionTile(tx['date'], tx['desc'], tx['amount'])),
-            const SizedBox(height: 24),
+          ],
+          const SizedBox(height: 24),
+          const Text('Recent Transactions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          if (_transactions.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: Text('No transactions yet', style: TextStyle(color: Colors.grey[500]))),
+            )
+          else
+            ..._transactions.map(_buildTransactionTile),
+          const SizedBox(height: 24),
+          if (_due > 0)
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {},
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10713C), padding: const EdgeInsets.symmetric(vertical: 14)),
-                child: const Text('Pay Now', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                onPressed: _settleDue,
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF10713C),
+                    padding: const EdgeInsets.symmetric(vertical: 14)),
+                child: Text('Pay Now (৳${_due.toStringAsFixed(0)})',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildTransactionTile(String date, String desc, double amount) {
+  // Clears the outstanding PayLater due by topping the wallet up by that amount.
+  Future<void> _settleDue() async {
+    final amount = _due;
+    if (amount <= 0) return;
+    try {
+      final res = await _api.topUpWallet(amount);
+      if (res.statusCode == 200) {
+        Get.snackbar('Payment started', 'Complete the top-up to clear your ৳${amount.toStringAsFixed(0)} due.',
+            snackPosition: SnackPosition.BOTTOM);
+        await _load();
+      } else {
+        Get.snackbar('Failed', (res.data is Map ? res.data['message'] : null)?.toString() ?? 'Could not start payment',
+            snackPosition: SnackPosition.BOTTOM);
+      }
+    } catch (e) {
+      Get.snackbar('Error', '$e', snackPosition: SnackPosition.BOTTOM);
+    }
+  }
+
+  Widget _buildTransactionTile(Map<String, dynamic> tx) {
+    final type = (tx['type'] ?? '').toString();
+    final isCredit = type == 'credit';
+    final amount = parseApiDouble(tx['amount']);
+    final desc = (tx['description'] ?? tx['reference'] ?? (isCredit ? 'Top up' : 'Ride payment')).toString();
+    final date = (tx['created_at'] ?? '').toString();
+    final shortDate = date.length >= 10 ? date.substring(0, 10) : date;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -77,8 +199,10 @@ class _PayLaterScreenState extends State<PayLaterScreen> {
         children: [
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: Colors.red[50], borderRadius: BorderRadius.circular(8)),
-            child: Icon(Icons.directions_car, color: Colors.red[700], size: 18),
+            decoration: BoxDecoration(
+                color: (isCredit ? Colors.green : Colors.red)[50], borderRadius: BorderRadius.circular(8)),
+            child: Icon(isCredit ? Icons.add : Icons.directions_car,
+                color: (isCredit ? Colors.green : Colors.red)[700], size: 18),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -86,11 +210,12 @@ class _PayLaterScreenState extends State<PayLaterScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(desc, style: const TextStyle(fontWeight: FontWeight.bold)),
-                Text(date, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                Text(shortDate, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
               ],
             ),
           ),
-          Text('\৳${amount.abs()}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+          Text('${isCredit ? '+' : '-'}৳${amount.abs().toStringAsFixed(0)}',
+              style: TextStyle(fontWeight: FontWeight.bold, color: isCredit ? Colors.green[700] : Colors.red)),
         ],
       ),
     );
@@ -309,9 +434,9 @@ class PointsScreen extends StatefulWidget {
 class _PointsScreenState extends State<PointsScreen> {
   final int _totalPoints = 1250;
   final List<Map<String, dynamic>> _rewards = [
-    {'points': 100, 'reward': '\৳50 off', 'icon': Icons.local_offer},
+    {'points': 100, 'reward': '৳50 off', 'icon': Icons.local_offer},
     {'points': 250, 'reward': 'Free airport ride', 'icon': Icons.flight},
-    {'points': 500, 'reward': '\৳200 off', 'icon': Icons.discount},
+    {'points': 500, 'reward': '৳200 off', 'icon': Icons.discount},
     {'points': 1000, 'reward': 'Free day pass', 'icon': Icons.card_giftcard},
   ];
 

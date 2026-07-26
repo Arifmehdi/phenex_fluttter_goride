@@ -1,7 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart'
-    show FlutterLocalNotificationsPlugin, AndroidFlutterLocalNotificationsPlugin;
 import 'package:get_storage/get_storage.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -41,19 +39,19 @@ Future<void> primeNotificationPermissions(BuildContext context) async {
   await storage.write(_primedStorageKey, true);
 }
 
-/// Requests the extra permissions a DRIVER needs so ride calls ring reliably
-/// while the app is backgrounded / the phone is locked:
-///   • background location (to keep matching while the app isn't foreground)
-///   • full-screen-intent access (Android 14+, to show the call over the lock
-///     screen)
+/// Requests the extra permission a DRIVER needs so ride calls ring reliably
+/// while the app is backgrounded / the phone is locked — background location,
+/// so matching keeps working when the app isn't foreground.
 ///
-/// NOTE: we deliberately do NOT ask for the battery-optimization exemption
-/// ("Let app always run in the background?"). Ride calls are delivered as
-/// high-priority FCM data messages, which Android delivers even under Doze /
-/// battery optimization — so that popup added friction without being needed.
+/// We deliberately DON'T show a battery-optimization popup: the ride call is
+/// delivered as a `priority: high` FCM data message, which Android wakes up and
+/// delivers even under Doze / battery optimization. So the call rings without
+/// asking the user to "let the app always run" — one fewer popup, same result.
 ///
-/// Called only when a driver toggles ONLINE — riders never see these. Runs its
-/// requests once, then remembers it's done so going online later is silent.
+/// Full-screen-intent access is declared in the manifest and granted at install
+/// on the vast majority of devices, so we don't prompt for it either.
+///
+/// Called when a driver toggles ONLINE. Runs once, then remembers it.
 Future<void> primeDriverPermissions() async {
   if (!Platform.isAndroid) return;
 
@@ -67,13 +65,6 @@ Future<void> primeDriverPermissions() async {
         !await Permission.locationAlways.isGranted) {
       await Permission.locationAlways.request();
     }
-
-    // Android 14+ revokes full-screen-intent access by default for non-calling
-    // apps; the incoming ride call needs it to appear over the lock screen.
-    final androidPlugin = FlutterLocalNotificationsPlugin()
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-    await androidPlugin?.requestFullScreenIntentPermission();
   } catch (e) {
     debugPrint('Driver permission request error: $e');
   }
