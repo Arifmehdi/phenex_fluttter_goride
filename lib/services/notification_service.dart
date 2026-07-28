@@ -7,6 +7,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:goride/services/api_service.dart';
+import 'package:goride/services/notification_badge_service.dart';
 import 'package:goride/pages/ride_request_call_screen.dart';
 
 /// Accept / Decline action button ids used by the WhatsApp-style ride call.
@@ -273,6 +274,13 @@ class NotificationService {
   void _handleForegroundMessage(RemoteMessage message) {
     final data = message.data;
     final type = data['type'] ?? '';
+
+    // Anything that isn't the ride-call flow lands in the notifications list,
+    // so bump the bell badge straight away (the next poll reconciles it).
+    if (type != 'ride_request' && type != 'ride_taken' &&
+        Get.isRegistered<NotificationBadgeService>()) {
+      Get.find<NotificationBadgeService>().increment();
+    }
 
     if (type == 'ride_taken') {
       // Another driver got it — clear the notification (the open call screen

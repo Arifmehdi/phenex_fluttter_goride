@@ -94,6 +94,83 @@ class _CorporateBookingScreenState extends State<CorporateBookingScreen> {
     }
   }
 
+  /// Fills the name/phone from the company's saved employee directory, so a
+  /// regular booker doesn't retype details for the same people every trip.
+  Future<void> _pickSavedEmployee() async {
+    final res = await _api.getCorporateEmployees();
+    if (!mounted) return;
+
+    final list = (res.statusCode == 200 && res.data is Map && res.data['success'] == true)
+        ? List<Map<String, dynamic>>.from(
+            (res.data['employees'] as List).map((e) => Map<String, dynamic>.from(e as Map)))
+        : <Map<String, dynamic>>[];
+
+    if (list.isEmpty) {
+      Get.snackbar('No saved employees',
+          'Add employees from the dashboard to pick them here.',
+          snackPosition: SnackPosition.BOTTOM);
+      return;
+    }
+
+    final picked = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.7),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).padding.bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+            ),
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Choose employee',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+            ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: list.length,
+                itemBuilder: (_, i) {
+                  final e = list[i];
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: _kBrand.withValues(alpha: 0.1),
+                      child: Text(
+                        '${e['name']}'.isNotEmpty ? '${e['name']}'[0].toUpperCase() : '?',
+                        style: const TextStyle(color: _kBrand, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    title: Text('${e['name']}'),
+                    subtitle: Text('${e['mobile']}'),
+                    onTap: () => Navigator.pop(ctx, e),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (picked != null) {
+      setState(() {
+        _empName.text = '${picked['name']}';
+        _empMobile.text = '${picked['mobile']}';
+      });
+    }
+  }
+
   Future<void> _book() async {
     if (_empName.text.trim().isEmpty || _empMobile.text.trim().isEmpty) {
       Get.snackbar('Missing info', 'Enter the employee name and phone',
@@ -142,7 +219,17 @@ class _CorporateBookingScreenState extends State<CorporateBookingScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _label('Employee details'),
+          Row(
+            children: [
+              Expanded(child: _label('Employee details')),
+              TextButton.icon(
+                onPressed: _pickSavedEmployee,
+                icon: const Icon(Icons.groups, size: 18, color: _kBrand),
+                label: const Text('Pick saved',
+                    style: TextStyle(color: _kBrand, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
           TextField(
             controller: _empName,
             decoration: _dec('Employee name', Icons.person_outline),

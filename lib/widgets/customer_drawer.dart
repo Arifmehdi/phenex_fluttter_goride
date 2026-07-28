@@ -5,7 +5,7 @@ import '../pages/ride_history_screen.dart';
 import '../pages/saved_addresses_screen.dart';
 import '../pages/notifications_screen.dart';
 import '../pages/my_support_tickets_screen.dart';
-import '../pages/quick_action_screens.dart' show MembershipScreen, PointsScreen;
+import '../pages/rewards_screen.dart';
 import '../pages/dashboard_details_pages.dart' show EditProfileScreen;
 import '../pages/legal_screen.dart';
 import '../pages/about_screen.dart';
@@ -117,10 +117,12 @@ class CustomerDrawer extends StatelessWidget {
                     () => _go(context, const RideHistoryScreen())),
                 _item(context, Icons.bookmark_rounded, 'Saved Places',
                     () => _go(context, const SavedAddressesScreen())),
+                // Both open the real, API-backed rewards screen — it shows the
+                // loyalty tier (membership) AND the points/referral program.
                 _item(context, Icons.card_giftcard_rounded, 'Rewards & Points',
-                    () => _go(context, const PointsScreen())),
+                    () => _go(context, const RewardsScreen())),
                 _item(context, Icons.workspace_premium_rounded, 'GoRide Membership',
-                    () => _go(context, const MembershipScreen())),
+                    () => _go(context, const RewardsScreen())),
                 _item(context, Icons.notifications_rounded, 'Notifications',
                     () => _go(context, const NotificationsScreen())),
                 _item(context, Icons.support_agent_rounded, 'Help & Support',

@@ -21,12 +21,15 @@ import 'package:geolocator/geolocator.dart';
 import '../services/firebase_service.dart';
 import '../services/ride_service.dart';
 import 'live_tracking_screen.dart';
+import '../widgets/notification_bell.dart';
+import 'admin_rental_screen.dart';
 import 'notifications_screen.dart';
 import '../widgets/ongoing_ride_banner.dart';
 import '../utils/num_utils.dart';
 import '../utils/notification_permission_prompt.dart';
 import 'admin_screens.dart' show AdminPayoutsScreen;
 import 'corporate_booking_screen.dart';
+import 'corporate_screens.dart';
 
 class UnifiedDashboard extends StatefulWidget {
   final String role; // 'driver', 'owner', 'corporate', 'admin'
@@ -760,10 +763,7 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
               ),
             ],
           ),
-        IconButton(
-          icon: const Icon(Icons.notifications_none),
-          onPressed: () => Get.to(() => const NotificationsScreen()),
-        ),
+        const NotificationBell(icon: Icons.notifications_none_rounded),
         if (widget.role == 'admin')
           IconButton(icon: const Icon(Icons.settings), onPressed: () {}),
       ],
@@ -1425,6 +1425,43 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
             ),
           ),
         ),
+        const SizedBox(height: 10),
+        // Company trip history + the employee directory used when booking.
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => Get.to(() => const CorporateTripsScreen()),
+                icon: const Icon(Icons.receipt_long, size: 18, color: Color(0xFF10713C)),
+                label: Text(
+                  localeController.get('Trips', 'ট্রিপ'),
+                  style: const TextStyle(color: Color(0xFF10713C), fontWeight: FontWeight.w600),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: const BorderSide(color: Color(0xFF10713C)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => Get.to(() => const CorporateEmployeesScreen()),
+                icon: const Icon(Icons.groups, size: 18, color: Color(0xFF10713C)),
+                label: Text(
+                  localeController.get('Employees', 'কর্মচারী'),
+                  style: const TextStyle(color: Color(0xFF10713C), fontWeight: FontWeight.w600),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: const BorderSide(color: Color(0xFF10713C)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 20),
         Text(
           localeController.get('Recent Monthly Bill', 'মাসিক বিল'),
@@ -1562,6 +1599,12 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
           Colors.orange,
         ),
         _buildAdminCard(
+          Icons.car_rental,
+          'Rental Bookings',
+          'Rent-a-Car bookings & status',
+          Colors.deepPurple,
+        ),
+        _buildAdminCard(
           Icons.support_agent,
           'Support Tickets',
           '15 pending tickets',
@@ -1631,6 +1674,9 @@ class _UnifiedDashboardState extends State<UnifiedDashboard> with RouteAware {
         // Real driver payouts (dues → pay to wallet); the old
         // PaymentManagementScreen was a hardcoded mockup.
         screen = const AdminPayoutsScreen();
+        break;
+      case 'Rental Bookings':
+        screen = const AdminRentalScreen();
         break;
       case 'Support Tickets':
         screen = const SupportTicketsScreen();

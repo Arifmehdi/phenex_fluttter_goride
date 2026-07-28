@@ -20,6 +20,7 @@ import 'saved_addresses_screen.dart';
 import '../main.dart' show GoRideApp, SplashScreen;
 import 'register_screen.dart';
 import 'login_page.dart';
+import '../widgets/notification_bell.dart';
 import 'notifications_screen.dart';
 import '../widgets/ongoing_ride_banner.dart';
 import '../widgets/customer_drawer.dart';
@@ -245,8 +246,8 @@ class _HomePageState extends State<HomePage> {
         title: const Text('GoRide'),
         centerTitle: false,
         elevation: 0,
-        actions: [
-          IconButton(icon: const Icon(Icons.notifications), onPressed: () {}),
+        actions: const [
+          NotificationBell(),
         ],
       );
     }
@@ -298,11 +299,8 @@ class _HomePageState extends State<HomePage> {
                 ),
               ],
             ),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.notifications),
-          onPressed: () => Get.to(() => const NotificationsScreen()),
-        ),
+      actions: const [
+        NotificationBell(color: Colors.black87),
       ],
     );
   }
@@ -1279,18 +1277,18 @@ class _HomePageState extends State<HomePage> {
         'page': const SavedAddressScreen(),
       },
       {
-        'title': 'Bronze User',
+        'title': 'Membership',
         'subtitle': 'Avail Benefits >',
         'icon': Icons.card_membership,
         'color': Colors.orange,
-        'page': const MembershipScreen(),
+        'page': const RewardsScreen(),
       },
       {
         'title': 'Points',
         'subtitle': 'Redeem Now',
         'icon': Icons.star,
         'color': Colors.amber,
-        'page': const PointsScreen(),
+        'page': const RewardsScreen(),
       },
     ];
 
@@ -1523,51 +1521,81 @@ class _HomePageState extends State<HomePage> {
   void _showCorporateInfoDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            const Icon(Icons.business, color: Color(0xFF10713C)),
-            const SizedBox(width: 10),
-            const Text('Corporate Services'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'To access our exclusive corporate features, you need to be logged in with a Corporate Account.',
-              style: TextStyle(fontSize: 14),
-            ),
-            const SizedBox(height: 16),
-            _buildBulletPoint('Manage employee trips & billing'),
-            _buildBulletPoint('Priority support & dedicated fleet'),
-            _buildBulletPoint('Detailed usage analytics & reports'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Maybe Later', style: TextStyle(color: Colors.grey)),
+      builder: (ctx) {
+        final media = MediaQuery.of(ctx);
+        // Small phones need tight margins; tablets need the dialog capped so
+        // it doesn't stretch across the whole screen.
+        final isNarrow = media.size.width < 360;
+
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: isNarrow ? 16 : 32,
+            vertical: 24,
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const RegisterScreen(selectedRole: 'corporate'),
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF10713C),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Text('Login / Register', style: TextStyle(color: Colors.white)),
+          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+          contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          title: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.business, color: Color(0xFF10713C)),
+              SizedBox(width: 10),
+              // Expanded so a long title (or a large system font) wraps
+              // instead of overflowing the row.
+              Expanded(child: Text('Corporate Services')),
+            ],
           ),
-        ],
-      ),
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 400,
+              // Leaves room for the title and buttons; the body scrolls if the
+              // screen is short (landscape) or the user scales text up.
+              maxHeight: media.size.height * 0.5,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'To access our exclusive corporate features, you need to be logged in with a Corporate Account.',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildBulletPoint('Manage employee trips & billing'),
+                  _buildBulletPoint('Priority support & dedicated fleet'),
+                  _buildBulletPoint('Detailed usage analytics & reports'),
+                ],
+              ),
+            ),
+          ),
+          // When the two buttons don't fit side by side they stack instead of
+          // overflowing — keeps them usable on narrow/large-font devices.
+          actionsOverflowButtonSpacing: 8,
+          actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Maybe Later', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const RegisterScreen(selectedRole: 'corporate'),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF10713C),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Login / Register', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
     );
   }
 

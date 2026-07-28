@@ -40,11 +40,18 @@ class _RentCarBookingScreenState extends State<RentCarBookingScreen> {
       return;
     }
 
+    // Dates are kept twice: a friendly string for display, and an ISO one
+    // (yyyy-MM-dd) because that's what the API expects.
+    String iso(DateTime d) =>
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
     final bookingData = {
       'isWithReturn': _isWithReturn,
       'pickupDate': '${_pickupDate.day}/${_pickupDate.month}/${_pickupDate.year}',
       'pickupTime': _pickupTime.format(context),
       'returnDate': _isWithReturn ? '${_returnDate.day}/${_returnDate.month}/${_returnDate.year}' : null,
+      'pickupDateIso': iso(_pickupDate),
+      'returnDateIso': _isWithReturn ? iso(_returnDate) : null,
       'pickupDistrict': _pickupDistrict,
       'pickupThana': _pickupThana,
       'destDistrict': _selectedDistrict,

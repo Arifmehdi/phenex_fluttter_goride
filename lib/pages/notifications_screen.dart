@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../services/api_service.dart';
+import '../services/notification_badge_service.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -35,17 +36,28 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     setState(() => _loading = false);
   }
 
+  /// Keeps the app-bar bell badge in step with what's been read here.
+  void _syncBadge() {
+    if (Get.isRegistered<NotificationBadgeService>()) {
+      Get.find<NotificationBadgeService>().refresh();
+    }
+  }
+
   Future<void> _markAllRead() async {
     await _api.markAllNotificationsRead();
     setState(() {
       for (final n in _notifications) { n['is_read'] = 1; }
     });
+    if (Get.isRegistered<NotificationBadgeService>()) {
+      Get.find<NotificationBadgeService>().clear();
+    }
   }
 
   Future<void> _markRead(Map<String, dynamic> notif) async {
     if (notif['is_read'] == 1) return;
     await _api.markNotificationRead(notif['id'] as int);
     setState(() => notif['is_read'] = 1);
+    _syncBadge();
   }
 
   IconData _iconFor(String? type) {

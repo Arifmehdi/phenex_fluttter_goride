@@ -1503,6 +1503,11 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
   double _commissionValue = 15;
   double _perKm = 20;
   int _matchingRadius = 10; // km — how far to search for drivers on a ride call
+  // Rewards / referral economics (0 disables that part of the programme)
+  double _takaPerPoint = 10;
+  double _referralBonus = 50;
+  double _refereeBonus = 50;
+  double _payLaterLimit = 0;
   bool _loading = true;
   bool _saving = false;
 
@@ -1524,6 +1529,10 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
         _commissionValue = (s['commission_rate'] as num?)?.toDouble() ?? 15;
         _perKm = (s['per_km_rate'] as num?)?.toDouble() ?? 20;
         _matchingRadius = (s['matching_radius_km'] as num?)?.toInt() ?? 10;
+        _takaPerPoint = (s['taka_per_point'] as num?)?.toDouble() ?? 10;
+        _referralBonus = (s['referral_bonus'] as num?)?.toDouble() ?? 50;
+        _refereeBonus = (s['referee_bonus'] as num?)?.toDouble() ?? 50;
+        _payLaterLimit = (s['pay_later_limit'] as num?)?.toDouble() ?? 0;
       }
     } catch (_) {}
     if (mounted) setState(() => _loading = false);
@@ -1537,6 +1546,10 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
       'commission_rate': _commissionValue,
       'per_km_rate': _perKm,
       'matching_radius_km': _matchingRadius,
+      'taka_per_point': _takaPerPoint,
+      'referral_bonus': _referralBonus,
+      'referee_bonus': _refereeBonus,
+      'pay_later_limit': _payLaterLimit,
     });
     final ok = res.statusCode == 200 && res.data is Map && res.data['success'] == true;
     if (mounted) setState(() => _saving = false);
@@ -1604,6 +1617,51 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
           const Divider(),
           _buildSectionHeader('Ride Matching'),
           _buildMatchingRadiusControl(),
+          const Divider(),
+          _buildSectionHeader('Rewards & Referrals'),
+          _settingsTile(
+            '৳ per 1 point',
+            '1 point per ৳${_takaPerPoint.toStringAsFixed(0)} of completed fare',
+            Icons.stars,
+            onTap: () => _showAmountDialog(
+              title: '৳ per 1 point',
+              current: _takaPerPoint,
+              min: 1,
+              onSaved: (v) => setState(() => _takaPerPoint = v),
+            ),
+          ),
+          _settingsTile(
+            'Referral bonus',
+            '৳${_referralBonus.toStringAsFixed(0)} to the inviter (0 = off)',
+            Icons.card_giftcard,
+            onTap: () => _showAmountDialog(
+              title: 'Referral bonus (৳)',
+              current: _referralBonus,
+              onSaved: (v) => setState(() => _referralBonus = v),
+            ),
+          ),
+          _settingsTile(
+            'Welcome bonus',
+            '৳${_refereeBonus.toStringAsFixed(0)} to the new user (0 = off)',
+            Icons.redeem,
+            onTap: () => _showAmountDialog(
+              title: 'Welcome bonus (৳)',
+              current: _refereeBonus,
+              onSaved: (v) => setState(() => _refereeBonus = v),
+            ),
+          ),
+          _settingsTile(
+            'Pay Later limit',
+            _payLaterLimit <= 0
+                ? 'Disabled'
+                : '৳${_payLaterLimit.toStringAsFixed(0)} credit',
+            Icons.schedule,
+            onTap: () => _showAmountDialog(
+              title: 'Pay Later limit (৳)',
+              current: _payLaterLimit,
+              onSaved: (v) => setState(() => _payLaterLimit = v),
+            ),
+          ),
           const Divider(),
           _buildSectionHeader('Notifications'),
           _settingsTile(
@@ -1893,6 +1951,46 @@ class _SystemSettingsScreenState extends State<SystemSettingsScreen> {
       groupValue: _commissionRate,
       onChanged: (v) => setState(() =>
           _commissionValue = double.tryParse(v!.replaceAll('%', '')) ?? _commissionValue),
+    );
+  }
+
+  /// Generic "type a ৳ amount" editor used by the rewards/PayLater settings.
+  /// Values are only applied locally — "Save Settings" persists them.
+  void _showAmountDialog({
+    required String title,
+    required double current,
+    required ValueChanged<double> onSaved,
+    double min = 0,
+  }) {
+    final controller = TextEditingController(text: current.toStringAsFixed(0));
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          autofocus: true,
+          decoration: InputDecoration(
+            prefixText: '৳ ',
+            helperText: min > 0 ? 'Minimum $min' : '0 turns this off',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final v = double.tryParse(controller.text.trim());
+              if (v != null && v >= min) onSaved(v);
+              Navigator.pop(ctx);
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
     );
   }
 }

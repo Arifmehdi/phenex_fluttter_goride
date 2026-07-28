@@ -1,44 +1,61 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../services/api_service.dart';
+import '../utils/num_utils.dart';
 import 'car_details_screen.dart';
 
-class AvailableCarsScreen extends StatelessWidget {
+class AvailableCarsScreen extends StatefulWidget {
   final Map<String, dynamic> bookingData;
 
   const AvailableCarsScreen({super.key, required this.bookingData});
 
   @override
-  Widget build(BuildContext context) {
-    // Mock car data
-    final List<Map<String, dynamic>> cars = [
-      {
-        'name': 'Toyota Corolla',
-        'type': 'Sedan',
-        'price': bookingData['isWithReturn'] ? 5500 : 3500,
-        'image': 'assets/car.png',
-        'rating': 4.8,
-        'seats': 4,
-        'bags': 2,
-      },
-      {
-        'name': 'Mitsubishi Pajero',
-        'type': 'SUV',
-        'price': bookingData['isWithReturn'] ? 8500 : 5500,
-        'image': 'assets/car.png',
-        'rating': 4.9,
-        'seats': 7,
-        'bags': 4,
-      },
-      {
-        'name': 'Toyota Hiace',
-        'type': 'Microbus',
-        'price': bookingData['isWithReturn'] ? 12000 : 8000,
-        'image': 'assets/car.png',
-        'rating': 4.7,
-        'seats': 12,
-        'bags': 6,
-      },
-    ];
+  State<AvailableCarsScreen> createState() => _AvailableCarsScreenState();
+}
 
+class _AvailableCarsScreenState extends State<AvailableCarsScreen> {
+  final ApiService _api = Get.find<ApiService>();
+
+  List<Map<String, dynamic>> _cars = [];
+  bool _loading = true;
+  String? _error;
+
+  Map<String, dynamic> get bookingData => widget.bookingData;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  /// Real fleet from the server — already filtered to cars that are free for
+  /// these dates, priced for the one-way / with-return choice.
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final res = await _api.getRentalCars(
+        withReturn: bookingData['isWithReturn'] == true,
+        pickupDate: bookingData['pickupDateIso']?.toString(),
+        returnDate: bookingData['returnDateIso']?.toString(),
+      );
+      if (res.statusCode == 200 && res.data is Map && res.data['success'] == true) {
+        _cars = List<Map<String, dynamic>>.from(
+          (res.data['cars'] as List).map((e) => Map<String, dynamic>.from(e as Map)),
+        );
+      } else {
+        _error = 'Could not load cars. Please try again.';
+      }
+    } catch (_) {
+      _error = 'No connection. Check your internet and retry.';
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Available Cars'),
@@ -48,16 +65,60 @@ class AvailableCarsScreen extends StatelessWidget {
       body: Column(
         children: [
           _buildSummaryHeader(),
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: cars.length,
-              itemBuilder: (context, index) {
-                return _buildCarCard(context, cars[index]);
-              },
-            ),
-          ),
+          Expanded(child: _buildBody()),
         ],
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(color: Color(0xFF10713C)));
+    }
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.wifi_off, size: 56, color: Colors.grey[300]),
+            const SizedBox(height: 12),
+            Text(_error!, style: TextStyle(color: Colors.grey[600])),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: _load,
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10713C)),
+              child: const Text('Retry', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+    }
+    if (_cars.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.no_transfer, size: 56, color: Colors.grey[300]),
+              const SizedBox(height: 12),
+              const Text('No cars free for these dates',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              Text('Try different dates, or check back later.',
+                  textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[600])),
+            ],
+          ),
+        ),
+      );
+    }
+    return RefreshIndicator(
+      color: const Color(0xFF10713C),
+      onRefresh: _load,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: _cars.length,
+        itemBuilder: (context, index) => _buildCarCard(context, _cars[index]),
       ),
     );
   }
@@ -150,13 +211,17 @@ class AvailableCarsScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Hero(
-                      tag: car['name'],
-                      child: Image.asset(
-                        car['image'],
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) =>
-                            const Icon(Icons.directions_car, size: 40, color: Colors.grey),
-                      ),
+                      tag: 'car_${car['id'] ?? car['name']}',
+                      // The admin may not have set an image — fall back to an
+                      // icon rather than crashing on a null asset path.
+                      child: (car['image'] == null || '${car['image']}'.isEmpty)
+                          ? const Icon(Icons.directions_car, size: 40, color: Colors.grey)
+                          : Image.asset(
+                              '${car['image']}',
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const Icon(Icons.directions_car, size: 40, color: Colors.grey),
+                            ),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -164,38 +229,29 @@ class AvailableCarsScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              car['name'],
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Row(
-                              children: [
-                                const Icon(Icons.star, color: Colors.amber, size: 16),
-                                Text(
-                                  ' ${car['rating']}',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                                ),
-                              ],
-                            ),
-                          ],
+                        Text(
+                          '${car['name']}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          car['type'],
+                          _titleCase('${car['type'] ?? ''}'),
                           style: TextStyle(color: Colors.grey[600], fontSize: 13),
                         ),
                         const SizedBox(height: 8),
-                        Row(
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 4,
                           children: [
-                            _buildSpecItem(Icons.person, '${car['seats']} Seats'),
-                            const SizedBox(width: 12),
-                            _buildSpecItem(Icons.work, '${car['bags']} Bags'),
+                            _buildSpecItem(Icons.person, '${car['seats'] ?? '-'} Seats'),
+                            if (car['transmission'] != null)
+                              _buildSpecItem(Icons.settings, '${car['transmission']}'),
+                            if (car['fuel'] != null)
+                              _buildSpecItem(Icons.local_gas_station, '${car['fuel']}'),
                           ],
                         ),
                       ],
@@ -218,7 +274,7 @@ class AvailableCarsScreen extends StatelessWidget {
                         style: TextStyle(color: Colors.grey, fontSize: 11),
                       ),
                       Text(
-                        '৳ ${car['price']}',
+                        '৳ ${parseApiDouble(car['price']).toStringAsFixed(0)}',
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -258,6 +314,7 @@ class AvailableCarsScreen extends StatelessWidget {
 
   Widget _buildSpecItem(IconData icon, String text) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 14, color: Colors.grey),
         const SizedBox(width: 4),
@@ -268,4 +325,8 @@ class AvailableCarsScreen extends StatelessWidget {
       ],
     );
   }
+
+  /// The API stores types lowercase ('suv'), the UI shows them capitalised.
+  String _titleCase(String s) =>
+      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 }

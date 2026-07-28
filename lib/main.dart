@@ -14,6 +14,7 @@ import 'package:goride/services/api_service.dart';
 import 'package:goride/services/chat_service.dart';
 import 'package:goride/services/firebase_service.dart';
 import 'package:goride/services/location_service.dart';
+import 'package:goride/services/notification_badge_service.dart';
 import 'package:goride/services/notification_service.dart';
 import 'package:goride/services/ride_service.dart';
 import 'package:goride/services/routing_service.dart';
@@ -27,6 +28,7 @@ import 'package:goride/pages/reset_password_screen.dart';
 import 'package:goride/pages/change_password_screen.dart';
 import 'package:goride/pages/saved_addresses_screen.dart';
 import 'package:goride/pages/chat_conversation_list_screen.dart';
+import 'package:goride/widgets/notification_bell.dart';
 import 'package:goride/widgets/sidebar_menu.dart';
 
 /// Lets any screen (e.g. the dashboard) reliably detect "I've become visible
@@ -46,6 +48,7 @@ void main() async {
    Get.put(SavedAddressesService());
    Get.put(LocaleController());
    Get.put(SslCommerzService());
+   Get.put(NotificationBadgeService());
 
   // Initialize Firebase for real-time features
   final firebaseService = Get.put(FirebaseService());
@@ -414,10 +417,7 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
           ),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_none_rounded, color: Colors.white),
-            onPressed: () {},
-          ),
+          const NotificationBell(icon: Icons.notifications_none_rounded),
           const SizedBox(width: 8),
         ],
       ),
@@ -1601,7 +1601,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         ),
         title: const Text('Rider Dashboard'),
         actions: [
-          IconButton(icon: const Icon(Icons.notifications), onPressed: () {}),
+          const NotificationBell(),
         ],
       ),
       body: IndexedStack(
@@ -2063,7 +2063,7 @@ class _CorporateDashboardScreenState extends State<CorporateDashboardScreen> {
         ),
         title: const Text('Corporate Dashboard'),
         actions: [
-          IconButton(icon: const Icon(Icons.notifications), onPressed: () {}),
+          const NotificationBell(),
         ],
       ),
       body: IndexedStack(

@@ -1,16 +1,70 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../services/api_service.dart';
+import '../utils/num_utils.dart';
 
-class CarDetailsScreen extends StatelessWidget {
+class CarDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> car;
   final Map<String, dynamic> bookingData;
 
   const CarDetailsScreen({super.key, required this.car, required this.bookingData});
 
   @override
+  State<CarDetailsScreen> createState() => _CarDetailsScreenState();
+}
+
+class _CarDetailsScreenState extends State<CarDetailsScreen> {
+  final ApiService _api = Get.find<ApiService>();
+  bool _submitting = false;
+
+  Map<String, dynamic> get car => widget.car;
+  Map<String, dynamic> get bookingData => widget.bookingData;
+
+  /// Sends the booking to the server. The price is NOT sent — the API prices
+  /// it from the car record, so the total can't be tampered with.
+  Future<void> _confirmBooking() async {
+    if (_submitting) return;
+    setState(() => _submitting = true);
+
+    try {
+      final res = await _api.createRentalBooking({
+        'rental_car_id': car['id'],
+        'with_return': bookingData['isWithReturn'] == true,
+        'pickup_date': bookingData['pickupDateIso'],
+        'pickup_time': bookingData['pickupTime'],
+        'return_date': bookingData['returnDateIso'],
+        'pickup_district': bookingData['pickupDistrict'],
+        'pickup_thana': bookingData['pickupThana'],
+        'dest_district': bookingData['destDistrict'],
+        'dest_thana': bookingData['destThana'],
+      });
+
+      if (!mounted) return;
+
+      if ((res.statusCode == 200 || res.statusCode == 201) &&
+          res.data is Map && res.data['success'] == true) {
+        _showBookingSuccess(context);
+      } else {
+        final msg = (res.data is Map ? res.data['message'] : null)?.toString() ??
+            'Could not place the booking. Please try again.';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No connection. Please try again.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(car['name']),
+        title: Text('${car['name']}'),
         backgroundColor: const Color(0xFF10713C),
         foregroundColor: Colors.white,
       ),
@@ -23,13 +77,15 @@ class CarDetailsScreen extends StatelessWidget {
               height: 250,
               color: Colors.grey[100],
               child: Hero(
-                tag: car['name'],
-                child: Image.asset(
-                  car['image'],
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) =>
-                      const Icon(Icons.directions_car, size: 100, color: Colors.grey),
-                ),
+                tag: 'car_${car['id'] ?? car['name']}',
+                child: (car['image'] == null || '${car['image']}'.isEmpty)
+                    ? const Icon(Icons.directions_car, size: 100, color: Colors.grey)
+                    : Image.asset(
+                        '${car['image']}',
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) =>
+                            const Icon(Icons.directions_car, size: 100, color: Colors.grey),
+                      ),
               ),
             ),
             Padding(
@@ -44,33 +100,17 @@ class CarDetailsScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            car['name'],
+                            '${car['name']}',
                             style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           Text(
-                            car['type'],
+                            _titleCase('${car['type'] ?? ''}'),
                             style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                           ),
                         ],
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.star, color: Colors.amber, size: 18),
-                            Text(
-                              ' ${car['rating']}',
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
                       ),
                     ],
                   ),
@@ -81,14 +121,32 @@ class CarDetailsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      _buildSpecCard(Icons.person_outline, 'Capacity', '${car['seats']} Seats'),
-                      _buildSpecCard(Icons.work_outline, 'Baggage', '${car['bags']} Bags'),
-                      _buildSpecCard(Icons.ac_unit, 'Air Condition', 'AC'),
-                      _buildSpecCard(Icons.settings_outlined, 'Transmission', 'Auto'),
+                      _buildSpecCard(Icons.person_outline, 'Capacity', '${car['seats'] ?? '-'} Seats'),
+                      _buildSpecCard(Icons.settings_outlined, 'Transmission',
+                          '${car['transmission'] ?? '-'}'),
+                      _buildSpecCard(Icons.local_gas_station, 'Fuel', '${car['fuel'] ?? '-'}'),
                     ],
                   ),
+                  if (car['features'] is List && (car['features'] as List).isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    const Text('Features',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final f in (car['features'] as List))
+                          Chip(
+                            label: Text('$f', style: const TextStyle(fontSize: 12)),
+                            backgroundColor: const Color(0xFF10713C).withValues(alpha: 0.08),
+                            side: BorderSide.none,
+                          ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 32),
                   const Text(
                     'Rental Summary',
@@ -110,7 +168,7 @@ class CarDetailsScreen extends StatelessWidget {
                         style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
                       ),
                       Text(
-                        '৳ ${car['price']}',
+                        '৳ ${parseApiDouble(car['price']).toStringAsFixed(0)}',
                         style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
@@ -123,9 +181,7 @@ class CarDetailsScreen extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () {
-                        _showBookingSuccess(context);
-                      },
+                      onPressed: _submitting ? null : _confirmBooking,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF10713C),
                         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -133,14 +189,19 @@ class CarDetailsScreen extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Text(
-                        'Confirm Booking',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
+                      child: _submitting
+                          ? const SizedBox(
+                              height: 22, width: 22,
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 2))
+                          : const Text(
+                              'Confirm Booking',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
                     ),
                   ),
                   const SizedBox(height: 40),
@@ -232,4 +293,8 @@ class CarDetailsScreen extends StatelessWidget {
       ),
     );
   }
+
+  /// The API stores types lowercase ('suv'), the UI shows them capitalised.
+  String _titleCase(String s) =>
+      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 }

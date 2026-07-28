@@ -25,7 +25,7 @@ class ApiService extends g.GetxController {
   static String get baseUrl {
     switch (currentEnv) {
       case EnvType.production:
-        return 'https://qalamhr.islamibookbd.com/api/';
+        return 'https://gorides.musafirinternational.com/api/';
       case EnvType.localEmulator:
         // 10.0.2.2 maps to the computer's localhost inside Android Emulators.
         // Change path if running with php artisan serve (e.g. 'http://10.0.2.2:8000/api/')
@@ -72,6 +72,9 @@ class ApiService extends g.GetxController {
 
   final _isLoggedIn = false.obs;
   bool get isLoggedInState => _isLoggedIn.value;
+  /// Observable login state — lets services react to sign-in / sign-out
+  /// (e.g. the notification badge starts and stops polling).
+  g.RxBool get loggedIn => _isLoggedIn;
 
   ApiService() {
     _isLoggedIn.value = _storage.hasData('token');
@@ -898,6 +901,89 @@ class ApiService extends g.GetxController {
 
   Future<Response> markAllNotificationsRead() async {
     try { return await _dio.post('/notifications/read-all'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  /// Just the unread number, for the bell badge. Kept tiny — it's polled.
+  Future<Response> getUnreadNotificationCount() async {
+    try { return await _dio.get('/notifications/unread-count'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  // ── Rent a Car ──
+
+  /// Cars free for the chosen dates. Prices come back already resolved for
+  /// the one-way / with-return choice.
+  Future<Response> getRentalCars({
+    required bool withReturn,
+    String? pickupDate,
+    String? returnDate,
+  }) async {
+    try {
+      return await _dio.get('/rental/cars', queryParameters: {
+        'with_return': withReturn ? 1 : 0,
+        if (pickupDate != null) 'pickup_date': pickupDate,
+        if (returnDate != null) 'return_date': returnDate,
+      });
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500);
+    }
+  }
+
+  Future<Response> createRentalBooking(Map<String, dynamic> data) async {
+    try { return await _dio.post('/rental/bookings', data: data); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> getMyRentalBookings() async {
+    try { return await _dio.get('/rental/bookings'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> cancelRentalBooking(int id) async {
+    try { return await _dio.post('/rental/bookings/$id/cancel'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  /// Admin: every rental booking, optionally filtered by status.
+  Future<Response> getAdminRentalBookings({String? status}) async {
+    try {
+      return await _dio.get('/admin/rental/bookings',
+          queryParameters: {if (status != null && status.isNotEmpty) 'status': status});
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500);
+    }
+  }
+
+  Future<Response> updateRentalBookingStatus(int id, String status) async {
+    try { return await _dio.post('/admin/rental/bookings/$id/status', data: {'status': status}); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  // ── Corporate ──
+
+  /// Every trip this company booked (optionally filtered by status).
+  Future<Response> getCorporateRides({String? status}) async {
+    try {
+      return await _dio.get('/corporate/rides',
+          queryParameters: {if (status != null && status.isNotEmpty) 'status': status});
+    } on DioException catch (e) {
+      return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500);
+    }
+  }
+
+  Future<Response> getCorporateEmployees() async {
+    try { return await _dio.get('/corporate/employees'); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> saveCorporateEmployee(Map<String, dynamic> data) async {
+    try { return await _dio.post('/corporate/employees', data: data); }
+    on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
+  }
+
+  Future<Response> deleteCorporateEmployee(int id) async {
+    try { return await _dio.delete('/corporate/employees/$id'); }
     on DioException catch (e) { return e.response ?? Response(requestOptions: RequestOptions(path: ''), statusCode: 500); }
   }
 

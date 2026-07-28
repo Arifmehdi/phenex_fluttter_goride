@@ -58,6 +58,13 @@ class _RewardsScreenState extends State<RewardsScreen> {
     final nextPoints = parseApiInt(_data['next_tier_points']);
     final code = _data['referral_code']?.toString();
     final link = _data['referral_link']?.toString();
+    // Rates are admin-configurable, so read them from the API rather than
+    // hardcoding — the copy always matches what the server actually pays.
+    final rate = parseApiDouble(_data['points_rate']) > 0
+        ? parseApiDouble(_data['points_rate'])
+        : 10.0;
+    final bonus = parseApiDouble(_data['referral_bonus']);
+    final isDriver = _data['role']?.toString() == 'driver';
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
@@ -143,7 +150,8 @@ class _RewardsScreenState extends State<RewardsScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Earn 1 point for every ৳10 of completed ride fare. '
+                              'Earn 1 point for every ৳${rate.toStringAsFixed(0)} of '
+                              '${isDriver ? 'fare you earn' : 'completed ride fare'}. '
                               'Tiers: Bronze → Silver (500) → Gold (2,000) → Platinum (5,000).',
                               style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                             ),
@@ -154,12 +162,12 @@ class _RewardsScreenState extends State<RewardsScreen> {
                       // ── Referral / Invite ──
                       if (code != null && code.isNotEmpty) ...[
                         const SizedBox(height: 24),
-                        const Text('Invite friends, earn ৳50',
-                            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                        Text('Invite friends, earn ৳${bonus.toStringAsFixed(0)}',
+                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 4),
                         Text(
                           'Your friend signs up with your code — when they complete '
-                          'their first ride, you get ৳50 in your wallet.',
+                          'their first ride, you get ৳${bonus.toStringAsFixed(0)} in your wallet.',
                           style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                         ),
                         const SizedBox(height: 14),
@@ -209,7 +217,8 @@ class _RewardsScreenState extends State<RewardsScreen> {
                             onPressed: () {
                               SharePlus.instance.share(ShareParams(
                                 text: 'Ride with GoRide! 🚗 Sign up with my code '
-                                    '$code and I earn ৳50 when you take your first ride.'
+                                    '$code and I earn ৳${bonus.toStringAsFixed(0)} '
+                                    'when you take your first ride.'
                                     '${link != null ? '\n$link' : ''}',
                               ));
                             },
